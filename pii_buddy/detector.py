@@ -47,11 +47,12 @@ DOB_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ID-like numbers: driver's license patterns, passport-like, etc.
+# ID-like numbers: driver's license patterns, passport-like, credential IDs, etc.
 ID_NUMBER_RE = re.compile(
     r"\b(?:"
-    r"[A-Z]{1,2}\d{6,8}"       # e.g., DL numbers like D1234567
-    r"|\d{9,10}"                # 9-10 digit numbers (passport, DL)
+    r"[A-Z]{1,2}\d{6,8}"                     # e.g., DL numbers like D1234567
+    r"|[A-Z]{2,4}-[A-Z]{1,4}-\d{5,10}"       # e.g., AWS-CP-2847163
+    r"|\d{9,10}"                              # 9-10 digit numbers (passport, DL)
     r")\b"
 )
 
@@ -81,9 +82,6 @@ REGEX_PATTERNS = [
     (ADDRESS_RE, "ADDRESS"),
 ]
 
-# Pattern to validate that a PERSON entity looks like an actual name
-_NAME_RE = re.compile(r"^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}$")
-
 # Patterns that indicate a DATE entity is NOT a specific date/DOB
 _VAGUE_DATE_RE = re.compile(
     r"(?:years?|months?|weeks?|days?|present|current|today|now|ago)",
@@ -111,17 +109,23 @@ def get_nlp():
     return _nlp
 
 
-def _is_valid_person(text: str) -> bool:
+def _is_valid_person(text: str, non_person_labels: set) -> bool:
     """Check that a PERSON entity looks like an actual name."""
-    # Reject if it contains @, digits, or special chars (except spaces/hyphens/apostrophes)
+    # Reject if it contains @, digits, or special chars
     if "@" in text or any(c.isdigit() for c in text):
         return False
     # Reject if it contains newlines
     if "\n" in text:
         return False
-    # Should be 1-4 words, each starting with a capital letter
+    # Should be 1-4 words
     parts = text.strip().split()
     if not parts or len(parts) > 5:
+        return False
+    # Reject single words that are too short (likely misidentified)
+    if len(parts) == 1 and len(parts[0]) <= 2:
+        return False
+    # Reject if spaCy also tagged this text as ORG, GPE, LOC, or other non-person
+    if text in non_person_labels:
         return False
     return True
 
@@ -132,13 +136,41 @@ def _is_specific_date(text: str) -> bool:
         return False
     if _VAGUE_DATE_RE.search(text):
         return False
+    # Reject if it spans multiple lines
+    if "\n" in text:
+        return False
     # Reject date ranges like "January 2020 - Present"
     if " - " in text or " to " in text.lower():
         return False
     # Must be reasonably short (a date, not a paragraph)
-    if len(text) > 30:
+    if len(text) > 25:
         return False
     return True
+
+
+def _detect_allcaps_names(text: str) -> list[PIIEntity]:
+    """
+    Detect ALL CAPS names that spaCy misses (common at top of resumes).
+
+    Looks for lines that are 1-3 capitalized words with no other content,
+    typically appearing near the start of the document.
+    """
+    entities = []
+    # Only check the first ~500 chars (header area of a resume)
+    header = text[:500]
+    for match in re.finditer(r"^([A-Z][A-Z]+(?:\s+[A-Z][A-Z]+){0,3})\s*$", header, re.MULTILINE):
+        name = match.group(1)
+        # Must be 2+ words and only letters/spaces (not "EXPERIENCE" or "SUMMARY")
+        words = name.split()
+        if len(words) >= 2 and all(w.isalpha() for w in words):
+            # Convert to title case for the entity text so initials work
+            entities.append(PIIEntity(
+                text=name.title(),
+                label="PERSON",
+                start=match.start(),
+                end=match.end(),
+            ))
+    return entities
 
 
 def detect_pii(text: str) -> list[PIIEntity]:
@@ -159,18 +191,24 @@ def detect_pii(text: str) -> list[PIIEntity]:
     for ent in regex_entities:
         regex_ranges.update(range(ent.start, ent.end))
 
-    # 2. spaCy NER (names, dates) — only add if they don't overlap regex matches
+    # 2. spaCy NER
     nlp = get_nlp()
     doc = nlp(text)
-    spacy_entities = []
 
+    # Collect non-person entity texts so we can exclude them from PERSON matches
+    non_person_texts = set()
+    for ent in doc.ents:
+        if ent.label_ in ("ORG", "GPE", "LOC", "NORP", "FAC", "PRODUCT", "WORK_OF_ART"):
+            non_person_texts.add(ent.text)
+
+    spacy_entities = []
     for ent in doc.ents:
         # Skip if this entity overlaps any regex match
         ent_range = set(range(ent.start_char, ent.end_char))
         if ent_range & regex_ranges:
             continue
 
-        if ent.label_ == "PERSON" and _is_valid_person(ent.text):
+        if ent.label_ == "PERSON" and _is_valid_person(ent.text, non_person_texts):
             spacy_entities.append(PIIEntity(
                 text=ent.text,
                 label="PERSON",
@@ -185,8 +223,11 @@ def detect_pii(text: str) -> list[PIIEntity]:
                 end=ent.end_char,
             ))
 
-    # 3. Combine and deduplicate overlapping entities
-    entities = regex_entities + spacy_entities
+    # 3. Detect ALL CAPS names (common in resume headers)
+    allcaps_entities = _detect_allcaps_names(text)
+
+    # 4. Combine and deduplicate overlapping entities
+    entities = regex_entities + spacy_entities + allcaps_entities
     entities.sort(key=lambda e: (e.start, -(e.end - e.start)))
     deduped = []
     last_end = -1

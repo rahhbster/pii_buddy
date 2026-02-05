@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import shutil
 import time
 from datetime import datetime, timedelta
@@ -23,6 +24,36 @@ from .extractor import extract_text
 from .redactor import redact
 
 logger = logging.getLogger("pii_buddy")
+
+
+def _redact_filename(filename: str, person_map: dict) -> str:
+    """
+    Redact PII from a filename.
+
+    Replaces name fragments found in the person mapping.
+    e.g., "sarah_chen_resume.pdf" -> "sc_resume.pdf"
+    """
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    redacted_stem = stem
+
+    # Sort by length descending so "sarah_chen" is checked before "sarah"
+    for surface, tag in sorted(person_map.items(), key=lambda x: len(x[0]), reverse=True):
+        # Check for name in various filename formats: underscores, hyphens, dots, camelCase
+        for separator in ["_", "-", ".", " "]:
+            name_variant = surface.lower().replace(" ", separator)
+            if name_variant in redacted_stem.lower():
+                # Replace with initials (strip << >> from tag)
+                initials = tag.strip("<>").lower()
+                redacted_stem = re.sub(re.escape(name_variant), initials, redacted_stem, flags=re.IGNORECASE)
+
+        # Also check for first/last names individually
+        for part in surface.lower().split():
+            if len(part) > 2 and part in redacted_stem.lower():
+                initials = tag.strip("<>").lower()
+                redacted_stem = re.sub(r'\b' + re.escape(part) + r'\b', initials, redacted_stem, flags=re.IGNORECASE)
+
+    return redacted_stem + suffix
 
 
 def process_file(filepath: Path) -> bool:
@@ -47,19 +78,20 @@ def process_file(filepath: Path) -> bool:
         # 3. Redact
         redacted_text, mapping = redact(text, entities)
 
-        # 4. Save redacted output
-        stem = filepath.stem
-        output_path = OUTPUT_DIR / f"PII_FREE_{stem}.txt"
+        # 4. Redact the filename too
+        clean_name = _redact_filename(filepath.stem, mapping.get("persons", {}))
+        output_path = OUTPUT_DIR / f"PII_FREE_{clean_name}.txt"
         output_path.write_text(redacted_text, encoding="utf-8")
         logger.info(f"  Output: {output_path.name}")
 
         # 5. Save mapping for reversibility
         mapping["metadata"] = {
             "original_file": filepath.name,
+            "output_file": output_path.name,
             "processed_at": datetime.now().isoformat(),
             "entities_found": len(entities),
         }
-        mapping_path = MAPPINGS_DIR / f"{stem}.map.json"
+        mapping_path = MAPPINGS_DIR / f"{clean_name}.map.json"
         mapping_path.write_text(
             json.dumps(mapping, indent=2, ensure_ascii=False),
             encoding="utf-8",
