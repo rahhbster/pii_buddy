@@ -104,6 +104,35 @@ Process one file and exit:
 ./run.sh --once /path/to/document.pdf
 ```
 
+### Clipboard Mode (macOS)
+
+Reads from your clipboard, redacts PII, and puts the result back on your clipboard:
+
+```bash
+./run.sh --clipboard
+```
+
+Workflow: Copy text anywhere (Cmd+C) → run the command → paste the redacted version (Cmd+V).
+
+### Paste Mode
+
+Paste or pipe text directly via stdin:
+
+```bash
+./run.sh --paste
+```
+
+Then paste your text and press `Ctrl+D` when done. The redacted output prints to the terminal.
+
+You can also pipe text in:
+
+```bash
+cat notes.txt | ./run.sh --paste
+pbpaste | ./run.sh --paste
+```
+
+Both clipboard and paste modes save a mapping file to `~/PII_Buddy/mappings/` so the redaction is still reversible.
+
 ### Restore PII
 
 Re-insert PII into a redacted file using its mapping:

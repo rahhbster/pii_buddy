@@ -3,8 +3,10 @@
 PII Buddy — Drop files in, get redacted files out.
 
 Usage:
-    python main.py              Watch the input folder (default: ~/PII_Buddy/input)
-    python main.py --once FILE  Process a single file and exit
+    python main.py                  Watch the input folder (default: ~/PII_Buddy/input)
+    python main.py --once FILE      Process a single file and exit
+    python main.py --paste          Paste text via stdin, get redacted output
+    python main.py --clipboard      Read clipboard, redact, write back to clipboard
     python main.py --restore REDACTED_FILE MAPPING_FILE   Restore PII
 
 Set PII_BUDDY_DIR env var to change the base folder (default: ~/PII_Buddy).
@@ -48,6 +50,16 @@ def main():
         help="Restore PII into a redacted file using its mapping",
     )
     parser.add_argument(
+        "--paste",
+        action="store_true",
+        help="Read text from stdin (paste + Ctrl+D), print redacted output",
+    )
+    parser.add_argument(
+        "--clipboard",
+        action="store_true",
+        help="Read from clipboard, redact, write result back to clipboard",
+    )
+    parser.add_argument(
         "--dir",
         metavar="PATH",
         help="Override the base directory (default: ~/PII_Buddy)",
@@ -69,6 +81,57 @@ def main():
         cfg.ALL_DIRS = [cfg.INPUT_DIR, cfg.OUTPUT_DIR, cfg.MAPPINGS_DIR, cfg.ORIGINALS_DIR, cfg.LOGS_DIR]
 
     ensure_dirs()
+
+    if args.paste or args.clipboard:
+        import json
+        from datetime import datetime
+        from pii_buddy.detector import detect_pii
+        from pii_buddy.redactor import redact
+
+        if args.clipboard:
+            import subprocess
+            result = subprocess.run(["pbpaste"], capture_output=True, text=True)
+            text = result.stdout
+            if not text.strip():
+                logger.error("Clipboard is empty.")
+                sys.exit(1)
+            logger.info(f"Read {len(text)} chars from clipboard.")
+        else:
+            logger.info("Paste text below, then press Ctrl+D when done:\n")
+            text = sys.stdin.read()
+            if not text.strip():
+                logger.error("No text received.")
+                sys.exit(1)
+
+        entities = detect_pii(text)
+        logger.info(f"Found {len(entities)} PII entities.")
+        redacted_text, mapping = redact(text, entities)
+
+        # Save mapping file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mapping["metadata"] = {
+            "source": "clipboard" if args.clipboard else "stdin",
+            "processed_at": datetime.now().isoformat(),
+            "entities_found": len(entities),
+        }
+        mapping_path = MAPPINGS_DIR / f"pasted_{timestamp}.map.json"
+        mapping_path.write_text(
+            json.dumps(mapping, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info(f"Mapping saved: {mapping_path.name}")
+
+        if args.clipboard:
+            import subprocess
+            subprocess.run(["pbcopy"], input=redacted_text, text=True)
+            logger.info("Redacted text copied to clipboard. Paste it anywhere.")
+        else:
+            print("\n" + "=" * 50)
+            print("REDACTED OUTPUT:")
+            print("=" * 50)
+            print(redacted_text)
+
+        return
 
     if args.restore:
         from pii_buddy.restorer import restore
