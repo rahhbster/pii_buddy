@@ -1,9 +1,11 @@
-"""Detect PII in text using spaCy NER + regex patterns."""
+"""Detect PII in text using spaCy NER + regex patterns + validation."""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from .validation import validate_entities
 
 
 @dataclass
@@ -12,6 +14,7 @@ class PIIEntity:
     label: str
     start: int
     end: int
+    confidence: float = 1.0
 
 
 # --- Regex patterns for structured PII ---
@@ -36,7 +39,6 @@ URL_RE = re.compile(
     r"https?://[^\s<>\"']+|www\.[^\s<>\"']+"
 )
 
-# Dates that look like DOB: MM/DD/YYYY, MM-DD-YYYY, Month DD YYYY, etc.
 DOB_RE = re.compile(
     r"\b(?:"
     r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
@@ -47,16 +49,14 @@ DOB_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ID-like numbers: driver's license patterns, passport-like, credential IDs, etc.
 ID_NUMBER_RE = re.compile(
     r"\b(?:"
-    r"[A-Z]{1,2}\d{6,8}"                     # e.g., DL numbers like D1234567
-    r"|[A-Z]{2,4}-[A-Z]{1,4}-\d{5,10}"       # e.g., AWS-CP-2847163
-    r"|\d{9,10}"                              # 9-10 digit numbers (passport, DL)
+    r"[A-Z]{1,2}\d{6,8}"
+    r"|[A-Z]{2,4}-[A-Z]{1,4}-\d{5,10}"
+    r"|\d{9,10}"
     r")\b"
 )
 
-# Street address pattern (number + street name + type)
 ADDRESS_RE = re.compile(
     r"\b\d{1,6}\s+"
     r"(?:[A-Z][a-z]+\s+){1,4}"
@@ -69,7 +69,6 @@ ADDRESS_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ZIP codes (US 5-digit and 5+4)
 ZIP_RE = re.compile(r"\b\d{5}(?:-\d{4})?\b")
 
 REGEX_PATTERNS = [
@@ -82,21 +81,27 @@ REGEX_PATTERNS = [
     (ADDRESS_RE, "ADDRESS"),
 ]
 
-# Patterns that indicate a DATE entity is NOT a specific date/DOB
 _VAGUE_DATE_RE = re.compile(
     r"(?:years?|months?|weeks?|days?|present|current|today|now|ago)",
     re.IGNORECASE,
 )
 
+SPACY_MODEL = "en_core_web_md"
+SPACY_FALLBACK = "en_core_web_sm"
+
 
 def _load_spacy():
     import spacy
-    try:
-        return spacy.load("en_core_web_sm")
-    except OSError:
-        print("Downloading spaCy model (one-time)...")
-        spacy.cli.download("en_core_web_sm")
-        return spacy.load("en_core_web_sm")
+    for model in (SPACY_MODEL, SPACY_FALLBACK):
+        try:
+            return spacy.load(model)
+        except OSError:
+            pass
+    # Download fallback
+    import spacy.cli
+    print(f"Downloading spaCy model {SPACY_FALLBACK} (one-time)...")
+    spacy.cli.download(SPACY_FALLBACK)
+    return spacy.load(SPACY_FALLBACK)
 
 
 _nlp = None
@@ -109,73 +114,91 @@ def get_nlp():
     return _nlp
 
 
-def _is_valid_person(text: str, non_person_labels: set) -> bool:
-    """Check that a PERSON entity looks like an actual name."""
-    # Reject if it contains @, digits, or special chars
-    if "@" in text or any(c.isdigit() for c in text):
-        return False
-    # Reject if it contains newlines
-    if "\n" in text:
-        return False
-    # Should be 1-4 words
-    parts = text.strip().split()
-    if not parts or len(parts) > 5:
-        return False
-    # Reject single words that are too short (likely misidentified)
-    if len(parts) == 1 and len(parts[0]) <= 2:
-        return False
-    # Reject if spaCy also tagged this text as ORG, GPE, LOC, or other non-person
-    if text in non_person_labels:
-        return False
-    return True
-
-
 def _is_specific_date(text: str) -> bool:
-    """Check that a DATE entity looks like a specific date (DOB, etc.), not vague."""
     if not any(c.isdigit() for c in text):
         return False
     if _VAGUE_DATE_RE.search(text):
         return False
-    # Reject if it spans multiple lines
     if "\n" in text:
         return False
-    # Reject date ranges like "January 2020 - Present"
     if " - " in text or " to " in text.lower():
         return False
-    # Must be reasonably short (a date, not a paragraph)
     if len(text) > 25:
         return False
     return True
 
 
-def _detect_allcaps_names(text: str) -> list[PIIEntity]:
-    """
-    Detect ALL CAPS names that spaCy misses (common at top of resumes).
+def _basic_person_check(text: str) -> bool:
+    """Quick pre-filter before full validation."""
+    if "@" in text or "\n" in text:
+        return False
+    if any(c.isdigit() for c in text):
+        return False
+    parts = text.strip().split()
+    if not parts or len(parts) > 5:
+        return False
+    return True
 
-    Looks for lines that are 1-3 capitalized words with no other content,
-    typically appearing near the start of the document.
-    """
+
+def _detect_allcaps_names(text: str) -> list[PIIEntity]:
+    """Detect ALL CAPS names in resume headers."""
     entities = []
-    # Only check the first ~500 chars (header area of a resume)
     header = text[:500]
     for match in re.finditer(r"^([A-Z][A-Z]+(?:\s+[A-Z][A-Z]+){0,3})\s*$", header, re.MULTILINE):
         name = match.group(1)
-        # Must be 2+ words and only letters/spaces (not "EXPERIENCE" or "SUMMARY")
         words = name.split()
         if len(words) >= 2 and all(w.isalpha() for w in words):
-            # Convert to title case for the entity text so initials work
             entities.append(PIIEntity(
                 text=name.title(),
                 label="PERSON",
                 start=match.start(),
                 end=match.end(),
+                confidence=0.9,
             ))
     return entities
 
 
-def detect_pii(text: str) -> list[PIIEntity]:
-    """Return all PII entities found in the text, sorted by position."""
-    # 1. Regex-based detection (structured PII) — these get priority
+def _detect_doc_type(text: str) -> str:
+    """Auto-detect document type: resume, transcript, or general."""
+    sample = text[:1500].lower()
+
+    transcript_score = 0
+    if re.search(r'\b(?:interviewer|interviewee|moderator|speaker\s*\d+)\s*:', sample):
+        transcript_score += 3
+    if re.search(r'^\s*[A-Z][a-z]+\s*:', text[:1500], re.MULTILINE):
+        transcript_score += 1
+    if re.search(r'\b(?:q:|a:|question:|answer:)', sample):
+        transcript_score += 2
+
+    resume_score = 0
+    if re.search(r'\b(?:resume|curriculum vitae|cv)\b', sample):
+        resume_score += 3
+    if re.search(r'\b(?:professional summary|work experience|education)\b', sample):
+        resume_score += 2
+    if re.search(r'\b(?:years? of experience|proficient in|responsible for)\b', sample):
+        resume_score += 1
+
+    if transcript_score > resume_score and transcript_score >= 3:
+        return "transcript"
+    elif resume_score >= 2:
+        return "resume"
+    return "general"
+
+
+def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
+    """
+    Detect PII in text using regex + spaCy NER + validation.
+
+    Two-pass approach:
+      1. Detect all candidate entities (permissive)
+      2. Validate and score confidence (selective)
+    """
+    if doc_type == "auto":
+        doc_type = _detect_doc_type(text)
+
+    # --- Pass 1: Detection ---
+
+    # 1a. Regex (structured PII — high confidence)
     regex_entities = []
     for pattern, label in REGEX_PATTERNS:
         for match in pattern.finditer(text):
@@ -184,31 +207,24 @@ def detect_pii(text: str) -> list[PIIEntity]:
                 label=label,
                 start=match.start(),
                 end=match.end(),
+                confidence=1.0,
             ))
 
-    # Build a set of covered character ranges from regex matches
     regex_ranges = set()
     for ent in regex_entities:
         regex_ranges.update(range(ent.start, ent.end))
 
-    # 2. spaCy NER
+    # 1b. spaCy NER (names and dates)
     nlp = get_nlp()
     doc = nlp(text)
-
-    # Collect non-person entity texts so we can exclude them from PERSON matches
-    non_person_texts = set()
-    for ent in doc.ents:
-        if ent.label_ in ("ORG", "GPE", "LOC", "NORP", "FAC", "PRODUCT", "WORK_OF_ART"):
-            non_person_texts.add(ent.text)
-
     spacy_entities = []
+
     for ent in doc.ents:
-        # Skip if this entity overlaps any regex match
         ent_range = set(range(ent.start_char, ent.end_char))
         if ent_range & regex_ranges:
             continue
 
-        if ent.label_ == "PERSON" and _is_valid_person(ent.text, non_person_texts):
+        if ent.label_ == "PERSON" and _basic_person_check(ent.text):
             spacy_entities.append(PIIEntity(
                 text=ent.text,
                 label="PERSON",
@@ -221,17 +237,23 @@ def detect_pii(text: str) -> list[PIIEntity]:
                 label="DOB",
                 start=ent.start_char,
                 end=ent.end_char,
+                confidence=0.8,
             ))
 
-    # 3. Detect ALL CAPS names (common in resume headers)
+    # 1c. ALL CAPS names in resume headers
     allcaps_entities = _detect_allcaps_names(text)
 
-    # 4. Combine and deduplicate overlapping entities
-    entities = regex_entities + spacy_entities + allcaps_entities
-    entities.sort(key=lambda e: (e.start, -(e.end - e.start)))
+    # Combine all candidates
+    all_candidates = regex_entities + spacy_entities + allcaps_entities
+
+    # --- Pass 2: Validation ---
+    validated = validate_entities(all_candidates, text, doc, doc_type)
+
+    # --- Deduplicate overlapping entities ---
+    validated.sort(key=lambda e: (e.start, -e.confidence, -(e.end - e.start)))
     deduped = []
     last_end = -1
-    for ent in entities:
+    for ent in validated:
         if ent.start >= last_end:
             deduped.append(ent)
             last_end = ent.end

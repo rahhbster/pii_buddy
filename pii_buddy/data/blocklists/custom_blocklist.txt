@@ -1,0 +1,7 @@
+# Custom blocklist — add your own terms here.
+# One per line, case-insensitive. Lines starting with # are comments.
+# These terms will NEVER be treated as a person's name.
+#
+# Examples:
+# My Company Name
+# Specific Project Name

@@ -40,7 +40,8 @@ echo "Installing dependencies..."
 .venv/bin/pip install --quiet --upgrade pip
 .venv/bin/pip install --quiet -r requirements.txt
 
-echo "Downloading spaCy language model..."
+echo "Downloading spaCy language models..."
+.venv/bin/python -m spacy download en_core_web_md --quiet
 .venv/bin/python -m spacy download en_core_web_sm --quiet
 
 # Create working directories

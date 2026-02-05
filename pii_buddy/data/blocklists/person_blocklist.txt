@@ -1,0 +1,148 @@
+# Terms that should NEVER be treated as a person's name.
+# One per line, case-insensitive. Lines starting with # are comments.
+
+# Resume Section Headers
+Professional Summary
+Executive Summary
+Career Summary
+Career Objective
+Work Experience
+Professional Experience
+Employment History
+Education
+Academic Background
+Skills
+Technical Skills
+Core Competencies
+Certifications
+Licenses
+Credentials
+Projects
+Key Projects
+Notable Projects
+References
+Contact Information
+Personal Information
+Achievements
+Accomplishments
+Awards
+Publications
+Presentations
+Volunteer Work
+Languages
+Interests
+Activities
+
+# Job Titles & Roles
+Software Engineer
+Senior Engineer
+Staff Engineer
+Principal Engineer
+Lead Engineer
+Cloud Practitioner
+Cloud Architect
+Solutions Architect
+Product Manager
+Program Manager
+Project Manager
+Engineering Manager
+Technical Lead
+Tech Lead
+Team Lead
+DevOps Engineer
+Data Scientist
+Data Engineer
+Data Analyst
+Business Analyst
+Systems Analyst
+Security Analyst
+Full Stack Developer
+Frontend Developer
+Backend Developer
+Mobile Developer
+Web Developer
+QA Engineer
+Test Engineer
+Site Reliability Engineer
+Machine Learning Engineer
+Platform Engineer
+Infrastructure Engineer
+Network Engineer
+Database Administrator
+System Administrator
+UX Designer
+UI Designer
+Product Designer
+Graphic Designer
+Visual Designer
+Content Strategist
+Technical Writer
+Scrum Master
+Agile Coach
+Account Manager
+Sales Manager
+Marketing Manager
+Operations Manager
+Human Resources
+General Manager
+Vice President
+Chief Executive
+Chief Technology
+Chief Operating
+Chief Financial
+Managing Director
+
+# Certifications & Credential Bodies
+Scrum Alliance
+Project Management Institute
+AWS Certified
+Google Cloud
+Microsoft Certified
+Microsoft Azure
+Cisco Certified
+CompTIA
+Oracle Certified
+Red Hat Certified
+Certified Scrum Master
+Certified Scrum Product Owner
+Cloud Practitioner
+Solutions Architect
+Professional Scrum
+Six Sigma
+Green Belt
+Black Belt
+ITIL Foundation
+CISSP
+CISM
+CRISC
+
+# Geographic Terms
+Bangalore
+Hyderabad
+Pune
+Chennai
+Mumbai
+Delhi
+Ann Arbor
+Palo Alto
+San Jose
+San Diego
+Las Vegas
+El Paso
+Los Angeles
+New York
+Silicon Valley
+Bay Area
+San Francisco Bay Area
+Greater New York
+Greater Los Angeles
+Research Triangle
+
+# Common Non-Person Phrases
+Dean's List
+Honor Roll
+Cum Laude
+Magna Cum Laude
+Summa Cum Laude
+Phi Beta Kappa
+National Honor Society
