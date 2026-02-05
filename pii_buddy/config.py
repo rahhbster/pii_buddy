@@ -9,14 +9,20 @@ OUTPUT_DIR = BASE_DIR / "output"
 MAPPINGS_DIR = BASE_DIR / "mappings"
 ORIGINALS_DIR = BASE_DIR / "originals"
 LOGS_DIR = BASE_DIR / "logs"
+USER_BLOCKLISTS_DIR = BASE_DIR / "blocklists"
 
-ALL_DIRS = [INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, ORIGINALS_DIR, LOGS_DIR]
+ALL_DIRS = [INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, ORIGINALS_DIR, LOGS_DIR, USER_BLOCKLISTS_DIR]
 
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
 
 # How long to keep originals before cleanup (hours)
 ORIGINALS_RETENTION_HOURS = 24
+
+# GitHub repo for blocklist updates
+GITHUB_REPO = "rahhbster/pii_buddy"
+GITHUB_BRANCH = "main"
+GITHUB_BLOCKLIST_PATH = "pii_buddy/data/blocklists/person_blocklist.txt"
 
 # Tag formats for each PII type
 TAG_TEMPLATES = {

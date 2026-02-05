@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pii_buddy.config import USER_BLOCKLISTS_DIR
+
 BLOCKLISTS_DIR = Path(__file__).parent / "data" / "blocklists"
 
 MIN_PERSON_CONFIDENCE = 0.6
@@ -81,9 +83,18 @@ def _get_blocklist() -> set[str]:
     global _blocklist_cache
     if _blocklist_cache is None:
         _blocklist_cache = set()
+        # Package blocklists (official + custom template)
         for name in ("person_blocklist.txt", "custom_blocklist.txt"):
             _blocklist_cache |= _load_blocklist(BLOCKLISTS_DIR / name)
+        # User's local blocklist (never overwritten by --update)
+        _blocklist_cache |= _load_blocklist(USER_BLOCKLISTS_DIR / "user_blocklist.txt")
     return _blocklist_cache
+
+
+def reload_blocklist():
+    """Force reload of all blocklists (called after --update)."""
+    global _blocklist_cache
+    _blocklist_cache = None
 
 
 def _is_job_title(text: str) -> bool:

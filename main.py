@@ -17,7 +17,21 @@ import logging
 import sys
 from pathlib import Path
 
-from pii_buddy.config import ALL_DIRS, INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR
+from pii_buddy.config import ALL_DIRS, INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, USER_BLOCKLISTS_DIR
+
+
+USER_BLOCKLIST_TEMPLATE = """\
+# Your personal blocklist — terms here will NEVER be treated as a person's name.
+# One per line, case-insensitive. Lines starting with # are comments.
+#
+# This file is yours and will never be overwritten by updates.
+# Add company names, product names, or any terms that get incorrectly redacted.
+#
+# Examples:
+# My Company Name
+# Specific Product Name
+# Internal Project Codename
+"""
 
 
 def setup_logging():
@@ -32,6 +46,10 @@ def setup_logging():
 def ensure_dirs():
     for d in ALL_DIRS:
         d.mkdir(parents=True, exist_ok=True)
+    # Seed user blocklist if it doesn't exist
+    user_bl = USER_BLOCKLISTS_DIR / "user_blocklist.txt"
+    if not user_bl.exists():
+        user_bl.write_text(USER_BLOCKLIST_TEMPLATE, encoding="utf-8")
 
 
 def main():
@@ -64,6 +82,11 @@ def main():
         metavar="PATH",
         help="Override the base directory (default: ~/PII_Buddy)",
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Download latest blocklists from GitHub",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -81,6 +104,16 @@ def main():
         cfg.ALL_DIRS = [cfg.INPUT_DIR, cfg.OUTPUT_DIR, cfg.MAPPINGS_DIR, cfg.ORIGINALS_DIR, cfg.LOGS_DIR]
 
     ensure_dirs()
+
+    if args.update:
+        from pii_buddy.updater import update_blocklists
+        from pii_buddy.validation import reload_blocklist
+
+        updated = update_blocklists()
+        if updated:
+            reload_blocklist()
+            logger.info("Blocklist update complete.")
+        return
 
     if args.paste or args.clipboard:
         import json

@@ -46,7 +46,23 @@ echo "Downloading spaCy language models..."
 
 # Create working directories
 BUDDY_DIR="${PII_BUDDY_DIR:-$HOME/PII_Buddy}"
-mkdir -p "$BUDDY_DIR/input" "$BUDDY_DIR/output" "$BUDDY_DIR/mappings" "$BUDDY_DIR/originals" "$BUDDY_DIR/logs"
+mkdir -p "$BUDDY_DIR/input" "$BUDDY_DIR/output" "$BUDDY_DIR/mappings" "$BUDDY_DIR/originals" "$BUDDY_DIR/logs" "$BUDDY_DIR/blocklists"
+
+# Seed user blocklist if it doesn't exist
+if [ ! -f "$BUDDY_DIR/blocklists/user_blocklist.txt" ]; then
+    cat > "$BUDDY_DIR/blocklists/user_blocklist.txt" << 'BLOCKLIST'
+# Your personal blocklist — terms here will NEVER be treated as a person's name.
+# One per line, case-insensitive. Lines starting with # are comments.
+#
+# This file is yours and will never be overwritten by updates.
+# Add company names, product names, or any terms that get incorrectly redacted.
+#
+# Examples:
+# My Company Name
+# Specific Product Name
+# Internal Project Codename
+BLOCKLIST
+fi
 
 echo ""
 echo "Setup complete."
