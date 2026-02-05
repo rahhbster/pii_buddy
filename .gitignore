@@ -10,4 +10,5 @@ output/
 mappings/
 originals/
 logs/
+*.backup_*.txt
 .DS_Store

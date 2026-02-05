@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import shutil
+import subprocess
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -18,24 +21,61 @@ RAW_URL = (
     f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_BLOCKLIST_PATH}"
 )
 
+API_URL = (
+    f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_BLOCKLIST_PATH}"
+    f"?ref={GITHUB_BRANCH}"
+)
+
+
+def _fetch_via_gh_cli() -> str | None:
+    """Try fetching via gh CLI (handles private repo auth)."""
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{GITHUB_REPO}/contents/{GITHUB_BLOCKLIST_PATH}",
+             "-q", ".content"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            content_b64 = result.stdout.strip().replace("\n", "")
+            return base64.b64decode(content_b64).decode("utf-8")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _fetch_via_raw_url() -> str | None:
+    """Try fetching via raw.githubusercontent.com (public repos only)."""
+    try:
+        req = urllib.request.Request(RAW_URL, headers={"User-Agent": "PII-Buddy-Updater"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.read().decode("utf-8")
+    except Exception:
+        pass
+    return None
+
 
 def update_blocklists() -> bool:
     """
     Fetch the latest person_blocklist.txt from GitHub and replace the local copy.
+    Uses gh CLI for private repos, falls back to raw URL for public repos.
     Returns True if the blocklist was updated, False if already up to date.
     """
     target = PACKAGE_BLOCKLISTS_DIR / "person_blocklist.txt"
 
-    logger.info(f"Fetching latest blocklist from GitHub...")
-    logger.info(f"  URL: {RAW_URL}")
+    logger.info("Fetching latest blocklist from GitHub...")
 
-    try:
-        req = urllib.request.Request(RAW_URL, headers={"User-Agent": "PII-Buddy-Updater"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            remote_content = resp.read().decode("utf-8")
-    except Exception as e:
-        logger.error(f"Failed to download blocklist: {e}")
-        return False
+    # Try gh CLI first (works with private repos), then raw URL
+    remote_content = _fetch_via_gh_cli()
+    if remote_content:
+        logger.info("  Downloaded via GitHub CLI.")
+    else:
+        remote_content = _fetch_via_raw_url()
+        if remote_content:
+            logger.info("  Downloaded via raw URL.")
+        else:
+            logger.error("Failed to download blocklist. Check your internet connection.")
+            logger.error("  If the repo is private, make sure `gh auth login` is set up.")
+            return False
 
     # Read current content
     current_content = ""
