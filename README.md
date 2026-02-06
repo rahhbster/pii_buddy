@@ -4,6 +4,20 @@ A lightweight utility that watches a folder on your computer and automatically r
 
 Built for processing resumes, transcripts, and other documents where PII needs to be stripped before sharing or review.
 
+## Download & Install (macOS)
+
+The fastest way to get started on a Mac:
+
+1. Go to [**Releases**](https://github.com/rahhbster/pii_buddy/releases/latest) and download **`PII_Buddy.dmg`**
+2. Open the DMG and drag **PII Buddy** to your **Applications** folder
+3. Double-click **PII Buddy** from Applications or Launchpad
+
+On first launch, PII Buddy will walk you through a one-time setup (~2-3 min) that creates a Python environment and downloads language models. After that it starts instantly.
+
+> **Requirement:** Python 3.9+ must already be installed. If you don't have it: `brew install python@3.12` or download from [python.org](https://www.python.org/downloads/).
+
+For manual installation or Linux, see [Installation](#installation) below.
+
 ## What It Redacts
 
 | PII Type | Example Input | Replacement |
@@ -465,7 +479,9 @@ pii_buddy/
 ├── docs/
 │   └── cloud_verification_architecture.md   # Full verification design spec
 ├── extras/
-│   └── create_mac_app.sh   # Build a .app bundle for the menu bar app
+│   ├── create_mac_app.sh     # Build a .app bundle for the menu bar app
+│   ├── build_dmg.sh          # Build distributable PII_Buddy.dmg
+│   └── first_run_setup.sh    # First-launch setup (runs in Terminal from .app)
 ├── setup.sh             # One-command setup
 ├── run.sh               # One-command run
 └── requirements.txt     # Python dependencies
