@@ -8,6 +8,7 @@ Usage:
     python main.py --paste          Paste text via stdin, get redacted output
     python main.py --clipboard      Read clipboard, redact, write back to clipboard
     python main.py --restore REDACTED_FILE MAPPING_FILE   Restore PII
+    python main.py --menubar           Mac menu bar app (requires: pip install rumps)
 
 Set PII_BUDDY_DIR env var to change the base folder (default: ~/PII_Buddy).
 """
@@ -88,6 +89,11 @@ def main():
         action="store_true",
         help="Download latest blocklists from GitHub",
     )
+    parser.add_argument(
+        "--menubar",
+        action="store_true",
+        help="Launch Mac menu bar app (requires: pip install rumps)",
+    )
     # Output format flags
     parser.add_argument(
         "--same-format",
@@ -144,6 +150,11 @@ def main():
 
     setup_logging()
     logger = logging.getLogger("pii_buddy")
+
+    if args.menubar:
+        from pii_buddy.menubar import main as menubar_main
+        menubar_main()
+        return
 
     # Override base dir if requested
     if args.dir:
