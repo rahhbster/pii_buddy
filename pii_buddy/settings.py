@@ -23,6 +23,13 @@ SETTINGS_TEMPLATE = """\
 # tag = PII_FREE        # empty = no prefix, appends _redacted
 # overwrite = false
 # text_output = false
+
+[verify]
+# enabled = false
+# api_key =
+# endpoint = https://api.piibuddy.dev/v1
+# confidence_threshold = 0.7
+# canaries = false
 """
 
 
@@ -37,6 +44,11 @@ class Settings:
     keep_name: bool = False           # preserve original filename exactly
     overwrite: bool = False           # replace input file (backs up original)
     text_output: bool = False         # also produce .txt alongside formatted output
+    verify_enabled: bool = False      # enable cloud verification after local redaction
+    verify_api_key: str = ""          # PII Buddy Verify API key
+    verify_endpoint: str = "https://api.piibuddy.dev/v1"
+    verify_confidence: float = 0.7    # minimum confidence threshold for findings
+    verify_canaries: bool = False     # inject canary PII to test provider accuracy
 
     @classmethod
     def defaults(cls) -> "Settings":
@@ -69,6 +81,18 @@ def load_config_file(base_dir: Path) -> dict:
     if parser.has_option("output", "text_output"):
         values["text_output"] = parser.getboolean("output", "text_output")
 
+    # [verify] section
+    if parser.has_option("verify", "enabled"):
+        values["verify_enabled"] = parser.getboolean("verify", "enabled")
+    if parser.has_option("verify", "api_key"):
+        values["verify_api_key"] = parser.get("verify", "api_key").strip()
+    if parser.has_option("verify", "endpoint"):
+        values["verify_endpoint"] = parser.get("verify", "endpoint").strip()
+    if parser.has_option("verify", "confidence_threshold"):
+        values["verify_confidence"] = parser.getfloat("verify", "confidence_threshold")
+    if parser.has_option("verify", "canaries"):
+        values["verify_canaries"] = parser.getboolean("verify", "canaries")
+
     return values
 
 
@@ -79,6 +103,10 @@ def resolve_settings(
     cli_text_output: bool = False,
     cli_tag: str = None,
     cli_keep_name: bool = False,
+    cli_verify: bool = False,
+    cli_verify_key: str = None,
+    cli_verify_endpoint: str = None,
+    cli_verify_confidence: float = None,
 ) -> Settings:
     """
     Three-tier merge: CLI flags > settings.conf > hardcoded defaults.
@@ -129,6 +157,40 @@ def resolve_settings(
     input_dir = base_dir / input_rel
     output_dir = base_dir / output_rel
 
+    # --- verify ---
+    verify_enabled = defaults.verify_enabled
+    if "verify_enabled" in conf:
+        verify_enabled = conf["verify_enabled"]
+    if cli_verify:
+        verify_enabled = True
+
+    verify_api_key = defaults.verify_api_key
+    if "verify_api_key" in conf:
+        verify_api_key = conf["verify_api_key"]
+    if cli_verify_key is not None:
+        verify_api_key = cli_verify_key
+
+    verify_endpoint = defaults.verify_endpoint
+    if "verify_endpoint" in conf:
+        verify_endpoint = conf["verify_endpoint"]
+    if cli_verify_endpoint is not None:
+        verify_endpoint = cli_verify_endpoint
+
+    verify_confidence = defaults.verify_confidence
+    if "verify_confidence" in conf:
+        verify_confidence = conf["verify_confidence"]
+    if cli_verify_confidence is not None:
+        verify_confidence = cli_verify_confidence
+
+    verify_canaries = defaults.verify_canaries
+    if "verify_canaries" in conf:
+        verify_canaries = conf["verify_canaries"]
+
+    # --verify requires an API key
+    if verify_enabled and not verify_api_key:
+        logger.warning("--verify requires an API key (--verify-key or settings.conf)")
+        verify_enabled = False
+
     return Settings(
         base_dir=base_dir,
         input_dir=input_dir,
@@ -138,6 +200,11 @@ def resolve_settings(
         keep_name=keep_name,
         overwrite=overwrite,
         text_output=text_output,
+        verify_enabled=verify_enabled,
+        verify_api_key=verify_api_key,
+        verify_endpoint=verify_endpoint,
+        verify_confidence=verify_confidence,
+        verify_canaries=verify_canaries,
     )
 
 

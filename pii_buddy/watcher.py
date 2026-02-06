@@ -98,6 +98,13 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         # 3. Redact
         redacted_text, mapping = redact(text, entities)
 
+        # 3.5 Cloud verification (optional)
+        if settings.verify_enabled and settings.verify_api_key:
+            from .verifier import verify_and_patch
+            redacted_text, mapping = verify_and_patch(
+                redacted_text, mapping, settings
+            )
+
         # 4. Redact the filename and apply tag
         clean_name = _redact_filename(filepath.stem, mapping.get("persons", {}))
         tagged_name = _apply_tag(clean_name, settings)

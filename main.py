@@ -115,6 +115,31 @@ def main():
         action="store_true",
         help="Keep original filename (output goes to output/ folder)",
     )
+    # Verify flags
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Enable cloud verification after local redaction",
+    )
+    parser.add_argument(
+        "--verify-key",
+        metavar="KEY",
+        default=None,
+        help="PII Buddy Verify API key",
+    )
+    parser.add_argument(
+        "--verify-endpoint",
+        metavar="URL",
+        default=None,
+        help="Override verify API endpoint (default: https://api.piibuddy.dev/v1)",
+    )
+    parser.add_argument(
+        "--verify-confidence",
+        metavar="N",
+        type=float,
+        default=None,
+        help="Minimum confidence threshold for verify findings (default: 0.7)",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -147,6 +172,10 @@ def main():
         cli_text_output=args.text_output,
         cli_tag=args.tag,
         cli_keep_name=args.keep_name,
+        cli_verify=args.verify,
+        cli_verify_key=args.verify_key,
+        cli_verify_endpoint=args.verify_endpoint,
+        cli_verify_confidence=args.verify_confidence,
     )
 
     # Apply resolved paths back to config module (for code that reads config directly)
@@ -187,6 +216,13 @@ def main():
         entities = detect_pii(text)
         logger.info(f"Found {len(entities)} PII entities.")
         redacted_text, mapping = redact(text, entities)
+
+        # Cloud verification (optional)
+        if settings.verify_enabled and settings.verify_api_key:
+            from pii_buddy.verifier import verify_and_patch
+            redacted_text, mapping = verify_and_patch(
+                redacted_text, mapping, settings
+            )
 
         # Save mapping file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -277,6 +313,8 @@ def main():
         logger.info(f"Mode:     overwrite (originals backed up)")
     if settings.tag != "PII_FREE":
         logger.info(f"Tag:      {settings.tag!r}")
+    if settings.verify_enabled:
+        logger.info(f"Verify:   enabled ({settings.verify_endpoint})")
     logger.info("")
     watch(cfg.INPUT_DIR, settings)
 
