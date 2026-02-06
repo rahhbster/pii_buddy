@@ -165,6 +165,50 @@ Re-insert PII into a redacted file using its mapping:
 
 This creates a `RESTORED_sc_resume.txt` file in the output folder.
 
+### Mac Menu Bar App (optional)
+
+A one-click menu bar shortcut for clipboard PII removal. Not required for normal use.
+
+```bash
+# Install the extra dependency
+pip install rumps
+
+# Run from terminal
+./run.sh --menubar
+```
+
+Or create a proper Mac app you can add to Login Items:
+
+```bash
+./extras/create_mac_app.sh
+open ~/Applications/PII\ Buddy.app
+```
+
+This puts **"PII"** in your menu bar. Click it and choose **"Remove PII from Clipboard"** — it reads your clipboard, redacts PII, copies the result back, and shows a notification. **"Restore Last Clipboard"** reverses the most recent redaction.
+
+To auto-start: System Settings > General > Login Items > add "PII Buddy".
+
+### Cloud Verification (optional)
+
+After local redaction, optionally send the already-redacted text to a cloud LLM to catch what spaCy missed (especially international/unusual names). The text is sharded, shuffled, and tag-neutralized before leaving your machine.
+
+```bash
+./run.sh --verify --verify-key YOUR_API_KEY --once resume.pdf
+```
+
+Or configure in `settings.conf`:
+
+```ini
+[verify]
+enabled = true
+api_key = your-api-key-here
+# endpoint = https://api.piibuddy.dev/v1
+# confidence_threshold = 0.7
+# canaries = false
+```
+
+See [docs/cloud_verification_architecture.md](docs/cloud_verification_architecture.md) for the full design, security analysis, and API specification.
+
 ### Output Format Options
 
 By default, all output is plain text (`.txt`). Use these flags to control the output format:
@@ -211,6 +255,13 @@ PII Buddy reads settings from `~/PII_Buddy/settings.conf` (created automatically
 # tag = PII_FREE        # empty = no prefix, appends _redacted
 # overwrite = false
 # text_output = false
+
+[verify]
+# enabled = false
+# api_key =
+# endpoint = https://api.piibuddy.dev/v1
+# confidence_threshold = 0.7
+# canaries = false
 ```
 
 Priority: CLI flags > settings.conf > hardcoded defaults.
@@ -390,7 +441,7 @@ Then edit `pii_buddy/detector.py` and change `SPACY_MODEL = "en_core_web_md"` to
 
 ```
 pii_buddy/
-├── main.py              # Entry point (watch, --once, --paste, --clipboard, --restore, --update)
+├── main.py              # Entry point (watch, --once, --paste, --clipboard, --restore, --menubar)
 ├── pii_buddy/
 │   ├── config.py        # Folder paths, supported extensions, tag templates, GitHub config
 │   ├── settings.py      # Settings file loading, CLI/config/default merging
@@ -402,10 +453,19 @@ pii_buddy/
 │   ├── restorer.py      # Reverse redaction using mapping files
 │   ├── watcher.py       # Folder monitoring, file pipeline, filename redaction
 │   ├── updater.py       # Download latest blocklists from GitHub
+│   ├── menubar.py       # Optional Mac menu bar app (requires rumps)
+│   ├── sharder.py       # Sentence sharding, tag neutralization, shuffling
+│   ├── verify_client.py # HTTP client for cloud Verify API
+│   ├── verifier.py      # Verification orchestrator (shard -> verify -> patch)
+│   ├── canary.py        # Optional synthetic PII injection for calibration
 │   └── data/
 │       └── blocklists/
 │           ├── person_blocklist.txt   # Official blocklist (updated via --update)
 │           └── custom_blocklist.txt   # Package-level custom blocklist
+├── docs/
+│   └── cloud_verification_architecture.md   # Full verification design spec
+├── extras/
+│   └── create_mac_app.sh   # Build a .app bundle for the menu bar app
 ├── setup.sh             # One-command setup
 ├── run.sh               # One-command run
 └── requirements.txt     # Python dependencies
