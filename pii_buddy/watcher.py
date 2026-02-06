@@ -22,6 +22,8 @@ from .config import (
 from .detector import detect_pii
 from .extractor import extract_text
 from .redactor import redact
+from .settings import Settings
+from .writers import write_output, write_txt
 
 logger = logging.getLogger("pii_buddy")
 
@@ -56,8 +58,24 @@ def _redact_filename(filename: str, person_map: dict) -> str:
     return redacted_stem + suffix
 
 
-def process_file(filepath: Path) -> bool:
+def _apply_tag(clean_name: str, settings: Settings) -> str:
+    """Apply filename tag based on settings.
+
+    Returns the final filename stem (no extension).
+    """
+    if settings.keep_name:
+        return clean_name
+    if settings.tag:
+        return f"{settings.tag}_{clean_name}"
+    # Empty tag — use _redacted suffix
+    return f"{clean_name}_redacted"
+
+
+def process_file(filepath: Path, settings: Settings = None) -> bool:
     """Process a single file. Returns True on success."""
+    if settings is None:
+        settings = Settings.defaults()
+
     if filepath.suffix.lower() not in SUPPORTED_EXTENSIONS:
         logger.warning(f"Skipping unsupported file: {filepath.name}")
         return False
@@ -65,6 +83,8 @@ def process_file(filepath: Path) -> bool:
     logger.info(f"Processing: {filepath.name}")
 
     try:
+        input_suffix = filepath.suffix.lower()
+
         # 1. Extract text
         text = extract_text(filepath)
         if not text.strip():
@@ -78,13 +98,48 @@ def process_file(filepath: Path) -> bool:
         # 3. Redact
         redacted_text, mapping = redact(text, entities)
 
-        # 4. Redact the filename too
+        # 4. Redact the filename and apply tag
         clean_name = _redact_filename(filepath.stem, mapping.get("persons", {}))
-        output_path = OUTPUT_DIR / f"PII_FREE_{clean_name}.txt"
-        output_path.write_text(redacted_text, encoding="utf-8")
-        logger.info(f"  Output: {output_path.name}")
+        tagged_name = _apply_tag(clean_name, settings)
 
-        # 5. Save mapping for reversibility
+        # 5. Determine output location and write
+        if settings.overwrite:
+            # Overwrite mode: back up original, then write output to input location
+            backup_dest = ORIGINALS_DIR / filepath.name
+            shutil.copy2(str(filepath), str(backup_dest))
+            logger.info(f"  Backup: originals/{filepath.name}")
+
+            # Write in same format to the original file's location
+            output_path = write_output(
+                redacted_text,
+                filepath.parent / filepath.stem,
+                "same",
+                input_suffix,
+            )
+            logger.info(f"  Overwritten: {output_path.name}")
+        else:
+            output_dir = settings.output_dir or OUTPUT_DIR
+            # Write primary output
+            output_path = write_output(
+                redacted_text,
+                output_dir / tagged_name,
+                settings.output_format,
+                input_suffix,
+            )
+            logger.info(f"  Output: {output_path.name}")
+
+            # Write additional .txt if text_output is set and primary isn't .txt
+            if settings.text_output and output_path.suffix.lower() != ".txt":
+                txt_path = output_dir / f"{tagged_name}.txt"
+                write_txt(redacted_text, txt_path)
+                logger.info(f"  Text output: {txt_path.name}")
+
+            # Move original to originals folder
+            dest = ORIGINALS_DIR / filepath.name
+            shutil.move(str(filepath), str(dest))
+            logger.info(f"  Original moved to: originals/{filepath.name}")
+
+        # 6. Save mapping for reversibility
         mapping["metadata"] = {
             "original_file": filepath.name,
             "output_file": output_path.name,
@@ -97,11 +152,6 @@ def process_file(filepath: Path) -> bool:
             encoding="utf-8",
         )
         logger.info(f"  Mapping: {mapping_path.name}")
-
-        # 6. Move original to originals folder
-        dest = ORIGINALS_DIR / filepath.name
-        shutil.move(str(filepath), str(dest))
-        logger.info(f"  Original moved to: originals/{filepath.name}")
 
         return True
 
@@ -122,6 +172,10 @@ def cleanup_originals():
 
 
 class NewFileHandler(FileSystemEventHandler):
+    def __init__(self, settings: Settings = None):
+        super().__init__()
+        self.settings = settings or Settings.defaults()
+
     def on_created(self, event):
         if event.is_directory:
             return
@@ -130,7 +184,7 @@ class NewFileHandler(FileSystemEventHandler):
             return
         # Small delay to let file finish writing
         time.sleep(1)
-        process_file(filepath)
+        process_file(filepath, self.settings)
 
     def on_moved(self, event):
         """Also handle files moved into the folder."""
@@ -140,12 +194,12 @@ class NewFileHandler(FileSystemEventHandler):
         if filepath.suffix.lower() not in SUPPORTED_EXTENSIONS:
             return
         time.sleep(1)
-        process_file(filepath)
+        process_file(filepath, self.settings)
 
 
-def watch(input_dir: Path = INPUT_DIR):
+def watch(input_dir: Path = INPUT_DIR, settings: Settings = None):
     """Start watching the input directory. Blocks until interrupted."""
-    handler = NewFileHandler()
+    handler = NewFileHandler(settings)
     observer = Observer()
     observer.schedule(handler, str(input_dir), recursive=False)
     observer.start()

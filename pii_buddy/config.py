@@ -19,6 +19,9 @@ SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
 # How long to keep originals before cleanup (hours)
 ORIGINALS_RETENTION_HOURS = 24
 
+# Settings file
+SETTINGS_FILENAME = "settings.conf"
+
 # GitHub repo for blocklist updates
 GITHUB_REPO = "rahhbster/pii_buddy"
 GITHUB_BRANCH = "main"

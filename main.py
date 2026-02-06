@@ -13,6 +13,7 @@ Set PII_BUDDY_DIR env var to change the base folder (default: ~/PII_Buddy).
 """
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -87,6 +88,33 @@ def main():
         action="store_true",
         help="Download latest blocklists from GitHub",
     )
+    # Output format flags
+    parser.add_argument(
+        "--same-format",
+        action="store_true",
+        help="Output matches input format (PDF→PDF, DOCX→DOCX)",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace input file with redacted version (backs up original)",
+    )
+    parser.add_argument(
+        "--text-output",
+        action="store_true",
+        help="Also produce a .txt version alongside formatted output",
+    )
+    parser.add_argument(
+        "--tag",
+        metavar="TAG",
+        default=None,
+        help="Customize filename prefix (default: PII_FREE). Empty string = no prefix, appends _redacted",
+    )
+    parser.add_argument(
+        "--keep-name",
+        action="store_true",
+        help="Keep original filename (output goes to output/ folder)",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -104,6 +132,26 @@ def main():
         cfg.ALL_DIRS = [cfg.INPUT_DIR, cfg.OUTPUT_DIR, cfg.MAPPINGS_DIR, cfg.ORIGINALS_DIR, cfg.LOGS_DIR]
 
     ensure_dirs()
+
+    # Resolve settings: CLI flags > settings.conf > hardcoded defaults
+    import pii_buddy.config as cfg
+    from pii_buddy.settings import resolve_settings, seed_settings_file
+
+    base_dir = cfg.BASE_DIR
+    seed_settings_file(base_dir)
+
+    settings = resolve_settings(
+        base_dir=base_dir,
+        cli_same_format=args.same_format,
+        cli_overwrite=args.overwrite,
+        cli_text_output=args.text_output,
+        cli_tag=args.tag,
+        cli_keep_name=args.keep_name,
+    )
+
+    # Apply resolved paths back to config module (for code that reads config directly)
+    cfg.INPUT_DIR = settings.input_dir
+    cfg.OUTPUT_DIR = settings.output_dir
 
     if args.update:
         from pii_buddy.updater import update_blocklists
@@ -147,7 +195,7 @@ def main():
             "processed_at": datetime.now().isoformat(),
             "entities_found": len(entities),
         }
-        mapping_path = MAPPINGS_DIR / f"pasted_{timestamp}.map.json"
+        mapping_path = cfg.MAPPINGS_DIR / f"pasted_{timestamp}.map.json"
         mapping_path.write_text(
             json.dumps(mapping, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -171,9 +219,25 @@ def main():
 
         redacted_path = Path(args.restore[0])
         mapping_path = Path(args.restore[1])
+
+        # Read mapping to find the original tag pattern
+        mapping_data = json.loads(mapping_path.read_text(encoding="utf-8")) if mapping_path.exists() else {}
+        original_file = mapping_data.get("metadata", {}).get("original_file", "")
+
         text = redacted_path.read_text(encoding="utf-8")
         restored = restore(text, mapping_path)
-        out_path = redacted_path.parent / redacted_path.name.replace("PII_FREE_", "RESTORED_")
+
+        # Build restored filename — strip known prefixes/suffixes
+        restored_name = redacted_path.name
+        # Try stripping tag prefix
+        if settings.tag and restored_name.startswith(settings.tag + "_"):
+            restored_name = restored_name[len(settings.tag) + 1:]
+        elif restored_name.startswith("PII_FREE_"):
+            restored_name = restored_name[len("PII_FREE_"):]
+        # Add RESTORED_ prefix
+        restored_name = f"RESTORED_{restored_name}"
+
+        out_path = redacted_path.parent / restored_name
         out_path.write_text(restored, encoding="utf-8")
         logger.info(f"Restored: {out_path}")
         return
@@ -185,12 +249,17 @@ def main():
         if not filepath.exists():
             logger.error(f"File not found: {filepath}")
             sys.exit(1)
-        # If file is already in input dir, process in place; otherwise copy it
-        dest = INPUT_DIR / filepath.name
-        if filepath != dest.resolve():
-            import shutil
-            shutil.copy2(str(filepath), str(dest))
-        success = process_file(dest)
+
+        if settings.overwrite:
+            # Overwrite mode: process in place, no copy needed
+            success = process_file(filepath, settings)
+        else:
+            # Copy to input dir if not already there
+            dest = cfg.INPUT_DIR / filepath.name
+            if filepath != dest.resolve():
+                import shutil
+                shutil.copy2(str(filepath), str(dest))
+            success = process_file(dest, settings)
         sys.exit(0 if success else 1)
 
     # Default: watch mode
@@ -199,11 +268,17 @@ def main():
     logger.info("=" * 50)
     logger.info("PII Buddy")
     logger.info("=" * 50)
-    logger.info(f"Input:    {INPUT_DIR}")
-    logger.info(f"Output:   {OUTPUT_DIR}")
-    logger.info(f"Mappings: {MAPPINGS_DIR}")
+    logger.info(f"Input:    {cfg.INPUT_DIR}")
+    logger.info(f"Output:   {cfg.OUTPUT_DIR}")
+    logger.info(f"Mappings: {cfg.MAPPINGS_DIR}")
+    if settings.output_format == "same":
+        logger.info(f"Format:   same as input")
+    if settings.overwrite:
+        logger.info(f"Mode:     overwrite (originals backed up)")
+    if settings.tag != "PII_FREE":
+        logger.info(f"Tag:      {settings.tag!r}")
     logger.info("")
-    watch()
+    watch(cfg.INPUT_DIR, settings)
 
 
 if __name__ == "__main__":

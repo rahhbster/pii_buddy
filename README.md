@@ -48,7 +48,7 @@ cd pii_buddy
 Setup takes about 2-3 minutes. It will:
 1. Find a suitable Python 3.9+ on your system
 2. Create an isolated virtual environment in `.venv/`
-3. Install dependencies (spaCy, watchdog, pdfplumber, python-docx)
+3. Install dependencies (spaCy, watchdog, pdfplumber, python-docx, fpdf2)
 4. Download spaCy English language models (`en_core_web_md` ~40MB, `en_core_web_sm` ~12MB fallback)
 5. Create the working folder structure at `~/PII_Buddy/`
 
@@ -58,12 +58,13 @@ After setup, a `PII_Buddy` folder is created in your home directory:
 
 ```
 ~/PII_Buddy/
-├── input/       # Drop files here to be processed
-├── output/      # Redacted files appear here (PII_FREE_*.txt)
-├── mappings/    # JSON mapping files for reversibility
-├── originals/   # Originals are moved here after processing
-├── blocklists/  # Your personal blocklist (never overwritten by updates)
-└── logs/        # Processing logs
+├── input/          # Drop files here to be processed
+├── output/         # Redacted files appear here (PII_FREE_*.txt)
+├── mappings/       # JSON mapping files for reversibility
+├── originals/      # Originals are moved here after processing
+├── blocklists/     # Your personal blocklist (never overwritten by updates)
+├── logs/           # Processing logs
+└── settings.conf   # Configuration file (all values commented out by default)
 ```
 
 To use a different location, set the `PII_BUDDY_DIR` environment variable before running setup or the tool:
@@ -164,6 +165,56 @@ Re-insert PII into a redacted file using its mapping:
 
 This creates a `RESTORED_sc_resume.txt` file in the output folder.
 
+### Output Format Options
+
+By default, all output is plain text (`.txt`). Use these flags to control the output format:
+
+```bash
+# Output in same format as input (PDF→PDF, DOCX→DOCX)
+./run.sh --same-format --once resume.pdf
+
+# Replace input file with redacted version (original backed up to originals/)
+./run.sh --overwrite --once resume.docx
+
+# Produce both formatted output and a .txt version
+./run.sh --same-format --text-output --once resume.docx
+```
+
+**Limitations:**
+- DOCX output preserves paragraph structure but not bold/italic/font formatting
+- PDF output is simple text rendering, not layout-preserving
+
+### Filename Customization
+
+```bash
+# Custom tag prefix (default: PII_FREE)
+./run.sh --tag REDACTED --once resume.pdf    # → REDACTED_resume.txt
+
+# No prefix, uses _redacted suffix instead
+./run.sh --tag "" --once resume.pdf          # → resume_redacted.txt
+
+# Keep original filename (output goes to output/ folder)
+./run.sh --keep-name --once resume.pdf       # → resume.txt
+```
+
+### Settings File
+
+PII Buddy reads settings from `~/PII_Buddy/settings.conf` (created automatically on first run). All values are commented out by default. CLI flags always override settings file values.
+
+```ini
+[paths]
+# input_dir = input
+# output_dir = output
+
+[output]
+# format = txt          # "txt" or "same"
+# tag = PII_FREE        # empty = no prefix, appends _redacted
+# overwrite = false
+# text_output = false
+```
+
+Priority: CLI flags > settings.conf > hardcoded defaults.
+
 ### Custom Directory
 
 Override the working directory for a single run:
@@ -174,11 +225,11 @@ Override the working directory for a single run:
 
 ## Supported File Types
 
-| Format | Input | Output |
-|---|---|---|
-| PDF (`.pdf`) | Extracts text from all pages | Plain text (`.txt`) |
-| Word (`.docx`) | Extracts paragraph text | Plain text (`.txt`) |
-| Plain text (`.txt`) | Read directly | Plain text (`.txt`) |
+| Format | Input | Default Output | With `--same-format` |
+|---|---|---|---|
+| PDF (`.pdf`) | Extracts text from all pages | Plain text (`.txt`) | PDF (`.pdf`) |
+| Word (`.docx`) | Extracts paragraph text | Plain text (`.txt`) | Word (`.docx`) |
+| Plain text (`.txt`) | Read directly | Plain text (`.txt`) | Plain text (`.txt`) |
 
 ## How It Works
 
@@ -342,10 +393,12 @@ pii_buddy/
 ├── main.py              # Entry point (watch, --once, --paste, --clipboard, --restore, --update)
 ├── pii_buddy/
 │   ├── config.py        # Folder paths, supported extensions, tag templates, GitHub config
+│   ├── settings.py      # Settings file loading, CLI/config/default merging
 │   ├── detector.py      # PII detection (regex + spaCy NER + ALL CAPS + doc type)
 │   ├── validation.py    # Confidence scoring, blocklists, false positive filtering
 │   ├── redactor.py      # Tag replacement, name grouping, initials generation
 │   ├── extractor.py     # Text extraction from PDF / DOCX / TXT
+│   ├── writers.py       # Output writers (.txt, .docx, .pdf)
 │   ├── restorer.py      # Reverse redaction using mapping files
 │   ├── watcher.py       # Folder monitoring, file pipeline, filename redaction
 │   ├── updater.py       # Download latest blocklists from GitHub

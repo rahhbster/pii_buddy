@@ -64,6 +64,25 @@ if [ ! -f "$BUDDY_DIR/blocklists/user_blocklist.txt" ]; then
 BLOCKLIST
 fi
 
+# Seed settings.conf if it doesn't exist
+if [ ! -f "$BUDDY_DIR/settings.conf" ]; then
+    cat > "$BUDDY_DIR/settings.conf" << 'SETTINGS'
+# PII Buddy Settings
+# Uncomment and change values as needed. CLI flags override these settings.
+
+[paths]
+# input_dir = input
+# output_dir = output
+
+[output]
+# format = txt          # "txt" or "same"
+# tag = PII_FREE        # empty = no prefix, appends _redacted
+# overwrite = false
+# text_output = false
+SETTINGS
+    echo "  Created: $BUDDY_DIR/settings.conf"
+fi
+
 echo ""
 echo "Setup complete."
 echo "  Folder: $BUDDY_DIR"
