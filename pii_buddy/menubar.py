@@ -19,6 +19,15 @@ from pathlib import Path
 
 logger = logging.getLogger("pii_buddy")
 
+# Icon paths (relative to this file)
+_ICONS_DIR = Path(__file__).parent / "data" / "icons"
+_ICON_READY = str(_ICONS_DIR / "arbie_ready.png")
+_ICON_PROCESSING = str(_ICONS_DIR / "arbie_processing.png")
+_ICON_DONE = str(_ICONS_DIR / "arbie_done.png")
+
+# Seconds to show the "done" icon before reverting to "ready"
+_DONE_DISPLAY_SECONDS = 5
+
 
 def _require_rumps():
     try:
@@ -38,8 +47,12 @@ class PIIBuddyMenuBar:
         self._rumps = rumps
         self._last_mapping_path: Path | None = None
         self._processing = False
+        self._done_timer = None
 
-        self.app = rumps.App("PII Buddy", title="PII", quit_button=None)
+        # Use icon instead of text title; title=None removes text label
+        self.app = rumps.App(
+            "PII Buddy", icon=_ICON_READY, title=None, quit_button=None
+        )
         self.app.menu = [
             rumps.MenuItem(
                 "Remove PII from Clipboard", callback=self._on_remove_pii
@@ -61,6 +74,24 @@ class PIIBuddyMenuBar:
         except Exception:
             pass
 
+    # --- Icon state management ---
+
+    def _set_icon(self, icon_path: str):
+        """Update the menu bar icon. Safe to call from any thread."""
+        self.app.icon = icon_path
+
+    def _show_done_then_reset(self):
+        """Show done icon, then revert to ready after a delay."""
+        self._set_icon(_ICON_DONE)
+        # Cancel any existing timer
+        if self._done_timer:
+            self._done_timer.cancel()
+        self._done_timer = threading.Timer(
+            _DONE_DISPLAY_SECONDS, self._set_icon, args=[_ICON_READY]
+        )
+        self._done_timer.daemon = True
+        self._done_timer.start()
+
     # --- Menu callbacks ---
 
     def _on_remove_pii(self, sender):
@@ -68,6 +99,7 @@ class PIIBuddyMenuBar:
             return
         self._processing = True
         sender.title = "Processing..."
+        self._set_icon(_ICON_PROCESSING)
         threading.Thread(
             target=self._do_remove_pii,
             args=(sender,),
@@ -83,9 +115,12 @@ class PIIBuddyMenuBar:
             )
             return
         self._processing = True
+        self._set_icon(_ICON_PROCESSING)
         threading.Thread(target=self._do_restore, daemon=True).start()
 
     def _on_quit(self, _sender):
+        if self._done_timer:
+            self._done_timer.cancel()
         self._rumps.quit_application()
 
     # --- Processing (runs on background thread) ---
@@ -95,6 +130,7 @@ class PIIBuddyMenuBar:
             text = self._read_clipboard()
             if not text:
                 self._notify("Clipboard is empty.")
+                self._set_icon(_ICON_READY)
                 return
 
             from .config import BASE_DIR, MAPPINGS_DIR
@@ -109,6 +145,7 @@ class PIIBuddyMenuBar:
             entities = detect_pii(text)
             if not entities:
                 self._notify("No PII detected in clipboard text.")
+                self._set_icon(_ICON_READY)
                 return
 
             redacted_text, mapping = redact(text, entities)
@@ -145,9 +182,11 @@ class PIIBuddyMenuBar:
                 f"PII Removed! {len(entities)} items redacted. "
                 f"Copied back to clipboard."
             )
+            self._show_done_then_reset()
         except Exception as e:
             self._notify(f"Error: {e}")
             logger.error(f"Menu bar error: {e}", exc_info=True)
+            self._set_icon(_ICON_READY)
         finally:
             sender.title = "Remove PII from Clipboard"
             self._processing = False
@@ -157,14 +196,17 @@ class PIIBuddyMenuBar:
             text = self._read_clipboard()
             if not text:
                 self._notify("Clipboard is empty.")
+                self._set_icon(_ICON_READY)
                 return
 
             from .restorer import restore
             restored = restore(text, self._last_mapping_path)
             self._write_clipboard(restored)
             self._notify("PII Restored! Original text copied to clipboard.")
+            self._show_done_then_reset()
         except Exception as e:
             self._notify(f"Error: {e}")
+            self._set_icon(_ICON_READY)
         finally:
             self._processing = False
 
