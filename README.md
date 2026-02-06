@@ -107,34 +107,52 @@ Process one file and exit:
 ./run.sh --once /path/to/document.pdf
 ```
 
-### Clipboard Mode (macOS)
+### Copy/Paste Modes (no file needed)
 
-Reads from your clipboard, redacts PII, and puts the result back on your clipboard:
+Don't have a file? You can copy/paste text directly. There are three ways to do it:
+
+#### Option A: Clipboard Mode (easiest, macOS)
+
+Copy any text to your clipboard, run one command, and the redacted version replaces it:
 
 ```bash
+# 1. Copy text from anywhere (Cmd+C)
+# 2. Run:
 ./run.sh --clipboard
+# 3. Paste the redacted result anywhere (Cmd+V)
 ```
 
-Workflow: Copy text anywhere (Cmd+C) → run the command → paste the redacted version (Cmd+V).
+That's it — one command. The original text on your clipboard is replaced with the redacted version.
 
-### Paste Mode
+#### Option B: Paste Mode (interactive)
 
-Paste or pipe text directly via stdin:
+Run the command, paste text into the terminal, and get redacted output:
 
 ```bash
 ./run.sh --paste
 ```
 
-Then paste your text and press `Ctrl+D` when done. The redacted output prints to the terminal.
+1. Run the command above
+2. Paste your text into the terminal (Cmd+V)
+3. Press `Ctrl+D` on a new line (this signals "done")
+4. The redacted output prints below
 
-You can also pipe text in:
+#### Option C: Pipe Mode (for scripts or chaining)
+
+Pipe text from any source:
 
 ```bash
-cat notes.txt | ./run.sh --paste
+# From clipboard
 pbpaste | ./run.sh --paste
+
+# From a file
+cat notes.txt | ./run.sh --paste
+
+# From another command
+echo "Call John Smith at (555) 123-4567" | ./run.sh --paste
 ```
 
-Both clipboard and paste modes save a mapping file to `~/PII_Buddy/mappings/` so the redaction is still reversible.
+All three modes save a mapping file to `~/PII_Buddy/mappings/` so the redaction is still reversible.
 
 ### Restore PII
 
