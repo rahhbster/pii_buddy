@@ -57,6 +57,7 @@ def _load_prefs() -> dict:
         "show_in_menubar": True,
         "show_in_dock": False,
         "start_at_login": False,
+        "prompted_login": False,
     }
     try:
         if _PREFS_PATH.exists():
@@ -131,11 +132,15 @@ def _set_login_item(enabled: bool):
 def _set_dock_visible(visible: bool):
     """Toggle Dock icon visibility via PyObjC."""
     try:
-        from AppKit import NSApplication
+        from AppKit import NSApplication, NSImage
         # 0 = NSApplicationActivationPolicyRegular (show in Dock)
         # 1 = NSApplicationActivationPolicyAccessory (hide from Dock)
         policy = 0 if visible else 1
         NSApplication.sharedApplication().setActivationPolicy_(policy)
+        if visible:
+            icon = NSImage.alloc().initWithContentsOfFile_(_ICON_READY)
+            if icon:
+                NSApplication.sharedApplication().setApplicationIconImage_(icon)
     except ImportError:
         logger.warning("PyObjC not available — cannot toggle Dock visibility")
 
@@ -199,12 +204,38 @@ class PIIBuddyMenuBar:
         # Set up Dock right-click menu after a short delay
         threading.Thread(target=self._setup_dock_menu, daemon=True).start()
 
+        # Prompt to start at login on first launch (fires once after 2s)
+        if not self._prefs.get("prompted_login"):
+            self._login_prompt_timer = rumps.Timer(
+                self._prompt_start_at_login, 2
+            )
+            self._login_prompt_timer.start()
+
     def _preload(self):
         try:
             from .detector import get_nlp
             get_nlp()
         except Exception:
             pass
+
+    def _prompt_start_at_login(self, _timer):
+        """Ask user once whether to enable Start at Login."""
+        _timer.stop()
+        response = self._rumps.alert(
+            title="Start at Login?",
+            message=(
+                "Would you like PII Buddy to start automatically "
+                "when you log in?"
+            ),
+            ok="Yes",
+            cancel="No",
+        )
+        if response == 1:  # user clicked "Yes"
+            self._login_toggle.state = True
+            self._prefs["start_at_login"] = True
+            _set_login_item(True)
+        self._prefs["prompted_login"] = True
+        _save_prefs(self._prefs)
 
     # --- Dock right-click menu (PyObjC) ---
 
