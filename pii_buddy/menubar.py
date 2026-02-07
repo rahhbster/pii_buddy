@@ -191,8 +191,7 @@ class PIIBuddyMenuBar:
         ]
 
         # Apply saved preferences
-        if self._prefs["show_in_dock"]:
-            _set_dock_visible(True)
+        _set_dock_visible(self._prefs["show_in_dock"])
 
         # Pre-load spaCy in background so first click is fast
         threading.Thread(target=self._preload, daemon=True).start()

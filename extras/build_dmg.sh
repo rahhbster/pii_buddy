@@ -124,6 +124,38 @@ cat > "${CONTENTS}/MacOS/${APP_NAME}" << 'LAUNCHER'
 # Locate the bundled project inside the .app
 BUNDLE_DIR="$(cd "$(dirname "$0")/../Resources/pii_buddy" && pwd)"
 
+# ---- Check if running from a read-only volume (e.g. DMG) ----
+if ! touch "${BUNDLE_DIR}/.write_test" 2>/dev/null; then
+    # Find the .app bundle path (two levels up from MacOS/ → Contents/ → X.app/)
+    APP_BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"
+    APP_NAME="$(basename "$APP_BUNDLE")"
+    DEST="/Applications/${APP_NAME}"
+
+    result=$(osascript <<'APPLESCRIPT'
+display dialog "PII Buddy needs to be installed first." & return & return & "Copy to your Applications folder and launch?" with title "PII Buddy - Install" buttons {"Cancel", "Install & Launch"} default button "Install & Launch" with icon note
+return button returned of result
+APPLESCRIPT
+    )
+
+    if [ "$result" != "Install & Launch" ]; then
+        exit 0
+    fi
+
+    # Remove old version if present
+    rm -rf "$DEST"
+    # Copy app to /Applications
+    cp -R "${APP_BUNDLE}" "$DEST"
+    # Eject the DMG
+    VOLUME_PATH="$(cd "$(dirname "$0")/../../../.." && pwd)"
+    if [[ "$VOLUME_PATH" == /Volumes/* ]]; then
+        hdiutil detach "$VOLUME_PATH" -quiet 2>/dev/null &
+    fi
+    # Launch the installed copy
+    open "$DEST"
+    exit 0
+fi
+rm -f "${BUNDLE_DIR}/.write_test"
+
 # ---- Find Python 3.9+ on the system ----
 PYTHON=""
 for candidate in \
@@ -153,12 +185,11 @@ done
 
 if [ -z "$PYTHON" ]; then
     # Show a native macOS dialog — no Python found
-    button=$(osascript -e '
-    set r to display dialog "PII Buddy requires Python 3.9 or later.\n\nInstall it with:\n  brew install python@3.12\n\nOr download from python.org." \
-        with title "PII Buddy — Python Not Found" \
-        buttons {"Open python.org", "OK"} default button "OK" with icon caution
-    return button returned of r
-    ' 2>/dev/null || true)
+    button=$(osascript <<'APPLESCRIPT'
+set r to display dialog "PII Buddy requires Python 3.9 or later." & return & return & "Install it with:" & return & "  brew install python@3.12" & return & return & "Or download from python.org." with title "PII Buddy - Python Not Found" buttons {"Open python.org", "OK"} default button "OK" with icon caution
+return button returned of r
+APPLESCRIPT
+    )
     if [ "$button" = "Open python.org" ]; then
         open "https://www.python.org/downloads/"
     fi
@@ -168,12 +199,11 @@ fi
 # ---- Check for .venv (first-run detection) ----
 if [ ! -d "${BUNDLE_DIR}/.venv" ]; then
     # First run — show welcome dialog
-    result=$(osascript -e '
-    display dialog "Welcome to PII Buddy!\n\nFirst-time setup is needed. This will:\n\n  • Create a Python environment\n  • Install dependencies\n  • Download language models (~50 MB)\n\nThis takes about 2-3 minutes." \
-        with title "PII Buddy — Setup" \
-        buttons {"Cancel", "Set Up"} default button "Set Up" with icon note
-    return button returned of result
-    ' 2>/dev/null || echo "Cancel")
+    result=$(osascript <<'APPLESCRIPT'
+display dialog "Welcome to PII Buddy!" & return & return & "First-time setup is needed. This will:" & return & return & "  - Create a Python environment" & return & "  - Install dependencies" & return & "  - Download language models (~50 MB)" & return & return & "This takes about 2-3 minutes." with title "PII Buddy Setup" buttons {"Cancel", "Set Up"} default button "Set Up" with icon note
+return button returned of result
+APPLESCRIPT
+    )
 
     if [ "$result" != "Set Up" ]; then
         exit 0
@@ -186,13 +216,47 @@ if [ ! -d "${BUNDLE_DIR}/.venv" ]; then
     osascript -e "
     tell application \"Terminal\"
         activate
-        do script \"bash '${SETUP_SCRIPT}' '${BUNDLE_DIR}' '${PYTHON}'\"
+        set setupTab to do script \"bash '${SETUP_SCRIPT}' '${BUNDLE_DIR}' '${PYTHON}'\"
+        -- Wait for the setup script to finish, then close the tab
+        repeat
+            delay 2
+            if not busy of setupTab then exit repeat
+        end repeat
+        delay 1
+        close (every window whose selected tab is setupTab)
     end tell
-    "
+    " &
 else
-    # Normal launch — start menu bar app directly
-    cd "$BUNDLE_DIR"
-    exec .venv/bin/python -m pii_buddy.menubar
+    # Normal launch — use launchctl for proper GUI access without Terminal
+    PLIST="/tmp/dev.piibuddy.launcher.plist"
+    launchctl unload "$PLIST" 2>/dev/null
+    cat > "$PLIST" << PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.piibuddy.launcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${BUNDLE_DIR}/.venv/bin/python</string>
+        <string>-m</string>
+        <string>pii_buddy.menubar</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${BUNDLE_DIR}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>${BUNDLE_DIR}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+PLISTEOF
+    launchctl load "$PLIST"
 fi
 LAUNCHER
 
@@ -227,7 +291,7 @@ cat > "${CONTENTS}/Info.plist" << PLIST
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
     <key>LSUIElement</key>
-    <false/>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
 ${ICON_ENTRY}

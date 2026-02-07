@@ -95,9 +95,35 @@ echo "  Working folder: $BUDDY_DIR"
 echo "  Drop files into: $BUDDY_DIR/input/"
 echo ""
 echo "Starting PII Buddy..."
-echo "(You can close this terminal window.)"
 echo ""
 
-# Launch the menu bar app in the background
-cd "$PROJECT_DIR"
-nohup .venv/bin/python -m pii_buddy.menubar &>/dev/null &
+# Launch via launchctl for proper GUI access (menu bar icon, no Dock icon)
+PLIST="/tmp/dev.piibuddy.launcher.plist"
+launchctl unload "$PLIST" 2>/dev/null
+cat > "$PLIST" << PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.piibuddy.launcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${PROJECT_DIR}/.venv/bin/python</string>
+        <string>-m</string>
+        <string>pii_buddy.menubar</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${PROJECT_DIR}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>${PROJECT_DIR}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+PLISTEOF
+launchctl load "$PLIST"
