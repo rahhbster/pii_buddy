@@ -21,7 +21,7 @@ def verify_and_patch(redacted_text: str, mapping: dict, settings) -> tuple[str, 
     """Run cloud verification and apply additional redactions.
 
     Steps:
-        1. Neutralize initials-based tags (``<<SJ>>`` -> ``<<PERSON_A>>``)
+        1. Neutralize initials-based tags (``<NAME SJ>`` -> ``<<PERSON_A>>``)
         2. Shard text into sentences
         3. Optionally inject canary shards
         4. Shuffle and send to Verify API
@@ -114,17 +114,17 @@ def _apply_findings(
     initials_max: dict[str, int] = defaultdict(int)
 
     for tag in tags:
-        inner = tag.strip("<>")
-        # Numbered type tags: EMAIL_1, PHONE_2, etc.
-        m = re.match(r"^([A-Z]+)_(\d+)$", inner)
-        if m:
-            type_max[m.group(1)] = max(type_max[m.group(1)], int(m.group(2)))
-            continue
-        # Person tags: SJ, SJ2, ABC3, etc.
-        pm = re.match(r"^([A-Z]+?)(\d+)?$", inner)
+        # Person tags: <NAME SJ>, <NAME SJ2>, etc.
+        pm = re.match(r"^<NAME ([A-Z]+?)(\d+)?>$", tag)
         if pm:
             n = int(pm.group(2)) if pm.group(2) else 1
             initials_max[pm.group(1)] = max(initials_max[pm.group(1)], n)
+            continue
+        # Numbered type tags: <<EMAIL_1>>, <<PHONE_2>>, etc.
+        inner = tag.strip("<>")
+        m = re.match(r"^([A-Z]+)_(\d+)$", inner)
+        if m:
+            type_max[m.group(1)] = max(type_max[m.group(1)], int(m.group(2)))
 
     patched = text
     applied = 0
@@ -133,7 +133,7 @@ def _apply_findings(
         pii_text = finding.text
 
         # Skip if it's already a tag or contains tag markers
-        if "<<" in pii_text or ">>" in pii_text:
+        if "<NAME " in pii_text or "<<" in pii_text or ">>" in pii_text:
             continue
 
         # Skip if already redacted (text is a known original value)
@@ -149,9 +149,9 @@ def _apply_findings(
             initials = _make_initials(pii_text)
             initials_max[initials] += 1
             if initials_max[initials] > 1:
-                tag = f"<<{initials}{initials_max[initials]}>>"
+                tag = f"<NAME {initials}{initials_max[initials]}>"
             else:
-                tag = f"<<{initials}>>"
+                tag = f"<NAME {initials}>"
             persons[pii_text] = tag
         else:
             type_max[finding.entity_type] += 1

@@ -44,8 +44,8 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
 
     The mapping dict can be saved as JSON for later reversal:
     {
-        "tags": {"<<SJ>>": "Steve Johnson", "<<EMAIL_1>>": "steve@co.com", ...},
-        "persons": {"Steve Johnson": "<<SJ>>", "Steve": "<<SJ>>"},
+        "tags": {"<NAME SJ>": "Steve Johnson", "<<EMAIL_1>>": "steve@co.com", ...},
+        "persons": {"Steve Johnson": "<NAME SJ>", "Steve": "<NAME SJ>"},
     }
     """
     person_entities = [e for e in entities if e.label == "PERSON"]
@@ -62,9 +62,9 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
         initials = _make_initials(canonical_name)
         initials_count[initials] += 1
         if initials_count[initials] > 1:
-            tag = f"<<{initials}{initials_count[initials]}>>"
+            tag = f"<NAME {initials}{initials_count[initials]}>"
         else:
-            tag = f"<<{initials}>>"
+            tag = f"<NAME {initials}>"
         canonical_to_tag[canonical_name] = tag
 
     # Map every surface form to its tag
@@ -90,7 +90,7 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
 
     for ent in all_entities:
         if ent.label == "PERSON":
-            tag = surface_to_tag.get(ent.text, f"<<{_make_initials(ent.text)}>>")
+            tag = surface_to_tag.get(ent.text, f"<NAME {_make_initials(ent.text)}>")
         else:
             tag = value_to_tag.get(ent.text, f"<<{ent.label}>>")
         redacted = redacted[:ent.start] + tag + redacted[ent.end:]

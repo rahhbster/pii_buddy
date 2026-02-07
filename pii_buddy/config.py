@@ -29,7 +29,7 @@ GITHUB_BLOCKLIST_PATH = "pii_buddy/data/blocklists/person_blocklist.txt"
 
 # Tag formats for each PII type
 TAG_TEMPLATES = {
-    "PERSON": "<<{initials}>>",
+    "PERSON": "<NAME {initials}>",
     "EMAIL": "<<EMAIL_{n}>>",
     "PHONE": "<<PHONE_{n}>>",
     "SSN": "<<SSN_{n}>>",

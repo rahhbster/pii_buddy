@@ -45,14 +45,14 @@ def _redact_filename(filename: str, person_map: dict) -> str:
         for separator in ["_", "-", ".", " "]:
             name_variant = surface.lower().replace(" ", separator)
             if name_variant in redacted_stem.lower():
-                # Replace with initials (strip << >> from tag)
-                initials = tag.strip("<>").lower()
+                # Replace with initials from tag
+                initials = tag.removeprefix("<NAME ").removesuffix(">").lower() if tag.startswith("<NAME ") else tag.strip("<>").lower()
                 redacted_stem = re.sub(re.escape(name_variant), initials, redacted_stem, flags=re.IGNORECASE)
 
         # Also check for first/last names individually
         for part in surface.lower().split():
             if len(part) > 2 and part in redacted_stem.lower():
-                initials = tag.strip("<>").lower()
+                initials = tag.removeprefix("<NAME ").removesuffix(">").lower() if tag.startswith("<NAME ") else tag.strip("<>").lower()
                 redacted_stem = re.sub(r'\b' + re.escape(part) + r'\b', initials, redacted_stem, flags=re.IGNORECASE)
 
     return redacted_stem + suffix

@@ -40,7 +40,7 @@ def _letter_suffix(n: int) -> str:
 def neutralize_tags(text: str, mapping: dict) -> tuple[str, dict]:
     """Replace initials-based tags with generic sequential tags.
 
-    Converts ``<<SJ>>`` to ``<<PERSON_A>>``, ``<<EMAIL_1>>`` to
+    Converts ``<NAME SJ>`` to ``<<PERSON_A>>``, ``<<EMAIL_1>>`` to
     ``<<EMAIL_A>>``, etc.  This prevents initials-based re-identification
     when shards are sent to the cloud.
 
@@ -54,12 +54,12 @@ def neutralize_tags(text: str, mapping: dict) -> tuple[str, dict]:
     typed_tags: dict[str, list[str]] = {}
 
     for tag in tags:
-        inner = tag.strip("<>")
-        # Person tags: letters + optional collision digit (SJ, SJ2, ABC)
-        if re.match(r"^[A-Z]+\d*$", inner):
+        # Person tags: <NAME XX> or <NAME XX2>
+        if re.match(r"^<NAME [A-Z]+\d*>$", tag):
             person_tags.append(tag)
         else:
-            # Typed tags: EMAIL_1, PHONE_2, ADDR_1, etc.
+            # Typed tags: <<EMAIL_1>>, <<PHONE_2>>, <<ADDR_1>>, etc.
+            inner = tag.strip("<>")
             m = re.match(r"^([A-Z]+)_\d+$", inner)
             if m:
                 typed_tags.setdefault(m.group(1), []).append(tag)
@@ -163,10 +163,11 @@ def build_context(mapping: dict, doc_type: str = "general") -> dict:
     """
     counts: dict[str, int] = {}
     for tag in mapping.get("tags", {}):
-        inner = tag.strip("<>")
-        if re.match(r"^[A-Z]+\d*$", inner):
+        # Person tags: <NAME XX> or <NAME XX2>
+        if re.match(r"^<NAME [A-Z]+\d*>$", tag):
             counts["PERSON"] = counts.get("PERSON", 0) + 1
         else:
+            inner = tag.strip("<>")
             m = re.match(r"^([A-Z]+)_\d+$", inner)
             if m:
                 etype = m.group(1)
