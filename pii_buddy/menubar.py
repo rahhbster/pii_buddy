@@ -198,6 +198,15 @@ class PIIBuddyMenuBar:
         # Apply saved preferences
         _set_dock_visible(self._prefs["show_in_dock"])
 
+        # Always set Arbie as the app icon (used by alerts and Dock)
+        try:
+            from AppKit import NSApplication, NSImage
+            icon = NSImage.alloc().initWithContentsOfFile_(_ICON_READY)
+            if icon:
+                NSApplication.sharedApplication().setApplicationIconImage_(icon)
+        except ImportError:
+            pass
+
         # Pre-load spaCy in background so first click is fast
         threading.Thread(target=self._preload, daemon=True).start()
 
@@ -221,16 +230,35 @@ class PIIBuddyMenuBar:
     def _prompt_start_at_login(self, _timer):
         """Ask user once whether to enable Start at Login."""
         _timer.stop()
-        response = self._rumps.alert(
-            title="Start at Login?",
-            message=(
+        # Build NSAlert directly so we can set the Arbie icon on it
+        try:
+            from AppKit import NSAlert, NSImage, NSAlertFirstButtonReturn
+            alert = NSAlert.alloc().init()
+            alert.setMessageText_("Start at Login?")
+            alert.setInformativeText_(
                 "Would you like PII Buddy to start automatically "
                 "when you log in?"
-            ),
-            ok="Yes",
-            cancel="No",
-        )
-        if response == 1:  # user clicked "Yes"
+            )
+            alert.addButtonWithTitle_("Yes")
+            alert.addButtonWithTitle_("No")
+            icon = NSImage.alloc().initWithContentsOfFile_(_ICON_READY)
+            if icon:
+                alert.setIcon_(icon)
+            response = alert.runModal()
+            clicked_yes = response == NSAlertFirstButtonReturn
+        except ImportError:
+            # Fallback to rumps if AppKit unavailable
+            response = self._rumps.alert(
+                title="Start at Login?",
+                message=(
+                    "Would you like PII Buddy to start automatically "
+                    "when you log in?"
+                ),
+                ok="Yes",
+                cancel="No",
+            )
+            clicked_yes = response == 1
+        if clicked_yes:
             self._login_toggle.state = True
             self._prefs["start_at_login"] = True
             _set_login_item(True)
