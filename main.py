@@ -90,6 +90,11 @@ def main():
         help="Download latest blocklists from GitHub",
     )
     parser.add_argument(
+        "--update-app",
+        action="store_true",
+        help="Update PII Buddy to the latest version via git pull",
+    )
+    parser.add_argument(
         "--menubar",
         action="store_true",
         help="Launch Mac menu bar app (requires: pip install rumps)",
@@ -220,6 +225,38 @@ def main():
     # Apply resolved paths back to config module (for code that reads config directly)
     cfg.INPUT_DIR = settings.input_dir
     cfg.OUTPUT_DIR = settings.output_dir
+
+    if args.update_app:
+        import subprocess
+
+        app_dir = Path(__file__).resolve().parent
+        logger.info(f"Updating PII Buddy in {app_dir}...")
+
+        # Check for uncommitted changes
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=app_dir, capture_output=True, text=True,
+        )
+        if status.stdout.strip():
+            logger.warning("You have uncommitted changes. Stashing them first...")
+            subprocess.run(["git", "stash"], cwd=app_dir)
+
+        # Pull latest
+        result = subprocess.run(
+            ["git", "pull", "--rebase"],
+            cwd=app_dir, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            logger.error(f"git pull failed:\n{result.stderr}")
+            sys.exit(1)
+
+        output = result.stdout.strip()
+        if "Already up to date" in output:
+            logger.info("Already up to date.")
+        else:
+            logger.info(output)
+            logger.info("Update complete. Restart PII Buddy to use the new version.")
+        return
 
     if args.update:
         from pii_buddy.updater import update_blocklists
