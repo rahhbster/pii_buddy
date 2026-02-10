@@ -98,7 +98,19 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         # 3. Redact
         redacted_text, mapping = redact(text, entities)
 
-        # 3.5 Cloud verification (optional)
+        # 3.5a Structural audit (on by default)
+        if settings.audit_enabled:
+            from .audit import audit_redacted
+            redacted_text, mapping = audit_redacted(redacted_text, mapping)
+
+        # 3.5b OpenRouter LLM verification (optional)
+        if settings.openrouter_enabled and settings.openrouter_api_key:
+            from .openrouter_verifier import openrouter_verify_and_patch
+            redacted_text, mapping = openrouter_verify_and_patch(
+                redacted_text, mapping, settings
+            )
+
+        # 3.5c Cloud verification (optional, premium)
         if settings.verify_enabled and settings.verify_api_key:
             from .verifier import verify_and_patch
             redacted_text, mapping = verify_and_patch(

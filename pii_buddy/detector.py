@@ -158,6 +158,49 @@ def _detect_allcaps_names(text: str) -> list[PIIEntity]:
     return entities
 
 
+def _detect_header_names(text: str) -> list[PIIEntity]:
+    """Detect names in document title/header lines like '# Name1 and Name2 - Job Title'."""
+    entities = []
+    for line in text[:500].split('\n')[:5]:
+        stripped = line.strip().lstrip('#').strip()
+        if not stripped or ' - ' not in stripped:
+            continue
+        name_part = stripped.split(' - ', 1)[0].strip()
+        # Remove trailing link/emoji artifacts
+        name_part = re.sub(r'\s*[\(\[].+$', '', name_part).strip()
+        candidates = re.split(r'\s+and\s+', name_part, flags=re.IGNORECASE)
+        for name in candidates:
+            name = name.strip()
+            words = name.split()
+            if 2 <= len(words) <= 4 and all(w[0:1].isupper() and w.isalpha() for w in words):
+                start = text.find(name)
+                if start >= 0:
+                    entities.append(PIIEntity(
+                        text=name,
+                        label="PERSON",
+                        start=start,
+                        end=start + len(name),
+                        confidence=0.85,
+                    ))
+    return entities
+
+
+def _clean_person_entities(entities: list[PIIEntity]) -> list[PIIEntity]:
+    """Strip job title suffixes that spaCy incorrectly includes in PERSON entities."""
+    cleaned = []
+    for ent in entities:
+        if ent.label != "PERSON" or ' - ' not in ent.text:
+            cleaned.append(ent)
+            continue
+        name_part = ent.text.split(' - ', 1)[0].strip()
+        words = name_part.split()
+        if len(words) >= 2:
+            ent.text = name_part
+            ent.end = ent.start + len(name_part)
+        cleaned.append(ent)
+    return cleaned
+
+
 def _detect_doc_type(text: str) -> str:
     """Auto-detect document type: resume, transcript, or general."""
     sample = text[:1500].lower()
@@ -240,11 +283,17 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
                 confidence=0.8,
             ))
 
-    # 1c. ALL CAPS names in resume headers
+    # 1c. Clean up spaCy PERSON entities (strip job title suffixes)
+    spacy_entities = _clean_person_entities(spacy_entities)
+
+    # 1d. ALL CAPS names in resume headers
     allcaps_entities = _detect_allcaps_names(text)
 
+    # 1e. Header/title line names (e.g. "# Name1 and Name2 - Job Title")
+    header_entities = _detect_header_names(text)
+
     # Combine all candidates
-    all_candidates = regex_entities + spacy_entities + allcaps_entities
+    all_candidates = regex_entities + spacy_entities + allcaps_entities + header_entities
 
     # --- Pass 2: Validation ---
     validated = validate_entities(all_candidates, text, doc, doc_type)

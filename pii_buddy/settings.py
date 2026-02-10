@@ -30,6 +30,15 @@ SETTINGS_TEMPLATE = """\
 # endpoint = https://api.piibuddy.dev/v1
 # confidence_threshold = 0.7
 # canaries = false
+
+[audit]
+# enabled = true
+
+[openrouter]
+# enabled = false
+# api_key =
+# model = meta-llama/llama-3.1-8b-instruct:free
+# endpoint = https://openrouter.ai/api/v1
 """
 
 
@@ -49,6 +58,11 @@ class Settings:
     verify_endpoint: str = "https://api.piibuddy.dev/v1"
     verify_confidence: float = 0.7    # minimum confidence threshold for findings
     verify_canaries: bool = False     # inject canary PII to test provider accuracy
+    audit_enabled: bool = True        # structural self-audit (free, fast)
+    openrouter_enabled: bool = False  # OpenRouter LLM verification
+    openrouter_api_key: str = ""
+    openrouter_model: str = "meta-llama/llama-3.1-8b-instruct:free"
+    openrouter_endpoint: str = "https://openrouter.ai/api/v1"
 
     @classmethod
     def defaults(cls) -> "Settings":
@@ -93,6 +107,20 @@ def load_config_file(base_dir: Path) -> dict:
     if parser.has_option("verify", "canaries"):
         values["verify_canaries"] = parser.getboolean("verify", "canaries")
 
+    # [audit] section
+    if parser.has_option("audit", "enabled"):
+        values["audit_enabled"] = parser.getboolean("audit", "enabled")
+
+    # [openrouter] section
+    if parser.has_option("openrouter", "enabled"):
+        values["openrouter_enabled"] = parser.getboolean("openrouter", "enabled")
+    if parser.has_option("openrouter", "api_key"):
+        values["openrouter_api_key"] = parser.get("openrouter", "api_key").strip()
+    if parser.has_option("openrouter", "model"):
+        values["openrouter_model"] = parser.get("openrouter", "model").strip()
+    if parser.has_option("openrouter", "endpoint"):
+        values["openrouter_endpoint"] = parser.get("openrouter", "endpoint").strip()
+
     return values
 
 
@@ -107,6 +135,10 @@ def resolve_settings(
     cli_verify_key: str = None,
     cli_verify_endpoint: str = None,
     cli_verify_confidence: float = None,
+    cli_no_audit: bool = False,
+    cli_openrouter: bool = False,
+    cli_openrouter_key: str = None,
+    cli_openrouter_model: str = None,
 ) -> Settings:
     """
     Three-tier merge: CLI flags > settings.conf > hardcoded defaults.
@@ -191,6 +223,41 @@ def resolve_settings(
         logger.warning("--verify requires an API key (--verify-key or settings.conf)")
         verify_enabled = False
 
+    # --- audit ---
+    audit_enabled = defaults.audit_enabled
+    if "audit_enabled" in conf:
+        audit_enabled = conf["audit_enabled"]
+    if cli_no_audit:
+        audit_enabled = False
+
+    # --- openrouter ---
+    openrouter_enabled = defaults.openrouter_enabled
+    if "openrouter_enabled" in conf:
+        openrouter_enabled = conf["openrouter_enabled"]
+    if cli_openrouter:
+        openrouter_enabled = True
+
+    openrouter_api_key = defaults.openrouter_api_key
+    if "openrouter_api_key" in conf:
+        openrouter_api_key = conf["openrouter_api_key"]
+    if cli_openrouter_key is not None:
+        openrouter_api_key = cli_openrouter_key
+
+    openrouter_model = defaults.openrouter_model
+    if "openrouter_model" in conf:
+        openrouter_model = conf["openrouter_model"]
+    if cli_openrouter_model is not None:
+        openrouter_model = cli_openrouter_model
+
+    openrouter_endpoint = defaults.openrouter_endpoint
+    if "openrouter_endpoint" in conf:
+        openrouter_endpoint = conf["openrouter_endpoint"]
+
+    # --openrouter requires an API key
+    if openrouter_enabled and not openrouter_api_key:
+        logger.warning("--openrouter requires an API key (--openrouter-key or settings.conf)")
+        openrouter_enabled = False
+
     return Settings(
         base_dir=base_dir,
         input_dir=input_dir,
@@ -205,6 +272,11 @@ def resolve_settings(
         verify_endpoint=verify_endpoint,
         verify_confidence=verify_confidence,
         verify_canaries=verify_canaries,
+        audit_enabled=audit_enabled,
+        openrouter_enabled=openrouter_enabled,
+        openrouter_api_key=openrouter_api_key,
+        openrouter_model=openrouter_model,
+        openrouter_endpoint=openrouter_endpoint,
     )
 
 

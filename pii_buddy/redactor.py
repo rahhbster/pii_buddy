@@ -15,6 +15,8 @@ def _group_names(person_entities: list) -> dict[str, str]:
     Group name variants that refer to the same person.
 
     If we see "Steve Johnson" and later just "Steve", both map to the same tag.
+    Also adds individual parts of multi-word names (first name, last name) so
+    partial references like just "Steve" are caught even if not detected as entities.
     Returns {surface_form: canonical_full_name}.
     """
     # Collect all unique name strings, longest first
@@ -34,6 +36,15 @@ def _group_names(person_entities: list) -> dict[str, str]:
                 break
         if not matched:
             canonical[name] = name
+
+    # Add individual parts of multi-word names as surface forms
+    for name in list(canonical):
+        parts = name.split()
+        if len(parts) >= 2:
+            full = canonical[name]
+            for part in parts:
+                if len(part) >= 3 and part not in canonical:
+                    canonical[part] = full
 
     return canonical
 

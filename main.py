@@ -146,6 +146,30 @@ def main():
         default=None,
         help="Minimum confidence threshold for verify findings (default: 0.7)",
     )
+    # Audit flags
+    parser.add_argument(
+        "--no-audit",
+        action="store_true",
+        help="Disable structural self-audit (Pass 2)",
+    )
+    # OpenRouter flags
+    parser.add_argument(
+        "--openrouter",
+        action="store_true",
+        help="Enable OpenRouter LLM verification (Pass 3)",
+    )
+    parser.add_argument(
+        "--openrouter-key",
+        metavar="KEY",
+        default=None,
+        help="OpenRouter API key",
+    )
+    parser.add_argument(
+        "--openrouter-model",
+        metavar="ID",
+        default=None,
+        help="OpenRouter model (default: meta-llama/llama-3.1-8b-instruct:free)",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -187,6 +211,10 @@ def main():
         cli_verify_key=args.verify_key,
         cli_verify_endpoint=args.verify_endpoint,
         cli_verify_confidence=args.verify_confidence,
+        cli_no_audit=args.no_audit,
+        cli_openrouter=args.openrouter,
+        cli_openrouter_key=args.openrouter_key,
+        cli_openrouter_model=args.openrouter_model,
     )
 
     # Apply resolved paths back to config module (for code that reads config directly)
@@ -228,7 +256,29 @@ def main():
         logger.info(f"Found {len(entities)} PII entities.")
         redacted_text, mapping = redact(text, entities)
 
-        # Cloud verification (optional)
+        # Pass 2: Structural audit (on by default)
+        pre_audit_tags = len(mapping.get("tags", {}))
+        if settings.audit_enabled:
+            from pii_buddy.audit import audit_redacted
+            redacted_text, mapping = audit_redacted(redacted_text, mapping)
+
+        # Pass 3: OpenRouter LLM verification (optional)
+        if settings.openrouter_enabled and settings.openrouter_api_key:
+            from pii_buddy.openrouter_verifier import openrouter_verify_and_patch
+            redacted_text, mapping = openrouter_verify_and_patch(
+                redacted_text, mapping, settings
+            )
+
+        # Upsell: if passes 2/3 found extra PII and cloud verify is off
+        post_tags = len(mapping.get("tags", {}))
+        extra_found = post_tags - pre_audit_tags
+        if extra_found > 0 and not (settings.verify_enabled and settings.verify_api_key):
+            logger.info(
+                f"  Audit found {extra_found} additional items. "
+                "For deeper detection, try PII Buddy Premium: piibuddy.dev"
+            )
+
+        # Pass 4: Cloud verification (optional, premium)
         if settings.verify_enabled and settings.verify_api_key:
             from pii_buddy.verifier import verify_and_patch
             redacted_text, mapping = verify_and_patch(
@@ -324,6 +374,10 @@ def main():
         logger.info(f"Mode:     overwrite (originals backed up)")
     if settings.tag != "PII_FREE":
         logger.info(f"Tag:      {settings.tag!r}")
+    if not settings.audit_enabled:
+        logger.info(f"Audit:    disabled")
+    if settings.openrouter_enabled:
+        logger.info(f"OpenRouter: enabled ({settings.openrouter_model})")
     if settings.verify_enabled:
         logger.info(f"Verify:   enabled ({settings.verify_endpoint})")
     logger.info("")
