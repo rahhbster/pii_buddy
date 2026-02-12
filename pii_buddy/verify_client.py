@@ -19,6 +19,27 @@ class VerifyError(Exception):
     """Raised when the Verify API returns an error."""
 
 
+class InvalidAPIKeyError(VerifyError):
+    """Raised on 401 — invalid or revoked API key."""
+
+
+class InsufficientCreditsError(VerifyError):
+    """Raised on 402 — not enough credits to complete the request."""
+
+    def __init__(self, message: str, credits_remaining: int = 0, purchase_url: str = ""):
+        super().__init__(message)
+        self.credits_remaining = credits_remaining
+        self.purchase_url = purchase_url
+
+
+class RateLimitError(VerifyError):
+    """Raised on 429 — too many requests."""
+
+    def __init__(self, message: str, retry_after: int = 0):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 @dataclass
 class Finding:
     """A single PII finding from verification."""
@@ -37,6 +58,7 @@ class VerifyResponse:
     shards_processed: int = 0
     tokens_used: int = 0
     cost_cents: float = 0.0
+    credits_remaining: int = None
 
 
 def _require_httpx():
@@ -54,7 +76,7 @@ def _require_httpx():
 class VerifyClient:
     """Client for the PII Buddy Verify API."""
 
-    def __init__(self, api_key: str, endpoint: str = "https://api.piibuddy.dev/v1"):
+    def __init__(self, api_key: str, endpoint: str = "https://api.piibuddy.com/v1"):
         self.api_key = api_key
         self.endpoint = endpoint.rstrip("/")
 
@@ -112,6 +134,36 @@ class VerifyClient:
                 body = e.response.text
                 # Don't retry client errors (auth, quota, validation)
                 if 400 <= code < 500:
+                    if code == 401:
+                        raise InvalidAPIKeyError(f"Invalid API key: {body}") from e
+                    if code == 402:
+                        # Try to parse credit info from response body
+                        cr = 0
+                        pu = ""
+                        try:
+                            error_data = e.response.json()
+                            cr = error_data.get("credits_remaining", 0)
+                            pu = error_data.get("purchase_url", "")
+                        except Exception:
+                            pass
+                        raise InsufficientCreditsError(
+                            f"Insufficient credits: {body}",
+                            credits_remaining=cr,
+                            purchase_url=pu,
+                        ) from e
+                    if code == 429:
+                        ra = 0
+                        try:
+                            ra = int(e.response.headers.get("Retry-After", 0))
+                        except (ValueError, TypeError):
+                            try:
+                                error_data = e.response.json()
+                                ra = int(error_data.get("retry_after", 0))
+                            except Exception:
+                                pass
+                        raise RateLimitError(
+                            f"Rate limited: {body}", retry_after=ra,
+                        ) from e
                     raise VerifyError(f"API error {code}: {body}") from e
                 last_err = VerifyError(f"API error {code}: {body}")
 
@@ -162,9 +214,11 @@ class VerifyClient:
                 ))
 
         usage = data.get("usage", {})
+        credits_remaining = usage.get("credits_remaining", None)
         return VerifyResponse(
             findings=findings,
             shards_processed=usage.get("shards_processed", 0),
             tokens_used=usage.get("tokens_used", 0),
             cost_cents=usage.get("cost_cents", 0.0),
+            credits_remaining=credits_remaining,
         )

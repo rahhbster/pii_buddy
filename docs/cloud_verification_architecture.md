@@ -297,7 +297,7 @@ Authorization: Bearer <api_key>
 {"error": "invalid_api_key", "message": "API key is invalid or expired."}
 
 // 402 Payment Required
-{"error": "quota_exceeded", "message": "Monthly shard quota exceeded. Upgrade at https://piibuddy.dev/pricing"}
+{"error": "quota_exceeded", "message": "Monthly shard quota exceeded. Upgrade at https://piibuddy.com/pricing"}
 
 // 429 Too Many Requests
 {"error": "rate_limited", "message": "Rate limit exceeded. Retry after 2 seconds.", "retry_after": 2}
@@ -581,7 +581,7 @@ class Settings:
     # ... existing fields ...
     verify_enabled: bool = False
     verify_api_key: str = ""
-    verify_endpoint: str = "https://api.piibuddy.dev/v1"
+    verify_endpoint: str = "https://api.piibuddy.com/v1"
     verify_confidence: float = 0.7
     verify_canaries: bool = False
 ```
@@ -592,7 +592,7 @@ Add to `settings.conf` template:
 [verify]
 # enabled = false
 # api_key =
-# endpoint = https://api.piibuddy.dev/v1
+# endpoint = https://api.piibuddy.com/v1
 # confidence_threshold = 0.7
 # canaries = false
 ```
@@ -602,7 +602,7 @@ Add CLI flags in `main.py`:
 ```
 --verify              Enable cloud verification after local redaction
 --verify-key KEY      PII Buddy Verify API key
---verify-endpoint URL Override verify API endpoint (default: https://api.piibuddy.dev/v1)
+--verify-endpoint URL Override verify API endpoint (default: https://api.piibuddy.com/v1)
 --verify-confidence N Minimum confidence threshold (default: 0.7)
 ```
 

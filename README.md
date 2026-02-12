@@ -216,7 +216,7 @@ Or configure in `settings.conf`:
 [verify]
 enabled = true
 api_key = your-api-key-here
-# endpoint = https://api.piibuddy.dev/v1
+# endpoint = https://api.piibuddy.com/v1
 # confidence_threshold = 0.7
 # canaries = false
 ```
@@ -273,7 +273,7 @@ PII Buddy reads settings from `~/PII_Buddy/settings.conf` (created automatically
 [verify]
 # enabled = false
 # api_key =
-# endpoint = https://api.piibuddy.dev/v1
+# endpoint = https://api.piibuddy.com/v1
 # confidence_threshold = 0.7
 # canaries = false
 ```

@@ -27,7 +27,7 @@ SETTINGS_TEMPLATE = """\
 [verify]
 # enabled = false
 # api_key =
-# endpoint = https://api.piibuddy.dev/v1
+# endpoint = https://api.piibuddy.com/v1
 # confidence_threshold = 0.7
 # canaries = false
 
@@ -55,7 +55,7 @@ class Settings:
     text_output: bool = False         # also produce .txt alongside formatted output
     verify_enabled: bool = False      # enable cloud verification after local redaction
     verify_api_key: str = ""          # PII Buddy Verify API key
-    verify_endpoint: str = "https://api.piibuddy.dev/v1"
+    verify_endpoint: str = "https://api.piibuddy.com/v1"
     verify_confidence: float = 0.7    # minimum confidence threshold for findings
     verify_canaries: bool = False     # inject canary PII to test provider accuracy
     audit_enabled: bool = True        # structural self-audit (free, fast)

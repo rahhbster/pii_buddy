@@ -99,6 +99,16 @@ def main():
         action="store_true",
         help="Launch Mac menu bar app (requires: pip install rumps)",
     )
+    parser.add_argument(
+        "--credits",
+        action="store_true",
+        help="Check your current credit balance",
+    )
+    parser.add_argument(
+        "--buy",
+        action="store_true",
+        help="Open browser to purchase credits",
+    )
     # Output format flags
     parser.add_argument(
         "--same-format",
@@ -142,7 +152,7 @@ def main():
         "--verify-endpoint",
         metavar="URL",
         default=None,
-        help="Override verify API endpoint (default: https://api.piibuddy.dev/v1)",
+        help="Override verify API endpoint (default: https://api.piibuddy.com/v1)",
     )
     parser.add_argument(
         "--verify-confidence",
@@ -225,6 +235,35 @@ def main():
     # Apply resolved paths back to config module (for code that reads config directly)
     cfg.INPUT_DIR = settings.input_dir
     cfg.OUTPUT_DIR = settings.output_dir
+
+    if args.credits:
+        if not settings.verify_api_key:
+            logger.error("No API key configured. Set one in settings.conf [verify] api_key or use --verify-key.")
+            sys.exit(1)
+        from pii_buddy.verify_client import VerifyClient, VerifyError
+        client = VerifyClient(
+            api_key=settings.verify_api_key,
+            endpoint=settings.verify_endpoint,
+        )
+        try:
+            usage = client.check_usage()
+            credits = usage.get("credits_remaining", "unknown")
+            used = usage.get("credits_used", "unknown")
+            plan = usage.get("plan", "unknown")
+            logger.info(f"Credits remaining: {credits}")
+            logger.info(f"Credits used:      {used}")
+            logger.info(f"Plan:              {plan}")
+        except VerifyError as e:
+            logger.error(f"Failed to check credits: {e}")
+            sys.exit(1)
+        return
+
+    if args.buy:
+        import webbrowser
+        purchase_url = "https://app.piibuddy.com/buy"
+        logger.info(f"Opening {purchase_url} ...")
+        webbrowser.open(purchase_url)
+        return
 
     if args.update_app:
         import subprocess
@@ -312,7 +351,7 @@ def main():
         if extra_found > 0 and not (settings.verify_enabled and settings.verify_api_key):
             logger.info(
                 f"  Audit found {extra_found} additional items. "
-                "For deeper detection, try PII Buddy Premium: piibuddy.dev"
+                "For deeper detection, try PII Buddy Premium: piibuddy.com"
             )
 
         # Pass 4: Cloud verification (optional, premium)
