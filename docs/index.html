@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PII Buddy — Automatic PII Redaction for Documents</title>
+  <meta name="description" content="Drop a document in, get a clean file out. PII Buddy watches a folder and automatically redacts names, emails, SSNs, and 11+ PII types from PDFs, Word docs, and text files.">
+  <meta property="og:title" content="PII Buddy — Your Documents. Your Privacy.">
+  <meta property="og:description" content="Automatic PII redaction for resumes, transcripts, and documents. Open source, runs locally, no data leaves your machine.">
+  <meta property="og:image" content="https://piibuddy.com/images/og-image.png">
+  <meta property="og:url" content="https://piibuddy.com">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/x-icon" href="images/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="container">
+      <a href="#" class="nav-brand">
+        <img src="images/favicon-32.png" alt="Arbie" width="32" height="32">
+        PII Buddy
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#download">Download</a></li>
+        <li><a href="#download" class="nav-cta">Get Started</a></li>
+      </ul>
+      <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Your Documents.<br><span class="accent">Your Privacy.</span></h1>
+        <p>Drop a file in, get a clean file out. PII Buddy watches a folder and automatically redacts names, emails, SSNs, phone numbers, and 11+ PII types from PDFs, Word docs, and text files. Runs locally &mdash; no data leaves your machine.</p>
+        <div class="hero-buttons">
+          <a href="https://github.com/rahhbster/pii_buddy/releases" class="btn btn-primary">Download for Mac</a>
+          <a href="https://github.com/rahhbster/pii_buddy" class="btn btn-secondary">View on GitHub</a>
+        </div>
+      </div>
+      <div class="hero-image">
+        <picture>
+          <source srcset="images/arbie-ready.webp" type="image/webp">
+          <img src="images/arbie-ready.png" alt="Arbie the PII Buddy mascot covering eyes — your privacy is safe" width="360" height="360">
+        </picture>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" class="features">
+    <div class="container">
+      <div class="section-header">
+        <h2>Built for Privacy</h2>
+        <p>Everything you need to strip PII from documents before sharing, reviewing, or storing them.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">📂</div>
+          <h3>Folder Watcher</h3>
+          <p>Drop files into a watched folder and get clean versions automatically. Originals are backed up and auto-deleted after 24 hours.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>Multi-Pass Detection</h3>
+          <p>Regex patterns, spaCy NER, document-type awareness, and confidence scoring work together across multiple passes for thorough detection.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📄</div>
+          <h3>PDF, DOCX &amp; TXT</h3>
+          <p>Process PDFs, Word documents, and plain text. Output in the same format or convert to text. Your choice.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Reversible Redaction</h3>
+          <p>Every redaction creates a mapping file so you can restore the original PII when needed. Nothing is permanently lost.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📋</div>
+          <h3>Clipboard Mode</h3>
+          <p>Copy text, run the clipboard command, and paste the redacted version. Also supports piped input for scripting workflows.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🖥️</div>
+          <h3>Mac Menu Bar App</h3>
+          <p>One-click access from your menu bar. See Arbie's status at a glance &mdash; ready, processing, or done.</p>
+        </div>
+      </div>
+      <div class="features-callout">
+        11+ PII types detected &mdash; names, emails, phone numbers, SSNs, addresses, dates of birth, URLs, IDs, credentials, and more
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how-it-works">
+    <div class="container">
+      <div class="section-header">
+        <h2>How It Works</h2>
+        <p>Three steps. Zero complexity. Arbie handles the rest.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="step">
+          <div class="step-number">1</div>
+          <picture>
+            <source srcset="images/arbie-ready.webp" type="image/webp">
+            <img src="images/arbie-ready.png" alt="Arbie ready — drop your files" width="200" height="200">
+          </picture>
+          <h3>Drop Your Files</h3>
+          <p>Place documents in the watched folder or use clipboard/pipe mode.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <picture>
+            <source srcset="images/arbie-processing.webp" type="image/webp">
+            <img src="images/arbie-processing.png" alt="Arbie processing — PII gets redacted" width="200" height="200">
+          </picture>
+          <h3>PII Gets Redacted</h3>
+          <p>Multi-pass detection finds and replaces PII with tagged placeholders.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <picture>
+            <source srcset="images/arbie-done.webp" type="image/webp">
+            <img src="images/arbie-done.png" alt="Arbie done — clean files out" width="200" height="200">
+          </picture>
+          <h3>Clean Files Out</h3>
+          <p>Redacted files appear in the output folder with a mapping file for reversal.</p>
+        </div>
+      </div>
+      <div class="code-example">
+        <div class="code-example-header">
+          <span>Before</span>
+          <span>After</span>
+        </div>
+        <div class="code-example-body">
+          <pre>
+Sarah Chen
+sarah.chen@gmail.com
+(555) 867-5309
+123 Oak Street, Apt 4B
+SSN: 123-45-6789
+
+Experience at Acme Corp
+January 2020 - Present</pre>
+          <pre>
+<span class="redacted">&lt;NAME SC&gt;</span>
+<span class="redacted">&lt;&lt;EMAIL_1&gt;&gt;</span>
+<span class="redacted">&lt;&lt;PHONE_1&gt;&gt;</span>
+<span class="redacted">&lt;&lt;ADDRESS_1&gt;&gt;</span>
+SSN: <span class="redacted">&lt;&lt;SSN_1&gt;&gt;</span>
+
+Experience at Acme Corp
+January 2020 - Present</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section id="pricing" class="pricing">
+    <div class="container">
+      <div class="section-header">
+        <h2>Pricing</h2>
+        <p>Core redaction is free and runs entirely on your machine. Cloud verification adds an optional LLM-powered accuracy boost.</p>
+      </div>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <h3>Open Source</h3>
+          <div class="price-amount">Free</div>
+          <div class="price-desc">Forever. No catch.</div>
+          <ul class="price-features">
+            <li>Local multi-pass PII detection</li>
+            <li>All file formats (PDF, DOCX, TXT)</li>
+            <li>Folder watcher, clipboard &amp; pipe modes</li>
+            <li>Mac menu bar app</li>
+            <li>Reversible redaction with mapping files</li>
+            <li>MIT licensed</li>
+          </ul>
+          <a href="#download" class="btn btn-primary">Download Free</a>
+        </div>
+        <div class="price-card featured">
+          <div class="price-badge">Coming Soon</div>
+          <h3>Verify Pro</h3>
+          <div class="price-amount">$10<span>/mo</span></div>
+          <div class="price-desc">5,000 verification shards / month</div>
+          <ul class="price-features">
+            <li>Everything in Open Source</li>
+            <li>Cloud LLM verification pass</li>
+            <li>Higher detection accuracy</li>
+            <li>5,000 shards / month</li>
+            <li>API key for CLI integration</li>
+          </ul>
+          <span class="btn btn-disabled">Coming Soon</span>
+        </div>
+        <div class="price-card">
+          <h3>Verify Team</h3>
+          <div class="price-amount">$25<span>/mo</span></div>
+          <div class="price-desc">15,000 verification shards / month</div>
+          <ul class="price-features">
+            <li>Everything in Verify Pro</li>
+            <li>15,000 shards / month</li>
+            <li>Team API keys</li>
+            <li>Priority support</li>
+          </ul>
+          <span class="btn btn-disabled">Coming Soon</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section id="download">
+    <div class="container">
+      <div class="section-header">
+        <h2>Get Started</h2>
+        <p>Up and running in under a minute.</p>
+      </div>
+      <div class="download-options">
+        <div class="download-card">
+          <h3>Mac App (DMG)</h3>
+          <p>Download the latest release and drag to Applications.</p>
+          <a href="https://github.com/rahhbster/pii_buddy/releases" class="btn btn-primary">Download for Mac</a>
+        </div>
+        <div class="download-card">
+          <h3>CLI Install</h3>
+          <p>Clone the repo and run the setup script.</p>
+          <code>git clone https://github.com/rahhbster/pii_buddy.git<br>cd pii_buddy &amp;&amp; ./setup.sh</code>
+          <a href="https://github.com/rahhbster/pii_buddy#installation" class="btn btn-secondary">View Instructions</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <ul class="footer-links">
+        <li><a href="https://github.com/rahhbster/pii_buddy">GitHub</a></li>
+        <li><a href="https://github.com/rahhbster/pii_buddy#readme">Docs</a></li>
+        <li><a href="https://github.com/rahhbster/pii_buddy/blob/main/LICENSE">MIT License</a></li>
+      </ul>
+      <div class="footer-copy">&copy; 2025 PII Buddy</div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
