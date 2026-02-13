@@ -237,10 +237,14 @@ def main():
     cfg.OUTPUT_DIR = settings.output_dir
 
     if args.credits:
+        try:
+            from pii_buddy.verify_client import VerifyClient, VerifyError
+        except ImportError:
+            logger.error("Cloud verification is a premium feature. Visit https://piibuddy.com for details.")
+            sys.exit(1)
         if not settings.verify_api_key:
             logger.error("No API key configured. Set one in settings.conf [verify] api_key or use --verify-key.")
             sys.exit(1)
-        from pii_buddy.verify_client import VerifyClient, VerifyError
         client = VerifyClient(
             api_key=settings.verify_api_key,
             endpoint=settings.verify_endpoint,
@@ -260,7 +264,7 @@ def main():
 
     if args.buy:
         import webbrowser
-        purchase_url = "https://app.piibuddy.com/buy"
+        purchase_url = "https://piibuddy.com"
         logger.info(f"Opening {purchase_url} ...")
         webbrowser.open(purchase_url)
         return
@@ -338,28 +342,34 @@ def main():
             from pii_buddy.audit import audit_redacted
             redacted_text, mapping = audit_redacted(redacted_text, mapping)
 
-        # Pass 3: OpenRouter LLM verification (optional)
+        # Pass 3: OpenRouter LLM verification (optional, premium)
         if settings.openrouter_enabled and settings.openrouter_api_key:
-            from pii_buddy.openrouter_verifier import openrouter_verify_and_patch
-            redacted_text, mapping = openrouter_verify_and_patch(
-                redacted_text, mapping, settings
-            )
+            try:
+                from pii_buddy.openrouter_verifier import openrouter_verify_and_patch
+                redacted_text, mapping = openrouter_verify_and_patch(
+                    redacted_text, mapping, settings
+                )
+            except ImportError:
+                logger.warning("OpenRouter verification requires premium modules. Visit https://piibuddy.com")
 
-        # Upsell: if passes 2/3 found extra PII and cloud verify is off
+        # Upsell: if audit found extra PII and cloud verify is off
         post_tags = len(mapping.get("tags", {}))
         extra_found = post_tags - pre_audit_tags
         if extra_found > 0 and not (settings.verify_enabled and settings.verify_api_key):
             logger.info(
                 f"  Audit found {extra_found} additional items. "
-                "For deeper detection, try PII Buddy Premium: piibuddy.com"
+                "For deeper detection, try PII Buddy Verify: piibuddy.com"
             )
 
         # Pass 4: Cloud verification (optional, premium)
         if settings.verify_enabled and settings.verify_api_key:
-            from pii_buddy.verifier import verify_and_patch
-            redacted_text, mapping = verify_and_patch(
-                redacted_text, mapping, settings
-            )
+            try:
+                from pii_buddy.verifier import verify_and_patch
+                redacted_text, mapping = verify_and_patch(
+                    redacted_text, mapping, settings
+                )
+            except ImportError:
+                logger.warning("Cloud verification requires premium modules. Visit https://piibuddy.com")
 
         # Save mapping file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

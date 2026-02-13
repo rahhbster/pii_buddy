@@ -17,38 +17,23 @@ import pytest
 # --credits command
 # -----------------------------------------------------------------------
 class TestCreditsCommand:
-    @patch("pii_buddy.verify_client._require_httpx")
-    def test_credits_displays_balance(self, mock_require, caplog, tmp_path):
-        """--credits with valid key should display credit balance."""
-        mock_httpx = MagicMock()
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "credits_remaining": 750,
-            "credits_used": 250,
-            "plan": "pay_as_you_go",
-        }
-        mock_resp.raise_for_status.return_value = None
-        mock_httpx.get.return_value = mock_resp
-        mock_require.return_value = mock_httpx
-
-        # Write a settings.conf with a verify key
+    def test_credits_exits_gracefully_without_premium(self, tmp_path):
+        """--credits should exit with message when premium modules are not installed."""
         settings_conf = tmp_path / "settings.conf"
         settings_conf.write_text(
             "[verify]\nenabled = true\napi_key = test-key-123\n"
         )
-
-        import logging
+        (tmp_path / "input").mkdir(exist_ok=True)
+        (tmp_path / "output").mkdir(exist_ok=True)
+        (tmp_path / "mappings").mkdir(exist_ok=True)
+        (tmp_path / "originals").mkdir(exist_ok=True)
+        (tmp_path / "logs").mkdir(exist_ok=True)
+        (tmp_path / "blocklists").mkdir(exist_ok=True)
 
         with patch("sys.argv", ["main.py", "--credits", "--dir", str(tmp_path)]):
-            with caplog.at_level(logging.INFO, logger="pii_buddy"):
-                from main import main
-                try:
-                    main()
-                except SystemExit:
-                    pass
-
-        assert "750" in caplog.text
+            from main import main
+            with pytest.raises(SystemExit):
+                main()
 
     def test_credits_no_key_shows_error(self, capsys, tmp_path):
         """--credits without an API key should show an error message."""

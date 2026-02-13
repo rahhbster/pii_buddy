@@ -103,19 +103,25 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
             from .audit import audit_redacted
             redacted_text, mapping = audit_redacted(redacted_text, mapping)
 
-        # 3.5b OpenRouter LLM verification (optional)
+        # 3.5b OpenRouter LLM verification (optional, premium)
         if settings.openrouter_enabled and settings.openrouter_api_key:
-            from .openrouter_verifier import openrouter_verify_and_patch
-            redacted_text, mapping = openrouter_verify_and_patch(
-                redacted_text, mapping, settings
-            )
+            try:
+                from .openrouter_verifier import openrouter_verify_and_patch
+                redacted_text, mapping = openrouter_verify_and_patch(
+                    redacted_text, mapping, settings
+                )
+            except ImportError:
+                logger.warning("OpenRouter verification requires premium modules. Visit https://piibuddy.com")
 
         # 3.5c Cloud verification (optional, premium)
         if settings.verify_enabled and settings.verify_api_key:
-            from .verifier import verify_and_patch
-            redacted_text, mapping = verify_and_patch(
-                redacted_text, mapping, settings
-            )
+            try:
+                from .verifier import verify_and_patch
+                redacted_text, mapping = verify_and_patch(
+                    redacted_text, mapping, settings
+                )
+            except ImportError:
+                logger.warning("Cloud verification requires premium modules. Visit https://piibuddy.com")
 
         # 4. Redact the filename and apply tag
         clean_name = _redact_filename(filepath.stem, mapping.get("persons", {}))

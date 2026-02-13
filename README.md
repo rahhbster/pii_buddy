@@ -12,6 +12,14 @@ The fastest way to get started on a Mac:
 2. Open the DMG and drag **PII Buddy** to your **Applications** folder
 3. Double-click **PII Buddy** from Applications or Launchpad
 
+> **macOS Gatekeeper notice:** Since PII Buddy is not yet signed with an Apple Developer certificate, macOS will block the first launch. To allow it:
+>
+> 1. **Right-click** (or Control-click) the app in Applications and choose **Open**
+> 2. Click **Open** in the dialog that appears
+> 3. Alternatively: go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the PII Buddy message
+>
+> You only need to do this once. After that the app opens normally.
+
 On first launch, PII Buddy will walk you through a one-time setup (~2-3 min) that creates a Python environment and downloads language models. After that it starts instantly.
 
 > **Requirement:** Python 3.9+ must already be installed. If you don't have it: `brew install python@3.12` or download from [python.org](https://www.python.org/downloads/).
