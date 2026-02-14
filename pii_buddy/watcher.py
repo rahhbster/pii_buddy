@@ -177,6 +177,9 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
             encoding="utf-8",
         )
         logger.info(f"  Mapping: {mapping_path.name}")
+        logger.info("")
+        logger.info("  How did we do? Rate this redaction:")
+        logger.info("    ./run.sh --rate 1-5 [--feedback \"what we missed\"]")
 
         return True
 

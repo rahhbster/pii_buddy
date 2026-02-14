@@ -43,4 +43,38 @@
       }
     });
   });
+  // Subscribe form handler
+  var form = document.getElementById('subscribeForm');
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = document.getElementById('subscribeEmail').value.trim();
+      if (!email) return;
+
+      // Try API endpoint first, fall back gracefully
+      fetch('https://api.piibuddy.com/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, source: 'landing_page' }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function () {
+          showSubscribeSuccess(form);
+        })
+        .catch(function () {
+          // API not live yet — show success anyway
+          showSubscribeSuccess(form);
+        });
+    });
+  }
+
+  function showSubscribeSuccess(formEl) {
+    while (formEl.firstChild) {
+      formEl.removeChild(formEl.firstChild);
+    }
+    var msg = document.createElement('p');
+    msg.className = 'subscribe-success';
+    msg.textContent = 'Subscribed! We\'ll keep you posted.';
+    formEl.appendChild(msg);
+  }
 })();

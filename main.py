@@ -161,6 +161,25 @@ def main():
         default=None,
         help="Minimum confidence threshold for verify findings (default: 0.7)",
     )
+    # Feedback flags
+    parser.add_argument(
+        "--rate",
+        type=int,
+        choices=[1, 2, 3, 4, 5],
+        metavar="N",
+        help="Rate the quality of the last redaction (1-5 stars)",
+    )
+    parser.add_argument(
+        "--feedback",
+        metavar="COMMENT",
+        help="Submit feedback about detection quality (describe patterns, not actual PII)",
+    )
+    # Subscribe
+    parser.add_argument(
+        "--subscribe",
+        metavar="EMAIL",
+        help="Subscribe to PII Buddy product updates",
+    )
     # Audit flags
     parser.add_argument(
         "--no-audit",
@@ -311,6 +330,48 @@ def main():
             logger.info("Blocklist update complete.")
         return
 
+    if args.subscribe:
+        import re as _re
+
+        email = args.subscribe.strip()
+        if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+            logger.error("Invalid email format.")
+            sys.exit(1)
+        # Store locally until api.piibuddy.com is live
+        subscribe_dir = cfg.BASE_DIR / "feedback"
+        subscribe_dir.mkdir(parents=True, exist_ok=True)
+        subscribe_file = subscribe_dir / "pending_subscriptions.txt"
+        # Check for duplicates
+        existing = subscribe_file.read_text(encoding="utf-8") if subscribe_file.exists() else ""
+        if email in existing:
+            logger.info(f"Already subscribed: {email}")
+        else:
+            with open(subscribe_file, "a", encoding="utf-8") as f:
+                from datetime import datetime
+                f.write(f"{email}\tcli\t{datetime.now().isoformat()}\n")
+            logger.info(f"Subscribed! You'll receive product updates at {email}")
+            logger.info("(Subscription will sync when the update server is live.)")
+        return
+
+    if args.rate or args.feedback:
+        from pii_buddy.feedback import record_rating
+
+        if args.rate:
+            record_rating(
+                rating=args.rate,
+                comment=args.feedback or "",
+                source="cli",
+            )
+            logger.info(f"Thanks for rating PII Buddy {'*' * args.rate}{'.' * (5 - args.rate)}")
+        elif args.feedback:
+            record_rating(
+                rating=0,
+                comment=args.feedback,
+                source="cli",
+            )
+            logger.info("Feedback recorded. Thank you!")
+        return
+
     if args.paste or args.clipboard:
         import json
         from datetime import datetime
@@ -395,6 +456,10 @@ def main():
             print("=" * 50)
             print(redacted_text)
 
+        logger.info("")
+        logger.info("How did we do? Rate this redaction:")
+        logger.info("  ./run.sh --rate 1-5 [--feedback \"what we missed\"]")
+
         return
 
     if args.restore:
@@ -443,6 +508,12 @@ def main():
                 import shutil
                 shutil.copy2(str(filepath), str(dest))
             success = process_file(dest, settings)
+
+        if success:
+            logger.info("")
+            logger.info("How did we do? Rate this redaction:")
+            logger.info("  ./run.sh --rate 1-5 [--feedback \"what we missed\"]")
+
         sys.exit(0 if success else 1)
 
     # Default: watch mode

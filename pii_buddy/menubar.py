@@ -154,6 +154,7 @@ class PIIBuddyMenuBar:
         self._last_mapping_path: Path | None = None
         self._processing = False
         self._done_timer = None
+        self._last_entities_found = 0
         self._prefs = _load_prefs()
 
         # Use Arbie icon; title=None hides text label
@@ -182,12 +183,25 @@ class PIIBuddyMenuBar:
         prefs_menu[self._dock_toggle.title] = self._dock_toggle
         prefs_menu[self._login_toggle.title] = self._login_toggle
 
+        # Build rate submenu
+        rate_menu = rumps.MenuItem("Rate Last Redaction")
+        for stars in range(1, 6):
+            label = "\u2605" * stars + "\u2606" * (5 - stars)
+            rate_menu[label] = rumps.MenuItem(
+                label, callback=lambda sender, s=stars: self._on_rate(s)
+            )
+
         self.app.menu = [
             rumps.MenuItem(
                 "Remove PII from Clipboard", callback=self._on_remove_pii
             ),
             rumps.MenuItem(
                 "Restore Last Clipboard", callback=self._on_restore
+            ),
+            None,
+            rate_menu,
+            rumps.MenuItem(
+                "Report Missed PII...", callback=self._on_report_missed
             ),
             None,
             prefs_menu,
@@ -378,6 +392,26 @@ class PIIBuddyMenuBar:
         _save_prefs(self._prefs)
         _set_login_item(new_state)
 
+    # --- Feedback callbacks ---
+
+    def _on_rate(self, stars: int):
+        """Record a star rating for the last redaction."""
+        from .feedback import record_rating
+
+        record_rating(
+            rating=stars,
+            source="menubar",
+            entities_found=self._last_entities_found if hasattr(self, "_last_entities_found") else 0,
+        )
+        self._notify(f"Rated {'*' * stars} — thanks for the feedback!")
+
+    def _on_report_missed(self, _sender):
+        """Open GitHub issue template for reporting missed PII."""
+        import webbrowser
+
+        url = "https://github.com/rahhbster/pii_buddy/issues/new?template=missed-pii.md&labels=detection-quality"
+        webbrowser.open(url)
+
     # --- Menu callbacks ---
 
     def _on_remove_pii(self, sender):
@@ -460,6 +494,7 @@ class PIIBuddyMenuBar:
                 encoding="utf-8",
             )
             self._last_mapping_path = mapping_path
+            self._last_entities_found = len(entities)
 
             self._notify(
                 f"PII Removed! {len(entities)} items redacted. "
