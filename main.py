@@ -509,11 +509,6 @@ def main():
                 shutil.copy2(str(filepath), str(dest))
             success = process_file(dest, settings)
 
-        if success:
-            logger.info("")
-            logger.info("How did we do? Rate this redaction:")
-            logger.info("  ./run.sh --rate 1-5 [--feedback \"what we missed\"]")
-
         sys.exit(0 if success else 1)
 
     # Default: watch mode
