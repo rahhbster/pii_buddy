@@ -10,8 +10,10 @@ Usage:
     python -m pii_buddy.menubar
 """
 
+import fcntl
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -19,6 +21,47 @@ from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger("pii_buddy")
+
+# --- Single-instance guard ---
+
+_LOCK_FILE_PATH = "/tmp/pii_buddy_menubar.lock"
+_lock_file = None  # keep reference alive to hold the lock
+
+
+def _exit_if_already_running():
+    """Prevent multiple instances using two independent checks.
+
+    Option A — file lock (works everywhere, survives crashes):
+      An exclusive flock on a temp file.  The OS releases it automatically
+      when the process exits for any reason.
+
+    Option B — NSRunningApplication (native macOS, bundle-aware):
+      Counts running processes that share our bundle identifier.
+      Only effective when running as a .app bundle; silently skipped
+      when launched from a plain ``python`` invocation.
+    """
+    global _lock_file
+
+    # --- Option A: file lock ---
+    try:
+        _lock_file = open(_LOCK_FILE_PATH, "w")
+        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file.write(str(os.getpid()))
+        _lock_file.flush()
+    except (IOError, OSError):
+        print("PII Buddy is already running (lock held).", file=sys.stderr)
+        sys.exit(0)
+
+    # --- Option B: NSRunningApplication check ---
+    try:
+        from AppKit import NSRunningApplication
+        bundle_id = "dev.piibuddy.menubar"
+        running = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
+        if len(running) > 1:
+            print("PII Buddy is already running (bundle check).", file=sys.stderr)
+            sys.exit(0)
+    except ImportError:
+        pass  # PyObjC not available; file lock is sufficient
 
 # Icon paths (relative to this file)
 _ICONS_DIR = Path(__file__).parent / "data" / "icons"
@@ -555,6 +598,7 @@ def main():
         format="%(asctime)s  %(message)s",
         datefmt="%H:%M:%S",
     )
+    _exit_if_already_running()
     app = PIIBuddyMenuBar()
     app.run()
 
