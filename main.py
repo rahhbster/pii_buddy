@@ -20,7 +20,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from pii_buddy.config import ALL_DIRS, INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, USER_BLOCKLISTS_DIR, PII_BUDDY_MAS_BUILD
+import pii_buddy.config as cfg
+from pii_buddy.config import PII_BUDDY_MAS_BUILD
 
 
 USER_BLOCKLIST_TEMPLATE = """\
@@ -47,10 +48,18 @@ def setup_logging():
 
 
 def ensure_dirs():
-    for d in ALL_DIRS:
+    """Create every directory in cfg.ALL_DIRS.
+
+    Reads cfg.ALL_DIRS (and cfg.USER_BLOCKLISTS_DIR) through the module
+    rather than importing those names directly — a `--dir` override
+    reassigns pii_buddy.config's attributes after this module is first
+    imported, and a bare `from pii_buddy.config import ALL_DIRS` would
+    keep pointing at the stale, pre-override list.
+    """
+    for d in cfg.ALL_DIRS:
         d.mkdir(parents=True, exist_ok=True)
     # Seed user blocklist if it doesn't exist
-    user_bl = USER_BLOCKLISTS_DIR / "user_blocklist.txt"
+    user_bl = cfg.USER_BLOCKLISTS_DIR / "user_blocklist.txt"
     if not user_bl.exists():
         user_bl.write_text(USER_BLOCKLIST_TEMPLATE, encoding="utf-8")
 
@@ -297,19 +306,25 @@ def main():
 
     # Override base dir if requested
     if args.dir:
-        import pii_buddy.config as cfg
         cfg.BASE_DIR = Path(args.dir)
         cfg.INPUT_DIR = cfg.BASE_DIR / "input"
         cfg.OUTPUT_DIR = cfg.BASE_DIR / "output"
         cfg.MAPPINGS_DIR = cfg.BASE_DIR / "mappings"
         cfg.ORIGINALS_DIR = cfg.BASE_DIR / "originals"
         cfg.LOGS_DIR = cfg.BASE_DIR / "logs"
-        cfg.ALL_DIRS = [cfg.INPUT_DIR, cfg.OUTPUT_DIR, cfg.MAPPINGS_DIR, cfg.ORIGINALS_DIR, cfg.LOGS_DIR]
+        cfg.USER_BLOCKLISTS_DIR = cfg.BASE_DIR / "blocklists"
+        cfg.FEEDBACK_DIR = cfg.BASE_DIR / "feedback"
+        # Every directory main.py/watcher.py might need to exist under the
+        # overridden base — previously this list dropped blocklists/feedback,
+        # so ensure_dirs() never created them under --dir either.
+        cfg.ALL_DIRS = [
+            cfg.INPUT_DIR, cfg.OUTPUT_DIR, cfg.MAPPINGS_DIR, cfg.ORIGINALS_DIR,
+            cfg.LOGS_DIR, cfg.USER_BLOCKLISTS_DIR, cfg.FEEDBACK_DIR,
+        ]
 
     ensure_dirs()
 
     # Resolve settings: CLI flags > settings.conf > hardcoded defaults
-    import pii_buddy.config as cfg
     from pii_buddy.settings import resolve_settings, seed_settings_file
 
     base_dir = cfg.BASE_DIR

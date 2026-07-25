@@ -34,10 +34,14 @@ detailed order of operations.
 
 ## Known gaps, unrelated to this work
 
-- [ ] Pre-existing bug: `main.py --once` throws `FileNotFoundError` in
-      non-MAS `--dir` mode. Reproduced independently on `HEAD` before any
-      Venice/sandbox changes — not yet root-caused, not fixed (out of
-      scope for the change that found it).
+- [x] ~~Pre-existing bug: `main.py --once` throws `FileNotFoundError` in
+      non-MAS `--dir` mode~~ — root-caused and fixed: `ensure_dirs()`
+      referenced a stale `ALL_DIRS`/`USER_BLOCKLISTS_DIR` binding captured
+      at import time, so a `--dir` override's directories were never
+      actually created before the file copy ran. The `--dir` override
+      block was also missing `USER_BLOCKLISTS_DIR`/`FEEDBACK_DIR` from the
+      dirs it created. Both fixed; regression tests in
+      `tests/test_dir_override.py`.
 - [ ] Bookmark staleness behavior across OS upgrades, volume renames, or
       iCloud Drive folders is only observable through real, long-term
       usage — current code logs a warning and proceeds on `is_stale`, UX
