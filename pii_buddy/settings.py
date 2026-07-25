@@ -39,6 +39,12 @@ SETTINGS_TEMPLATE = """\
 # api_key =
 # model = meta-llama/llama-3.1-8b-instruct:free
 # endpoint = https://openrouter.ai/api/v1
+
+[venice]
+# enabled = false
+# api_key =
+# model = e2ee-qwen3-27b
+# endpoint = https://api.venice.ai/api/v1
 """
 
 
@@ -63,6 +69,10 @@ class Settings:
     openrouter_api_key: str = ""
     openrouter_model: str = "meta-llama/llama-3.1-8b-instruct:free"
     openrouter_endpoint: str = "https://openrouter.ai/api/v1"
+    venice_enabled: bool = False      # Venice TEE/E2EE confidential LLM verification
+    venice_api_key: str = ""
+    venice_model: str = "e2ee-qwen3-27b"
+    venice_endpoint: str = "https://api.venice.ai/api/v1"
 
     @classmethod
     def defaults(cls) -> "Settings":
@@ -121,6 +131,16 @@ def load_config_file(base_dir: Path) -> dict:
     if parser.has_option("openrouter", "endpoint"):
         values["openrouter_endpoint"] = parser.get("openrouter", "endpoint").strip()
 
+    # [venice] section
+    if parser.has_option("venice", "enabled"):
+        values["venice_enabled"] = parser.getboolean("venice", "enabled")
+    if parser.has_option("venice", "api_key"):
+        values["venice_api_key"] = parser.get("venice", "api_key").strip()
+    if parser.has_option("venice", "model"):
+        values["venice_model"] = parser.get("venice", "model").strip()
+    if parser.has_option("venice", "endpoint"):
+        values["venice_endpoint"] = parser.get("venice", "endpoint").strip()
+
     return values
 
 
@@ -139,6 +159,9 @@ def resolve_settings(
     cli_openrouter: bool = False,
     cli_openrouter_key: str = None,
     cli_openrouter_model: str = None,
+    cli_venice: bool = False,
+    cli_venice_key: str = None,
+    cli_venice_model: str = None,
 ) -> Settings:
     """
     Three-tier merge: CLI flags > settings.conf > hardcoded defaults.
@@ -258,6 +281,34 @@ def resolve_settings(
         logger.warning("--openrouter requires an API key (--openrouter-key or settings.conf)")
         openrouter_enabled = False
 
+    # --- venice ---
+    venice_enabled = defaults.venice_enabled
+    if "venice_enabled" in conf:
+        venice_enabled = conf["venice_enabled"]
+    if cli_venice:
+        venice_enabled = True
+
+    venice_api_key = defaults.venice_api_key
+    if "venice_api_key" in conf:
+        venice_api_key = conf["venice_api_key"]
+    if cli_venice_key is not None:
+        venice_api_key = cli_venice_key
+
+    venice_model = defaults.venice_model
+    if "venice_model" in conf:
+        venice_model = conf["venice_model"]
+    if cli_venice_model is not None:
+        venice_model = cli_venice_model
+
+    venice_endpoint = defaults.venice_endpoint
+    if "venice_endpoint" in conf:
+        venice_endpoint = conf["venice_endpoint"]
+
+    # --venice requires an API key
+    if venice_enabled and not venice_api_key:
+        logger.warning("--venice requires an API key (--venice-key or settings.conf)")
+        venice_enabled = False
+
     return Settings(
         base_dir=base_dir,
         input_dir=input_dir,
@@ -277,6 +328,10 @@ def resolve_settings(
         openrouter_api_key=openrouter_api_key,
         openrouter_model=openrouter_model,
         openrouter_endpoint=openrouter_endpoint,
+        venice_enabled=venice_enabled,
+        venice_api_key=venice_api_key,
+        venice_model=venice_model,
+        venice_endpoint=venice_endpoint,
     )
 
 

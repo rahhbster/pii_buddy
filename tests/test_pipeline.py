@@ -68,6 +68,10 @@ class TestGracefulDegradation:
         """When OpenRouter is disabled, Pass 3 should be skipped entirely."""
         assert not default_settings.openrouter_enabled
 
+    def test_venice_disabled_skips_cleanly(self, default_settings):
+        """When Venice is disabled, Pass 3b should be skipped entirely."""
+        assert not default_settings.venice_enabled
+
     def test_audit_disabled_skips_cleanly(self, default_settings):
         """When audit is disabled via --no-audit, Pass 2 should be skipped."""
         default_settings.audit_enabled = False
@@ -149,6 +153,31 @@ class TestSettingsResolution:
         )
         assert settings.openrouter_enabled is True
         assert settings.openrouter_api_key == "sk-or-test"
+
+    def test_venice_requires_key(self):
+        """--venice without key should disable with warning."""
+        from pii_buddy.settings import resolve_settings
+        from pathlib import Path
+
+        settings = resolve_settings(
+            base_dir=Path("/tmp/test"),
+            cli_venice=True,
+            cli_venice_key=None,
+        )
+        assert settings.venice_enabled is False
+
+    def test_venice_with_key(self):
+        """--venice with key should enable."""
+        from pii_buddy.settings import resolve_settings
+        from pathlib import Path
+
+        settings = resolve_settings(
+            base_dir=Path("/tmp/test"),
+            cli_venice=True,
+            cli_venice_key="venice-test-key",
+        )
+        assert settings.venice_enabled is True
+        assert settings.venice_api_key == "venice-test-key"
 
     def test_verify_requires_key(self):
         """--verify without key should disable with warning."""

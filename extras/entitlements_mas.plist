@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the Mac App Store (MAS) build variant of PII Buddy.
+
+  Applies ONLY to the sandboxed MAS target produced by
+  `setup_py2app.py --variant mas` (see extras/build_py2app.sh). The
+  existing direct-download/notarized build keeps using its current,
+  unsandboxed entitlements untouched.
+
+  Sign with, e.g.:
+    codesign --deep --force --options runtime \
+      --entitlements extras/entitlements_mas.plist \
+      --sign "3rd Party Mac Developer Application: Your Name (TEAMID)" \
+      "dist/PII Buddy.app"
+
+  NOTE: whether these entitlements actually grant the sandboxed process
+  the access it needs at runtime (NSOpenPanel returning a security-scoped
+  URL, watchdog's FSEvents/kqueue working inside the sandbox, etc.) can
+  only be confirmed by running the signed, sandboxed .app on real macOS —
+  see docs/app_store_sandbox.md for exactly what still needs manual
+  verification.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Required for any Mac App Store submission. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!--
+      Grants read/write access to files/folders the user explicitly
+      picks via NSOpenPanel (see pii_buddy/mac_sandbox/bridge.py). This
+      is how the sandboxed build gets permission to watch a folder at
+      all — there is no broad filesystem grant.
+    -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!--
+      Lets a security-scoped bookmark created from that NSOpenPanel
+      selection be persisted (see BookmarkStore) and resolved again on
+      a later launch, so the user isn't re-prompted every time.
+    -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!--
+      Network access for the optional, premium cloud-verify features
+      (--verify / OpenRouter / Venice). Only include this key — and ship
+      those features — in the MAS build if they are actually enabled for
+      MAS users; otherwise omit this entitlement and gate the features
+      out of the MAS target entirely (see PII_BUDDY_MAS_BUILD in
+      pii_buddy/config.py and setup_py2app.py).
+    -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!--
+      Deliberately NOT included: any
+      com.apple.security.temporary-exception.files.absolute-path.read-write
+      entry. Apple rejects broad filesystem exceptions like that for App
+      Store submissions — access must go through the user-selected +
+      bookmarks flow above.
+    -->
+</dict>
+</plist>

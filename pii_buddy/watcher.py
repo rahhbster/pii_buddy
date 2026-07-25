@@ -113,6 +113,16 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
             except ImportError:
                 logger.warning("OpenRouter verification requires premium modules. Visit https://piibuddy.com")
 
+        # 3.5b-2 Venice TEE/E2EE confidential verification (optional, premium)
+        if settings.venice_enabled and settings.venice_api_key:
+            try:
+                from .venice_verifier import venice_verify_and_patch
+                redacted_text, mapping = venice_verify_and_patch(
+                    redacted_text, mapping, settings
+                )
+            except ImportError:
+                logger.warning("Venice verification requires premium modules. Visit https://piibuddy.com")
+
         # 3.5c Cloud verification (optional, premium)
         if settings.verify_enabled and settings.verify_api_key:
             try:

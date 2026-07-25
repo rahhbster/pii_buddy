@@ -18,8 +18,9 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
-from pii_buddy.config import ALL_DIRS, INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, USER_BLOCKLISTS_DIR
+from pii_buddy.config import ALL_DIRS, INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, USER_BLOCKLISTS_DIR, PII_BUDDY_MAS_BUILD
 
 
 USER_BLOCKLIST_TEMPLATE = """\
@@ -52,6 +53,68 @@ def ensure_dirs():
     user_bl = USER_BLOCKLISTS_DIR / "user_blocklist.txt"
     if not user_bl.exists():
         user_bl.write_text(USER_BLOCKLIST_TEMPLATE, encoding="utf-8")
+
+
+def _show_mas_regrant_alert():
+    """Direct the user to "Choose Watch Folder…" via a rumps alert.
+
+    Best-effort: falls back to a log line if rumps/AppKit aren't
+    available (e.g. this is somehow invoked outside the menu bar app).
+    """
+    try:
+        import rumps
+
+        rumps.alert(
+            title="PII Buddy needs a folder",
+            message=(
+                "Choose a folder to watch from the menu bar icon: "
+                "'Choose Watch Folder…'"
+            ),
+        )
+    except Exception:
+        logging.getLogger("pii_buddy").error(
+            "No watch folder configured. Use 'Choose Watch Folder…' "
+            "from the menu bar."
+        )
+
+
+def _mas_resolve_watch_root(store=None, alert_fn=None) -> Optional[Path]:
+    """Resolve the sandboxed watch folder for the MAS build.
+
+    Returns the resolved, currently-accessible Path, or None if the user
+    needs to (re-)grant access — in which case an alert directs them to
+    "Choose Watch Folder…" rather than raising or silently doing nothing.
+
+    ``store`` and ``alert_fn`` are injectable so this branching logic can
+    be unit tested with a mocked BookmarkStore, with no real PyObjC/
+    NSURL/rumps calls.
+    """
+    logger = logging.getLogger("pii_buddy")
+
+    if store is None:
+        from pii_buddy.mac_sandbox.bookmark_store import BookmarkStore
+        from pii_buddy.mac_sandbox.bridge import PyObjCSandboxBridge
+
+        store = BookmarkStore(bridge=PyObjCSandboxBridge())
+    if alert_fn is None:
+        alert_fn = _show_mas_regrant_alert
+
+    result = store.resolve_bookmark()
+    if result.needs_regrant or result.path is None:
+        alert_fn()
+        return None
+
+    if result.is_stale:
+        logger.warning(
+            "Watch folder bookmark is stale; access may fail. "
+            "Re-choose the folder via 'Choose Watch Folder…' if issues occur."
+        )
+
+    if not store.start_accessing(result.path):
+        alert_fn()
+        return None
+
+    return result.path
 
 
 def main():
@@ -204,6 +267,24 @@ def main():
         default=None,
         help="OpenRouter model (default: meta-llama/llama-3.1-8b-instruct:free)",
     )
+    # Venice flags
+    parser.add_argument(
+        "--venice",
+        action="store_true",
+        help="Enable Venice TEE/E2EE confidential LLM verification (Pass 3b)",
+    )
+    parser.add_argument(
+        "--venice-key",
+        metavar="KEY",
+        default=None,
+        help="Venice API key",
+    )
+    parser.add_argument(
+        "--venice-model",
+        metavar="ID",
+        default=None,
+        help="Venice model (default: e2ee-qwen3-27b)",
+    )
     args = parser.parse_args()
 
     setup_logging()
@@ -249,6 +330,9 @@ def main():
         cli_openrouter=args.openrouter,
         cli_openrouter_key=args.openrouter_key,
         cli_openrouter_model=args.openrouter_model,
+        cli_venice=args.venice,
+        cli_venice_key=args.venice_key,
+        cli_venice_model=args.venice_model,
     )
 
     # Apply resolved paths back to config module (for code that reads config directly)
@@ -413,6 +497,16 @@ def main():
             except ImportError:
                 logger.warning("OpenRouter verification requires premium modules. Visit https://piibuddy.com")
 
+        # Pass 3b: Venice TEE/E2EE confidential verification (optional, premium)
+        if settings.venice_enabled and settings.venice_api_key:
+            try:
+                from pii_buddy.venice_verifier import venice_verify_and_patch
+                redacted_text, mapping = venice_verify_and_patch(
+                    redacted_text, mapping, settings
+                )
+            except ImportError:
+                logger.warning("Venice verification requires premium modules. Visit https://piibuddy.com")
+
         # Upsell: if audit found extra PII and cloud verify is off
         post_tags = len(mapping.get("tags", {}))
         extra_found = post_tags - pre_audit_tags
@@ -530,10 +624,21 @@ def main():
         logger.info(f"Audit:    disabled")
     if settings.openrouter_enabled:
         logger.info(f"OpenRouter: enabled ({settings.openrouter_model})")
+    if settings.venice_enabled:
+        logger.info(f"Venice:   enabled ({settings.venice_model}, TEE/E2EE)")
     if settings.verify_enabled:
         logger.info(f"Verify:   enabled ({settings.verify_endpoint})")
     logger.info("")
-    watch(cfg.INPUT_DIR, settings)
+
+    if PII_BUDDY_MAS_BUILD:
+        # Sandboxed build: never trust cfg.INPUT_DIR directly — resolve
+        # the user-granted, security-scoped bookmark instead.
+        watch_root = _mas_resolve_watch_root()
+        if watch_root is None:
+            return
+        watch(watch_root, settings)
+    else:
+        watch(cfg.INPUT_DIR, settings)
 
 
 if __name__ == "__main__":

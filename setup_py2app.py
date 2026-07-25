@@ -9,12 +9,35 @@ Usage:
 
 Output:
     dist/PII Buddy.app
+
+--- MAS (Mac App Store) build variant ---
+
+Set PII_BUDDY_BUILD_VARIANT=mas to produce the sandboxed App Store
+target instead, writing to a separate dist/mas/ directory so it never
+collides with (or risks overwriting) the direct-download build above:
+
+    PII_BUDDY_BUILD_VARIANT=mas .venv/bin/python setup_py2app.py py2app
+
+This only changes py2app's own inputs (dist dir, bundled
+LSEnvironment flag). It does NOT sign the app or apply entitlements —
+py2app has no concept of sandbox entitlements. Signing with
+extras/entitlements_mas.plist and packaging as a .pkg via productbuild
+is a separate, manual step — see extras/build_py2app_mas.sh and
+docs/app_store_sandbox.md for exactly what still needs to be run/
+verified by hand on real macOS with a Mac Developer Application
+certificate.
+
+The existing direct-download/notarized build (default, no env var) is
+completely untouched by this variant support.
 """
 
+import os
 import site
 import sys
 from pathlib import Path
 from setuptools import setup
+
+MAS_VARIANT = os.environ.get("PII_BUDDY_BUILD_VARIANT", "").strip().lower() == "mas"
 
 # Locate spaCy models in the venv's site-packages
 site_packages = Path(site.getsitepackages()[0])
@@ -41,20 +64,29 @@ if not icns_path.exists():
 
 APP = ["main.py"]
 
+_plist = {
+    "CFBundleName": "PII Buddy",
+    "CFBundleDisplayName": "PII Buddy",
+    "CFBundleIdentifier": "dev.piibuddy.menubar",
+    "CFBundleVersion": "0.6.0",
+    "CFBundleShortVersionString": "0.6.0",
+    "LSUIElement": True,  # Menu bar app — hide from Dock by default
+    "NSHighResolutionCapable": True,
+    "LSMinimumSystemVersion": "12.0",
+    "NSHumanReadableCopyright": "Copyright © 2025-2026 PII Buddy",
+}
+
+if MAS_VARIANT:
+    # Auto-enable the sandbox code paths (BookmarkStore, "Choose Watch
+    # Folder…" menu item) when this build launches — no manual env var
+    # needed by the end user. Actual sandboxing/entitlements come from
+    # codesign, not from this plist key; see extras/build_py2app_mas.sh.
+    _plist["LSEnvironment"] = {"PII_BUDDY_MAS_BUILD": "1"}
+
 OPTIONS = {
     "argv_emulation": False,
     "iconfile": icns_file,
-    "plist": {
-        "CFBundleName": "PII Buddy",
-        "CFBundleDisplayName": "PII Buddy",
-        "CFBundleIdentifier": "dev.piibuddy.menubar",
-        "CFBundleVersion": "0.6.0",
-        "CFBundleShortVersionString": "0.6.0",
-        "LSUIElement": True,  # Menu bar app — hide from Dock by default
-        "NSHighResolutionCapable": True,
-        "LSMinimumSystemVersion": "12.0",
-        "NSHumanReadableCopyright": "Copyright © 2025-2026 PII Buddy",
-    },
+    "plist": _plist,
     "packages": [
         "pii_buddy",
         "spacy",
@@ -112,6 +144,13 @@ OPTIONS = {
     # Pass --menubar automatically when launched as .app
     "extra_scripts": [],
 }
+
+# Keep MAS output fully separate from the direct-download build's
+# dist/PII Buddy.app so `PII_BUDDY_BUILD_VARIANT=mas ... py2app` can
+# never clobber it. distutils reads --dist-dir from script_args, not
+# from the py2app-specific OPTIONS dict above.
+if MAS_VARIANT and "--dist-dir" not in " ".join(sys.argv):
+    sys.argv += ["--dist-dir", "dist/mas"]
 
 setup(
     name="PII Buddy",

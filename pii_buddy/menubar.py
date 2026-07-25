@@ -22,6 +22,47 @@ from pathlib import Path
 
 logger = logging.getLogger("pii_buddy")
 
+# --- MAS sandbox: "Choose Watch Folder…" (additive, opt-in) ---
+#
+# Only wired into the menu when PII_BUDDY_MAS_BUILD is set (see
+# setup_py2app.py's MAS variant / extras/entitlements_mas.plist). The
+# existing direct-download build never references this.
+from .config import PII_BUDDY_MAS_BUILD  # noqa: E402
+from .mac_sandbox.bookmark_store import BookmarkStore  # noqa: E402
+
+
+class WatchFolderMenuController:
+    """Owns the "Choose Watch Folder…" menu item's callback logic.
+
+    Deliberately decoupled from rumps/AppKit: it only touches a
+    ``BookmarkStore`` (itself decoupled from PyObjC via the injected
+    ``SandboxBridge``) and whatever menu-item-like object it's given
+    (only ``.title``/``.state`` are used). This lets the callback logic
+    be unit tested with ``FakeSandboxBridge`` and a plain stand-in
+    object instead of a real rumps.App event loop.
+    """
+
+    def __init__(self, store: BookmarkStore, notify=None):
+        self.store = store
+        self._notify = notify or (lambda message: None)
+
+    def on_choose_folder(self, menu_item):
+        """Drive the folder picker; update ``menu_item`` on success.
+
+        Returns the chosen Path, or None if the user cancelled (in which
+        case the menu item is left unchanged).
+        """
+        path = self.store.request_folder_access()
+        if path is None:
+            self._notify("No folder selected — watch folder unchanged.")
+            return None
+
+        menu_item.title = f"Watch Folder: {path.name}"
+        menu_item.state = True
+        self._notify(f"Now watching: {path}")
+        return path
+
+
 # --- Single-instance guard ---
 
 _LOCK_FILE_PATH = "/tmp/pii_buddy_menubar.lock"
@@ -234,7 +275,7 @@ class PIIBuddyMenuBar:
                 label, callback=lambda sender, s=stars: self._on_rate(s)
             )
 
-        self.app.menu = [
+        menu_items = [
             rumps.MenuItem(
                 "Remove PII from Clipboard", callback=self._on_remove_pii
             ),
@@ -242,6 +283,29 @@ class PIIBuddyMenuBar:
                 "Restore Last Clipboard", callback=self._on_restore
             ),
             None,
+        ]
+
+        # MAS build only: sandboxed apps can't watch an arbitrary folder
+        # without an explicit, user-granted, security-scoped bookmark.
+        if PII_BUDDY_MAS_BUILD:
+            from .mac_sandbox.bridge import PyObjCSandboxBridge
+
+            self._watch_folder_store = BookmarkStore(bridge=PyObjCSandboxBridge())
+            self._watch_folder_controller = WatchFolderMenuController(
+                store=self._watch_folder_store, notify=self._notify
+            )
+            self._watch_folder_item = rumps.MenuItem(
+                "Choose Watch Folder…",
+                callback=self._watch_folder_controller.on_choose_folder,
+            )
+            existing = self._watch_folder_store.metadata()
+            if existing and existing.get("path"):
+                self._watch_folder_item.title = f"Watch Folder: {Path(existing['path']).name}"
+                self._watch_folder_item.state = True
+            menu_items.append(self._watch_folder_item)
+            menu_items.append(None)
+
+        menu_items += [
             rate_menu,
             rumps.MenuItem(
                 "Report Missed PII...", callback=self._on_report_missed
@@ -251,6 +315,8 @@ class PIIBuddyMenuBar:
             None,
             rumps.MenuItem("Quit", callback=self._on_quit),
         ]
+
+        self.app.menu = menu_items
 
         # Apply saved preferences
         _set_dock_visible(self._prefs["show_in_dock"])

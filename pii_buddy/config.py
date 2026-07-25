@@ -14,6 +14,13 @@ FEEDBACK_DIR = BASE_DIR / "feedback"
 
 ALL_DIRS = [INPUT_DIR, OUTPUT_DIR, MAPPINGS_DIR, ORIGINALS_DIR, LOGS_DIR, USER_BLOCKLISTS_DIR, FEEDBACK_DIR]
 
+# Set (by the MAS build's entry point / Info.plist environment, or manually
+# for local dry-run testing) when running as the sandboxed Mac App Store
+# variant. Gates sandbox-only behavior (security-scoped bookmarks, the
+# "Choose Watch Folder…" menu item, cloud-verify feature availability) so
+# the existing direct-download/notarized build is completely unaffected.
+PII_BUDDY_MAS_BUILD = os.environ.get("PII_BUDDY_MAS_BUILD", "0") == "1"
+
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
 
