@@ -12,22 +12,33 @@ Regression tests: `tests/test_dir_override.py`.
 
 ## Next
 
-**Team-mode review wave, in flight (2026-10-14).** Detailed running log
+**Team-mode review wave, mostly merged (2026-10-14).** The detailed log
 (defects, verdicts, incidents) is in the PRIVATE repo:
 `pii_buddy_private/docs/reviews/2026-10-14-team-review.md`. It lists
 unfixed defects, so it is not kept here.
 
-1. Open fix PRs, all red-teamed, fixers pushing to the same branches:
-   #1, #12 (detector), #3 (updater), #4 (redactor), #7 (watcher),
-   #6 (menubar), #2, #5 (LICENSE, site), #8-#11 (CI, tests, DMG).
-   `gh pr list` is the live set. Merge nothing until each branch's
-   latest commit has been re-reviewed by someone who did not write it.
-2. Merge order: 4, 3, 1 then 12, 7, 6, 2/5, 8-11.
-3. Then build the local API + MCP server from the Architect design
-   (private log has the full design): core.py first, tests first.
-4. Never run the test suite without `PII_BUDDY_DIR` pointed at a temp
-   dir. A prior run emptied `~/PII_Buddy/originals`.
-5. Do not delete any remote branch without asking the owner.
+Merged to `main`: #1 (name next to email/phone), #2 (LICENSE), #3
+(blocklist updater), #4 (redactor/restorer), #5 (site/README), #7
+(watcher: collisions, perms), #8 (CI, py3.10+3.12), #9 (synthetic
+fixtures), #10 (non-vacuous tests), #11 (DMG build), #13 (`--restore`
+crash), #14 (`--force-update`, exit codes), #15 (test isolation).
+
+Still open:
+1. **#6 menubar** (`fix/menubar-lock-and-clipboard`): login-item plist is
+   never auto-rewritten; lock path, clipboard order, 0600 logs. Final fix
+   a349597 needs one more independent review (an automated scan flagged a
+   "parser differential" in menubar.py at the latest commit, unverified).
+2. **#12 detector regex coverage** (`fix/detector-regex-coverage`): five
+   review rounds. Hard-stop round in progress: bound `BARE_URL_RE`, keep
+   overlap remainders, standard card groupings only. If the next
+   independent review rejects it, ship the proven subset only.
+3. Follow-up PRs: Python floor is 3.10 (the repo still says "3.9+" in
+   README, `setup.sh`, `build_dmg.sh`); mappings and prefs through the
+   private-write helper and `PII_BUDDY_DIR` (`main.py` paste path,
+   `menubar.py`); `main.py --dir` mutates config globals (a reverse-order
+   test leak); local API + MCP server (design in the private log).
+4. Never run the suite without `PII_BUDDY_DIR` set to a temp dir, and do
+   not delete any remote branch without asking the owner.
 
 Also pending: the free sandbox smoke test below (not yet run).
 
