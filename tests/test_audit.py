@@ -21,16 +21,16 @@ from pii_buddy.audit import (
 # -----------------------------------------------------------------------
 class TestOrphanedConjunctions:
     def test_tag_and_name(self):
-        """'<NAME AS> and Robert' should catch 'Robert'."""
-        text = "Meeting with <NAME AS> and Robert tomorrow."
+        """'<NAME AS> and Rory' should catch 'Rory'."""
+        text = "Meeting with <NAME AS> and Rory tomorrow."
         findings = _check_orphaned_conjunctions(text)
-        assert "Robert" in findings
+        assert "Rory" in findings
 
     def test_name_and_tag(self):
-        """'Robert and <NAME AS>' should catch 'Robert'."""
-        text = "Robert and <NAME AS> will attend."
+        """'Rory and <NAME AS>' should catch 'Rory'."""
+        text = "Rory and <NAME AS> will attend."
         findings = _check_orphaned_conjunctions(text)
-        assert "Robert" in findings
+        assert "Rory" in findings
 
     def test_both_tagged_no_finding(self):
         """'<NAME AS> and <NAME RM>' should produce no findings."""
@@ -39,10 +39,10 @@ class TestOrphanedConjunctions:
         assert findings == []
 
     def test_multi_word_name_after_and(self):
-        """'<NAME AS> and Amanda Chen' should catch 'Amanda Chen'."""
-        text = "Invited <NAME AS> and Amanda Chen to the call."
+        """'<NAME AS> and Ava Testcase' should catch 'Ava Testcase'."""
+        text = "Invited <NAME AS> and Ava Testcase to the call."
         findings = _check_orphaned_conjunctions(text)
-        assert "Amanda Chen" in findings
+        assert "Ava Testcase" in findings
 
     def test_lowercase_after_and_ignored(self):
         """'<NAME AS> and the team' — 'the' is lowercase, not a name."""
@@ -63,16 +63,16 @@ class TestOrphanedConjunctions:
 # -----------------------------------------------------------------------
 class TestTitlePrefixed:
     def test_mr_name(self):
-        """'Mr. Singh' should be caught."""
-        text = "Dear Mr. Singh, please review the document."
+        """'Mr. Sample' should be caught."""
+        text = "Dear Mr. Sample, please review the document."
         findings = _check_title_prefixed(text)
-        assert "Singh" in findings
+        assert "Sample" in findings
 
     def test_dr_name(self):
-        """'Dr. Amanda Chen' should be caught."""
-        text = "Referred by Dr. Amanda Chen at the clinic."
+        """'Dr. Ava Testcase' should be caught."""
+        text = "Referred by Dr. Ava Testcase at the clinic."
         findings = _check_title_prefixed(text)
-        assert "Amanda Chen" in findings or "Amanda" in findings
+        assert "Ava Testcase" in findings or "Ava" in findings
 
     def test_prof_name(self):
         """'Prof. Williams' should be caught."""
@@ -98,11 +98,11 @@ class TestTitlePrefixed:
 # -----------------------------------------------------------------------
 class TestCapitalizedPhrases:
     def test_two_word_name(self):
-        """'Amanda Chen' as a standalone phrase should be caught."""
-        text = "We spoke with Amanda Chen about the project."
+        """'Ava Testcase' as a standalone phrase should be caught."""
+        text = "We spoke with Ava Testcase about the project."
         blocklist = set()
         findings = _check_capitalized_phrases(text, blocklist)
-        assert "Amanda Chen" in findings
+        assert "Ava Testcase" in findings
 
     def test_three_word_name(self):
         """'Mary Anne Wilson' should be caught."""
@@ -120,7 +120,7 @@ class TestCapitalizedPhrases:
 
     def test_single_word_ignored(self):
         """Single capitalized words are not multi-word phrases."""
-        text = "Robert will attend."
+        text = "Rory will attend."
         blocklist = set()
         findings = _check_capitalized_phrases(text, blocklist)
         assert findings == []
@@ -140,23 +140,23 @@ class TestCapitalizedPhrases:
 # -----------------------------------------------------------------------
 class TestPossessiveReferences:
     def test_known_name_possessive(self):
-        """'Robert's' where Robert is a known name should be caught."""
-        text = "Robert's assistant will prepare the agenda."
-        known = {"robert", "merrill", "robert merrill"}
+        """'Rory's' where Rory is a known name should be caught."""
+        text = "Rory's assistant will prepare the agenda."
+        known = {"rory", "mockdata", "rory mockdata"}
         findings = _check_possessive_references(text, known)
-        assert "Robert" in findings
+        assert "Rory" in findings
 
     def test_unknown_name_possessive_ignored(self):
         """'Monday's' — not a known name, should be ignored."""
         text = "Monday's meeting is at 3pm."
-        known = {"robert"}
+        known = {"rory"}
         findings = _check_possessive_references(text, known)
         assert findings == []
 
     def test_tagged_possessive_ignored(self):
         """'<NAME RM>'s' — already tagged, should not double-detect."""
         text = "<NAME RM>'s assistant will prepare."
-        known = {"robert"}
+        known = {"rory"}
         findings = _check_possessive_references(text, known)
         assert findings == []
 
@@ -168,17 +168,17 @@ class TestCollectKnownNames:
     def test_extracts_full_and_parts(self):
         mapping = {
             "persons": {
-                "Atul Singh": "<NAME AS>",
-                "Robert Merrill": "<NAME RM>",
+                "Alex Sample": "<NAME AS>",
+                "Rory Mockdata": "<NAME RM>",
             }
         }
         names = _collect_known_names(mapping)
-        assert "atul singh" in names
-        assert "robert merrill" in names
-        assert "atul" in names
-        assert "singh" in names
-        assert "robert" in names
-        assert "merrill" in names
+        assert "alex sample" in names
+        assert "rory mockdata" in names
+        assert "alex" in names
+        assert "sample" in names
+        assert "rory" in names
+        assert "mockdata" in names
 
     def test_empty_mapping(self):
         names = _collect_known_names({"persons": {}})
@@ -190,26 +190,26 @@ class TestCollectKnownNames:
 # -----------------------------------------------------------------------
 class TestAuditRedacted:
     def test_catches_orphaned_name(self, sample_redacted_text, sample_mapping):
-        """audit_redacted should catch 'Amanda Chen' and 'Singh' after Mr."""
+        """audit_redacted should catch 'Ava Testcase' and 'Sample' after Mr."""
         patched, updated = audit_redacted(sample_redacted_text, sample_mapping)
 
-        # Amanda Chen should now be tagged
-        assert "Amanda Chen" not in patched
+        # Ava Testcase should now be tagged
+        assert "Ava Testcase" not in patched
         assert "<NAME AC>" in patched or "<NAME" in patched
 
     def test_catches_possessive_reference(self, sample_redacted_text, sample_mapping):
-        """'Robert's' should be replaced with Robert's tag."""
+        """'Rory's' should be replaced with Rory's tag."""
         patched, updated = audit_redacted(sample_redacted_text, sample_mapping)
 
-        # "Robert's" should become "<NAME RM>'s" (reuses existing tag)
-        assert "Robert's" not in patched
+        # "Rory's" should become "<NAME RM>'s" (reuses existing tag)
+        assert "Rory's" not in patched
 
     def test_catches_title_prefixed(self, sample_redacted_text, sample_mapping):
-        """'Mr. Singh' should have 'Singh' redacted."""
+        """'Mr. Sample' should have 'Sample' redacted."""
         patched, updated = audit_redacted(sample_redacted_text, sample_mapping)
 
-        # "Mr. Singh" should become "Mr. <NAME AS>" (reuses existing tag)
-        assert "Mr. Singh" not in patched
+        # "Mr. Sample" should become "Mr. <NAME AS>" (reuses existing tag)
+        assert "Mr. Sample" not in patched
 
     def test_updates_mapping(self, sample_redacted_text, sample_mapping):
         """New findings should be added to the mapping."""
