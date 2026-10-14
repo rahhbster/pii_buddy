@@ -14,8 +14,10 @@ Set PII_BUDDY_DIR env var to change the base folder (default: ~/PII_Buddy).
 """
 
 import argparse
+import errno
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -472,7 +474,6 @@ def main():
         return
 
     if args.paste or args.clipboard:
-        import json
         from datetime import datetime
         from pii_buddy.detector import detect_pii
         from pii_buddy.redactor import redact
@@ -577,11 +578,30 @@ def main():
         redacted_path = Path(args.restore[0])
         mapping_path = Path(args.restore[1])
 
-        # Read mapping to find the original tag pattern
-        mapping_data = json.loads(mapping_path.read_text(encoding="utf-8")) if mapping_path.exists() else {}
-        original_file = mapping_data.get("metadata", {}).get("original_file", "")
-
-        text = redacted_path.read_text(encoding="utf-8")
+        if not mapping_path.is_file():
+            logger.error(f"Mapping file not found: {mapping_path}")
+            sys.exit(1)
+        if not redacted_path.is_file():
+            logger.error(f"Redacted file not found: {redacted_path}")
+            sys.exit(1)
+        # Error text names only the path and exception type, never contents.
+        try:
+            mapping_data = json.loads(mapping_path.read_text(encoding="utf-8"))
+            if not isinstance(mapping_data, dict):
+                raise ValueError("mapping is not a JSON object")
+            tags = mapping_data.get("tags")
+            if not isinstance(tags, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in tags.items()
+            ):
+                raise ValueError("mapping has no valid tags object")
+        except (OSError, ValueError) as e:
+            logger.error(f"Cannot read mapping file {mapping_path}: {type(e).__name__}")
+            sys.exit(1)
+        try:
+            text = redacted_path.read_text(encoding="utf-8")
+        except (OSError, ValueError) as e:
+            logger.error(f"Cannot read redacted file {redacted_path}: {type(e).__name__}")
+            sys.exit(1)
         restored = restore(text, mapping_path)
 
         # Build restored filename — strip known prefixes/suffixes
@@ -595,7 +615,36 @@ def main():
         restored_name = f"RESTORED_{restored_name}"
 
         out_path = redacted_path.parent / restored_name
-        out_path.write_text(restored, encoding="utf-8")
+        # Restored text is plaintext PII: created 0600, never following a
+        # symlink and never replacing an existing file (pick a free name).
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        stem, suffix = os.path.splitext(restored_name)
+        try:
+            fd = None
+            for n in range(0, 1000):
+                candidate = out_path if n == 0 else out_path.with_name(f"{stem}_{n}{suffix}")
+                try:
+                    fd = os.open(candidate, flags, 0o600)
+                except (FileExistsError, OSError) as e:
+                    if isinstance(e, FileExistsError) or e.errno == errno.ELOOP:
+                        continue
+                    raise
+                out_path = candidate
+                break
+            if fd is None:
+                raise FileExistsError("no free output name")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(restored)
+            except BaseException:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+        except OSError as e:
+            logger.error(f"Cannot write restored file {out_path}: {type(e).__name__}")
+            sys.exit(1)
         logger.info(f"Restored: {out_path}")
         return
 
