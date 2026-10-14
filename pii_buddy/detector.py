@@ -59,22 +59,31 @@ URL_RE = re.compile(
     r"https?://[^\s<>\"']+|www\.[^\s<>\"']+"
 )
 
-# TLD is deliberately lowercase-only and short-listed: "ASP.NET", "Node.js" and
-# "file.pdf" must not read as hosts. The lookbehind keeps matching linear.
-# Hosts like "tsconfig.dev", "settings.app", "index.ai" and "model.io" are
-# indistinguishable from filenames, so those four TLDs only count with a path.
-# The negative lookahead keeps "docker-compose.com.yml"-style names out.
+# Matching is case-insensitive ("JANETEST.COM") and a path, query, fragment or
+# port is swallowed with the host. "file.pdf" and "Node.js" are not in the TLD
+# list; the .NET family is dropped in _check_bare_url. Hosts like "tsconfig.dev",
+# "settings.app", "index.ai", "model.io", "x.page", "q.me" and "r.ly" are
+# indistinguishable from filenames or words, so those TLDs only count with a
+# path. The negative lookahead keeps "docker-compose.com.yml"-style names out.
+_URL_TAIL = r"(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?"
 BARE_URL_RE = re.compile(
     r"(?<![\w.@/-])(?:[A-Za-z0-9-]+\.)+(?:"
-    r"(?:com|org|net|edu|gov|info|biz|uk)\b(?!\.[A-Za-z0-9])(?:/[^\s<>\"']*)?"
-    r"|(?:io|dev|app|ai)\b/[^\s<>\"']*"
-    r")"
+    rf"(?:com|org|net|edu|gov|info|biz|uk|co|us|ca|de|tech|xyz)\b(?!\.[A-Za-z0-9]){_URL_TAIL}"
+    r"|(?:io|dev|app|ai|page|me|ly)\b(?::\d{1,5})?/[^\s<>\"']*"
+    r")",
+    re.IGNORECASE,
 )
+_NOT_HOSTS = frozenset({"asp.net", "vb.net", "ado.net"})
 
 # Preceded by start, whitespace or an opening/separating character, so
-# "user@host" and "a.b@c" are never handles; decorator and at-rule names are
-# excluded in _check_handle.
-HANDLE_RE = re.compile(r"(?<![^\s(\[{,;:\"'])@[A-Za-z][A-Za-z0-9_]{1,29}\b")
+# "user@host" and "a.b@c" are never handles. The lookahead rejects the front of
+# a fediverse address ("@jane@host.tld"); that is an EMAIL.
+HANDLE_RE = re.compile(
+    r"(?<![^\s(\[{,;:\"'])@(?![A-Za-z0-9_.-]+@)[A-Za-z][A-Za-z0-9_.-]{1,29}\b"
+)
+# Decorator and at-rule names are skipped only where code puts them: at the
+# start of a line and followed by "(", end of line, or a declaration keyword.
+# In prose ("ask @author about it") they are redacted.
 _NON_HANDLES = frozenset(
     "override property staticmethod classmethod dataclass abstractmethod "
     "cached_property wraps pytest functools deprecated overload final "
@@ -84,9 +93,21 @@ _NON_HANDLES = frozenset(
     "autowired component injectable entity nullable nonnull "
     "suppresswarnings functionalinterface".split()
 )
+_CODE_CONTEXT_RE = re.compile(
+    r"[ \t]*(?:\(|$)"
+    r"|[ \t]+(?:def|class|public|private|protected|function|static|final|interface)\b",
+    re.MULTILINE,
+)
 
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
-_VERSION_PREFIX_RE = re.compile(r"(?:\bv|\bversion|\bbuild)[\s:#]*$", re.IGNORECASE)
+# A version prefix hides a dotted quad only when it is glued to it ("v10.1.2.3")
+# or "version"/"build" (lower or Title case, not an all-caps label) sits one
+# whitespace run away, and nothing nearby says the number is an address.
+_VERSION_ATTACHED_RE = re.compile(r"\bv$", re.IGNORECASE)
+_VERSION_WORD_RE = re.compile(r"\b(?:[Vv]ersion|[Bb]uild)[ \t]+$")
+_IP_CONTEXT_RE = re.compile(
+    r"\bip\b|host|server|address|vpn|connect|from|client", re.IGNORECASE
+)
 IPV4_RE = re.compile(rf"(?<![\d.])(?:{_OCTET}\.){{3}}{_OCTET}(?!\.?\d)")
 
 _MONTH = (
@@ -187,13 +208,23 @@ def _check_ssn(m: re.Match, text: str):
 
 
 def _check_handle(m: re.Match, text: str):
-    if m.group()[1:].casefold() in _NON_HANDLES:
+    start, end = m.span()
+    while end - 1 > start and text[end - 1] in ".-":
+        end -= 1
+    name = text[start + 1:end]
+    if len(name) < 2:
         return None
-    return m.span()
+    if name.split(".")[0].casefold() in _NON_HANDLES or name.casefold() in _NON_HANDLES:
+        line_start = text.rfind("\n", 0, start) + 1
+        if not text[line_start:start].strip() and _CODE_CONTEXT_RE.match(text, end):
+            return None
+    return (start, end)
 
 
 def _check_ip(m: re.Match, text: str):
-    if _VERSION_PREFIX_RE.search(text, max(0, m.start() - 12), m.start()):
+    before = text[max(0, m.start() - 60):m.start()]
+    prefix = _VERSION_ATTACHED_RE.search(before) or _VERSION_WORD_RE.search(before)
+    if prefix and not _IP_CONTEXT_RE.search(before[:prefix.start()][-40:]):
         return None
     return m.span()
 
@@ -202,6 +233,8 @@ def _check_bare_url(m: re.Match, text: str):
     end = m.end()
     while end > m.start() and text[end - 1] in ".,;:!?)]}":
         end -= 1
+    if text[m.start():end].casefold() in _NOT_HOSTS:
+        return None
     return (m.start(), end)
 
 
@@ -478,6 +511,13 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
     validated = validate_entities(all_candidates, text, doc, doc_type)
 
     # --- Deduplicate overlapping entities ---
+    # "@jane@host.tld" is an address, not a handle followed by a stray host.
+    email_spans = [(e.start, e.end) for e in validated if e.label == "EMAIL"]
+    validated = [
+        e for e in validated
+        if not (e.label == "HANDLE"
+                and any(e.start < ee and s < e.end for s, ee in email_spans))
+    ]
     validated.sort(key=lambda e: (e.start, -e.confidence, -(e.end - e.start)))
     deduped = []
     last_end = -1
