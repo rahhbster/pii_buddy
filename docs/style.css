@@ -549,50 +549,16 @@ section {
 
 .subscribe-form {
   display: flex;
+  justify-content: center;
   gap: 12px;
   max-width: 480px;
   margin: 0 auto 16px;
-}
-
-.subscribe-form input[type="email"] {
-  flex: 1;
-  padding: 14px 18px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 1rem;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.subscribe-form input[type="email"]:focus {
-  border-color: var(--accent);
-}
-
-.subscribe-form input[type="email"]::placeholder {
-  color: var(--text-secondary);
 }
 
 .subscribe-note {
   text-align: center;
   color: var(--text-secondary);
   font-size: 0.85rem;
-}
-
-.subscribe-note code {
-  color: var(--accent);
-  font-family: "SF Mono", "Fira Code", monospace;
-  font-size: 0.8rem;
-}
-
-.subscribe-success {
-  text-align: center;
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 1.1rem;
-  padding: 14px 0;
 }
 
 /* ─── FOOTER ─── */

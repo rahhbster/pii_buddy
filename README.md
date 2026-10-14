@@ -210,26 +210,41 @@ This puts **"PII"** in your menu bar. Click it and choose **"Remove PII from Cli
 
 To auto-start: System Settings > General > Login Items > add "PII Buddy".
 
-### Cloud Verification (optional)
+### Structural Audit
 
-After local redaction, optionally send the already-redacted text to a cloud LLM to catch what spaCy missed (especially international/unusual names). The text is sharded, shuffled, and tag-neutralized before leaving your machine.
+After detection, a second structural pass (`pii_buddy/audit.py`) catches PII the first pass left behind. It is on by default and runs locally.
+
+```bash
+# Skip the audit pass
+./run.sh --no-audit --once resume.pdf
+```
+
+### Cloud Verification (optional, premium)
+
+By default nothing is sent over the network. Cloud verification is an opt-in extra pass that sends the already-redacted text to an LLM to catch what spaCy missed (especially international/unusual names). In the premium build, the text is sharded, shuffled, and tag-neutralized before it leaves your machine.
+
+> **Not in this repo:** the verification modules (`verify_client`, `verifier`, `openrouter_verifier`, `venice_verifier`) are not part of the public repository. With only this repo, these flags are accepted but log a "requires premium modules" warning and verification does not run. `--credits` exits with an error for the same reason.
+
+| Flag | What it does |
+|---|---|
+| `--verify` | Enable PII Buddy Verify after local redaction |
+| `--verify-key KEY` | PII Buddy Verify API key |
+| `--verify-endpoint URL` | Override the verify API endpoint (default `https://api.piibuddy.com/v1`) |
+| `--verify-confidence N` | Minimum confidence for verify findings (default `0.7`) |
+| `--openrouter` | Enable OpenRouter LLM verification |
+| `--openrouter-key KEY` | OpenRouter API key |
+| `--openrouter-model ID` | OpenRouter model (default `meta-llama/llama-3.1-8b-instruct:free`) |
+| `--venice` | Enable Venice TEE/E2EE confidential LLM verification |
+| `--venice-key KEY` | Venice API key |
+| `--venice-model ID` | Venice model (default `e2ee-qwen3-27b`) |
+| `--credits` | Show your Verify credit balance (needs the premium modules and an API key) |
+| `--buy` | Open https://piibuddy.com in your browser |
 
 ```bash
 ./run.sh --verify --verify-key YOUR_API_KEY --once resume.pdf
 ```
 
-Or configure in `settings.conf`:
-
-```ini
-[verify]
-enabled = true
-api_key = your-api-key-here
-# endpoint = https://api.piibuddy.com/v1
-# confidence_threshold = 0.7
-# canaries = false
-```
-
-See [docs/cloud_verification_architecture.md](docs/cloud_verification_architecture.md) for the full design, security analysis, and API specification.
+Or configure in `settings.conf` (see [Settings File](#settings-file)).
 
 ### Output Format Options
 
@@ -284,9 +299,50 @@ PII Buddy reads settings from `~/PII_Buddy/settings.conf` (created automatically
 # endpoint = https://api.piibuddy.com/v1
 # confidence_threshold = 0.7
 # canaries = false
+
+[audit]
+# enabled = true
+
+[openrouter]
+# enabled = false
+# api_key =
+# model = meta-llama/llama-3.1-8b-instruct:free
+# endpoint = https://openrouter.ai/api/v1
+
+[venice]
+# enabled = false
+# api_key =
+# model = e2ee-qwen3-27b
+# endpoint = https://api.venice.ai/api/v1
 ```
 
 Priority: CLI flags > settings.conf > hardcoded defaults.
+
+### Feedback and Updates
+
+```bash
+# Rate the quality of the last redaction (1-5)
+./run.sh --rate 4
+
+# Leave a comment (describe patterns, not actual PII). Combine with --rate or use alone
+./run.sh --rate 2 --feedback "Surname-first names were missed"
+
+# Subscribe to product updates
+./run.sh --subscribe you@example.com
+```
+
+`--rate` and `--feedback` are stored locally in `~/PII_Buddy/feedback/feedback.jsonl`. They are not sent anywhere.
+
+`--subscribe` only appends your address to `~/PII_Buddy/feedback/pending_subscriptions.txt` on your machine. There is no live update server yet, so nothing is transmitted. To hear about releases, use **Watch > Custom > Releases** on the GitHub repo.
+
+### Updating PII Buddy
+
+```bash
+# Update the app itself (runs a pull with rebase in the install folder; stashes uncommitted changes first)
+./run.sh --update-app
+```
+
+`--update-app` and `--update` (blocklists, below) use the network, apart from the optional verification flags above.
 
 ### Custom Directory
 
@@ -463,7 +519,7 @@ Then edit `pii_buddy/detector.py` and change `SPACY_MODEL = "en_core_web_md"` to
 
 ```
 pii_buddy/
-├── main.py              # Entry point (watch, --once, --paste, --clipboard, --restore, --menubar)
+├── main.py              # Entry point (watch, --once, --paste, --clipboard, --restore, --menubar; see --help)
 ├── pii_buddy/
 │   ├── config.py        # Folder paths, supported extensions, tag templates, GitHub config
 │   ├── settings.py      # Settings file loading, CLI/config/default merging
@@ -475,20 +531,20 @@ pii_buddy/
 │   ├── restorer.py      # Reverse redaction using mapping files
 │   ├── watcher.py       # Folder monitoring, file pipeline, filename redaction
 │   ├── updater.py       # Download latest blocklists from GitHub
+│   ├── audit.py         # Structural self-audit (second pass, local)
+│   ├── feedback.py      # Local rating/feedback log
 │   ├── menubar.py       # Optional Mac menu bar app (requires rumps)
-│   ├── sharder.py       # Sentence sharding, tag neutralization, shuffling
-│   ├── verify_client.py # HTTP client for cloud Verify API
-│   ├── verifier.py      # Verification orchestrator (shard -> verify -> patch)
-│   ├── canary.py        # Optional synthetic PII injection for calibration
+│   ├── mac_sandbox/     # App Store sandbox support (bookmarks, bridge)
 │   └── data/
 │       └── blocklists/
 │           ├── person_blocklist.txt   # Official blocklist (updated via --update)
 │           └── custom_blocklist.txt   # Package-level custom blocklist
-├── docs/
-│   └── cloud_verification_architecture.md   # Full verification design spec
+├── docs/                # Landing page (GitHub Pages)
 ├── extras/
 │   ├── create_mac_app.sh     # Build a .app bundle for the menu bar app
 │   ├── build_dmg.sh          # Build distributable PII_Buddy.dmg
+│   ├── build_py2app.sh       # Build the py2app bundle
+│   ├── build_py2app_mas.sh   # Build the Mac App Store variant
 │   └── first_run_setup.sh    # First-launch setup (runs in Terminal from .app)
 ├── setup.sh             # One-command setup
 ├── run.sh               # One-command run
