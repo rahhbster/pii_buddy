@@ -29,12 +29,15 @@ MAX_LINE_LENGTH = 100
 MAX_NEW_ENTRIES = 25
 BASELINE_NAME = "person_blocklist.baseline.txt"
 
-# Threat model: the cap limits blast radius, it is NOT provenance. It is
-# measured against the baseline list shipped with the package (not the current
-# file), so repeated small updates cannot ratchet past it and a first install
-# is bounded too. A remote that is already hostile can still inject up to
-# MAX_NEW_ENTRIES names per baseline; the real fix is signed releases or a
-# pinned hash of the list, which is an owner decision.
+# Threat model: the cap bounds blast radius; it is NOT provenance. It does not
+# prove the list came from the maintainers, only that one update cannot add
+# more than MAX_NEW_ENTRIES names beyond the baseline shipped with the package.
+# A hostile remote can still inject up to that many names, and anyone who can
+# write the baseline file defeats the cap. Real provenance (signed releases or
+# a pinned hash of the list) is an owner decision.
+#
+# The baseline is only ever read, never written, by this module. If it is
+# missing the update is refused rather than re-derived from untrusted content.
 
 RAW_URL = (
     f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_BLOCKLIST_PATH}"
@@ -51,7 +54,11 @@ class UpdateResult:
     """Outcome of update_blocklists(). Truthy only when the file was replaced,
     so `if update_blocklists():` keeps its old meaning."""
     status: str  # "updated" | "unchanged" | "refused" | "failed"
-    message: str = ""
+    reason: str = ""
+
+    @property
+    def message(self) -> str:
+        return self.reason
 
     def __bool__(self) -> bool:
         return self.status == "updated"
@@ -128,23 +135,26 @@ def _write_atomic(target: Path, content: str, mode: int = 0o644) -> None:
         raise
 
 
-def _baseline_entries(target: Path) -> set[str]:
-    """Entries of the packaged baseline. If the baseline file is missing
-    (older install), snapshot the current list once and trust it from then on."""
+def _baseline_entries() -> set[str] | None:
+    """Entries of the packaged baseline, or None when it is missing or
+    unreadable. Never creates the file: it must not be derived from the
+    current or remote list."""
     baseline = PACKAGE_BLOCKLISTS_DIR / BASELINE_NAME
-    if not baseline.exists():
-        if not target.exists():
-            return set()
-        shutil.copy2(str(target), str(baseline))
-    return _entries(_sanitize(baseline.read_text(encoding="utf-8", errors="replace")))
+    try:
+        text = baseline.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    return _entries(_sanitize(text))
 
 
 def update_blocklists(force: bool = False) -> UpdateResult:
     """
     Fetch the latest person_blocklist.txt from GitHub and replace the local copy.
     Uses gh CLI for private repos, falls back to raw URL for public repos.
-    Truthy result means the blocklist was updated. A result with status
-    "refused" means the cap was exceeded; force=True overrides it.
+    Truthy result means the blocklist was updated. Statuses: "updated",
+    "unchanged", "refused" (cap exceeded or baseline missing), "failed"
+    (download or content problem). force=True skips ONLY the cap; size, UTF-8
+    and line sanitation and the baseline-missing refusal always apply.
     """
     target = PACKAGE_BLOCKLISTS_DIR / "person_blocklist.txt"
 
@@ -171,7 +181,16 @@ def update_blocklists(force: bool = False) -> UpdateResult:
         return UpdateResult("failed", msg)
     remote_content = "\n".join(remote_lines) + "\n"
 
-    added = _entries(remote_lines) - _baseline_entries(target)
+    baseline = _baseline_entries()
+    if baseline is None:
+        msg = (
+            "baseline missing; reinstall or restore "
+            f"pii_buddy/data/blocklists/{BASELINE_NAME}"
+        )
+        logger.error("refused: " + msg)
+        return UpdateResult("refused", msg)
+
+    added = _entries(remote_lines) - baseline
     if len(added) > MAX_NEW_ENTRIES:
         msg = (
             f"refused: {len(added)} new entries exceeds cap of {MAX_NEW_ENTRIES} "
