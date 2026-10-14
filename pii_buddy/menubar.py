@@ -368,16 +368,43 @@ _STALE_LOG_PATH = "/tmp/pii_buddy_menubar.log"
 _LOG_KEYS = ("StandardOutPath", "StandardErrorPath")
 
 
+_WORLD_READABLE_ROOTS = (
+    "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", "/Users/Shared",
+)
+
+
+def _under_world_readable_root(path: str) -> bool:
+    for root in _WORLD_READABLE_ROOTS:
+        for r in {root, os.path.realpath(root)}:
+            if path == r or path.startswith(r + os.sep):
+                return True
+    return False
+
+
 def _is_stale_log_path(value) -> bool:
-    """True for a launchd log path that is the old /tmp file or outside LOGS_DIR."""
+    """True for a launchd log path another local user could read.
+
+    That is the old /tmp file, a relative/empty/non-string value, or a path
+    that resolves (symlinks and ``..`` included) into a world-readable root.
+    Any other absolute path is the owner's choice and is kept.
+    """
     if value is None:
         return False
-    if not isinstance(value, str) or value == _STALE_LOG_PATH:
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\0" in value
+        or not os.path.isabs(value)
+        or value == _STALE_LOG_PATH
+    ):
         return True
     try:
-        root = os.path.realpath(LOGS_DIR)
-        return os.path.commonpath([root, os.path.realpath(value)]) != root
-    except ValueError:
+        return (
+            _under_world_readable_root(os.path.normpath(value))
+            or _under_world_readable_root(os.path.realpath(value))
+            or os.path.realpath(value) == os.path.realpath(_STALE_LOG_PATH)
+        )
+    except (ValueError, OSError):
         return True
 
 
@@ -451,8 +478,9 @@ def _write_launchagent_plist(allow_replace: bool) -> bool:
     but different ProgramArguments is replaced only with ``allow_replace``,
     and then only ProgramArguments/WorkingDirectory/RunAtLoad change; every
     other key (log paths, EnvironmentVariables, ThrottleInterval, ...) stays.
-    StandardOutPath/StandardErrorPath are dropped when they point at the old
-    /tmp log or outside LOGS_DIR, since that file is world-readable.  An
+    StandardOutPath/StandardErrorPath are dropped when they are relative or
+    resolve into a world-readable root (/tmp, /Users/Shared, ...), since
+    that file could be read by other users; other absolute paths are kept.  An
     identical Label and ProgramArguments is left untouched, except that such
     log keys alone are removed (no confirmation: it only hardens the file).
     """
@@ -532,7 +560,7 @@ def _set_login_item(enabled: bool, confirm_replace=None) -> bool:
                 differs = False  # unparseable/foreign: the writer refuses it
             allow = bool(confirm_replace()) if differs else False
         if _apply_launchagent_plist(allow_replace=allow):
-            logger.info(f"Login item written: {_LAUNCHAGENT_PATH}")
+            logger.info("Login item written.")
         else:
             logger.info("Login item unchanged.")
         return True
@@ -1070,7 +1098,7 @@ def main():
     try:
         logger.addHandler(_make_log_handler())
     except OSError as e:
-        print(f"PII Buddy could not open its log file: {e}", file=sys.stderr)
+        print(f"PII Buddy could not open its log file ({type(e).__name__})", file=sys.stderr)
     _exit_if_already_running()
     _warn_if_stale_launchagent()
     app = PIIBuddyMenuBar()

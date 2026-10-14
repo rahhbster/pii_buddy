@@ -31,6 +31,7 @@ def agent(tmp_path, monkeypatch):
     monkeypatch.setattr(menubar, "_LAUNCHAGENT_DIR", d)
     monkeypatch.setattr(menubar, "_LAUNCHAGENT_PATH", d / "a.plist")
     monkeypatch.setattr(menubar, "PII_BUDDY_MAS_BUILD", False)
+    monkeypatch.setattr(menubar, "LOGS_DIR", tmp_path / "PII_Buddy" / "logs")
     monkeypatch.delattr(sys, "frozen", raising=False)
     return d / "a.plist"
 
@@ -326,7 +327,9 @@ class TestStaleLogPathsAreDropped:
         return {**menubar._build_launchagent_plist(), **self.KEEP, **extra}
 
     @pytest.mark.parametrize("path", [
-        "/tmp/pii_buddy_menubar.log", "/mine/out.log", "/private/tmp/x.log",
+        "/tmp/pii_buddy_menubar.log", "/private/tmp/x.log", "/var/tmp/x.log",
+        "/private/var/tmp/x.log", "/Users/Shared/x.log", "relative/x.log",
+        "", 7, "/tmp/../tmp/x.log",
     ])
     def test_replace_drops_stale_and_outside_logs_keeps_rest(self, agent, path):
         _write(agent, self._old(StandardOutPath=path, StandardErrorPath=path))
@@ -337,6 +340,55 @@ class TestStaleLogPathsAreDropped:
         for k, v in self.KEEP.items():
             assert data[k] == v
         assert data["ProgramArguments"][0] == sys.executable
+
+    def test_dotdot_escape_into_world_readable_root_is_dropped(self, agent):
+        path = str(menubar.LOGS_DIR) + "/.." * 30 + "/tmp/x.log"
+        _write(agent, self._old(StandardOutPath=path))
+        menubar._write_launchagent_plist(allow_replace=True)
+        assert "StandardOutPath" not in plistlib.loads(agent.read_bytes())
+
+    def test_symlink_from_home_into_tmp_is_dropped(self, agent, tmp_path):
+        link = tmp_path / "home" / "lnk"
+        link.parent.mkdir()
+        link.symlink_to("/tmp")
+        _write(agent, self._old(StandardOutPath=str(link / "x.log")))
+        menubar._write_launchagent_plist(allow_replace=True)
+        assert "StandardOutPath" not in plistlib.loads(agent.read_bytes())
+
+    @pytest.mark.parametrize("rel", ["Library/Logs/x.log", "elsewhere/y.log"])
+    def test_user_chosen_path_in_home_is_kept(self, agent, tmp_path, rel):
+        mine = str(tmp_path / "home" / rel)
+        _write(agent, self._old(StandardOutPath=mine, StandardErrorPath=mine))
+        menubar._write_launchagent_plist(allow_replace=True)
+        data = plistlib.loads(agent.read_bytes())
+        assert data["StandardOutPath"] == mine
+        assert data["StandardErrorPath"] == mine
+
+    def test_kept_custom_path_survives_same_args_rewrite_without_warning(
+        self, agent, tmp_path, caplog
+    ):
+        mine = str(tmp_path / "home" / "Library" / "Logs" / "x.log")
+        _write(agent, self._same(StandardOutPath=mine, StandardErrorPath=mine))
+        before = agent.read_bytes()
+        with caplog.at_level(logging.INFO, logger="pii_buddy"):
+            assert menubar._warn_if_stale_launchagent() is False
+            assert menubar._set_login_item(
+                True, confirm_replace=lambda: pytest.fail("asked")
+            ) is True
+        assert agent.read_bytes() == before
+        assert "outdated" not in caplog.text
+
+    def test_kept_custom_path_survives_cleanup_of_other_stale_key(
+        self, agent, tmp_path
+    ):
+        mine = str(tmp_path / "home" / "x.log")
+        _write(agent, self._same(
+            StandardOutPath=mine, StandardErrorPath=self.STALE
+        ))
+        menubar._set_login_item(True)
+        data = plistlib.loads(agent.read_bytes())
+        assert data["StandardOutPath"] == mine
+        assert "StandardErrorPath" not in data
 
     def test_replace_keeps_log_inside_logs_dir(self, agent):
         inside = str(menubar.LOGS_DIR / "mine.log")
@@ -351,9 +403,7 @@ class TestStaleLogPathsAreDropped:
         logs.mkdir()
         monkeypatch.setattr(menubar, "LOGS_DIR", logs)
         link = logs / "escape"
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        link.symlink_to(outside)
+        link.symlink_to("/tmp")
         _write(agent, self._old(StandardOutPath=str(link / "a.log")))
         menubar._write_launchagent_plist(allow_replace=True)
         assert "StandardOutPath" not in plistlib.loads(agent.read_bytes())
@@ -598,3 +648,32 @@ class TestBundleGuardIsUnconditional:
         self._appkit(monkeypatch, [[self._app(os.getpid())]])
         menubar._exit_if_already_running()
         self._close()
+
+
+class TestNoPathsLeakFromErrors:
+    SECRET = "/Users/someone/secret-folder/menubar.log"
+
+    def test_main_reports_only_exception_type_when_log_unopenable(
+        self, monkeypatch, capsys
+    ):
+        def boom():
+            raise PermissionError(13, "denied", self.SECRET)
+
+        monkeypatch.setattr(menubar, "_make_log_handler", boom)
+        monkeypatch.setattr(menubar, "_exit_if_already_running", lambda: None)
+        monkeypatch.setattr(menubar, "_warn_if_stale_launchagent", lambda: False)
+        monkeypatch.setattr(
+            menubar, "PIIBuddyMenuBar", lambda: SimpleNamespace(run=lambda: None)
+        )
+        menubar.main()
+        err = capsys.readouterr().err
+        assert "PermissionError" in err
+        assert "secret-folder" not in err
+        assert "denied" not in err
+
+    def test_login_item_written_log_has_no_path(self, agent, caplog):
+        with caplog.at_level(logging.INFO, logger="pii_buddy"):
+            menubar._set_login_item(True)
+        assert str(agent.parent) not in caplog.text
+        assert "a.plist" not in caplog.text
+        assert "Login item written" in caplog.text
