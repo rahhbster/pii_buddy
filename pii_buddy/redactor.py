@@ -1,6 +1,7 @@
 """Replace detected PII with reversible tags and produce a mapping file."""
 
 import re
+from bisect import bisect_right
 
 
 def _make_initials(name: str) -> str:
@@ -158,10 +159,32 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
     # Case-insensitive substring match, longest surface first so
     # "Steve Johnson" wins over "Steve". One pattern per surface keeps the
     # match -> tag mapping exact (no .lower() round trip).
-    for surface in sorted(surface_to_tag, key=len, reverse=True):
+    # Scan only the text no entity claimed (joined with NUL separators, which no
+    # surface contains) so the sweep costs what it did on main's shrunken text.
+    surfaces = sorted(surface_to_tag, key=len, reverse=True)
+    if any("\0" in s for s in surfaces):
+        residual, starts, origins = text, [0], [0]
+    else:
+        segs, starts, origins = [], [], []
+        pos, off = 0, 0
+        for s, e, _ in sorted(spans):
+            if s > pos:
+                segs.append(text[pos:s])
+                starts.append(off)
+                origins.append(pos)
+                off += s - pos + 1
+            pos = max(pos, e)
+        if pos < len(text):
+            segs.append(text[pos:])
+            starts.append(off)
+            origins.append(pos)
+        residual = "\0".join(segs)
+    for surface in surfaces:
         tag = surface_to_tag[surface]
-        for m in re.finditer(re.escape(surface), text, re.IGNORECASE):
-            claim(m.start(), m.end(), tag, False)
+        for m in re.finditer(re.escape(surface), residual, re.IGNORECASE):
+            i = bisect_right(starts, m.start()) - 1
+            delta = origins[i] - starts[i]
+            claim(m.start() + delta, m.end() + delta, tag, False)
 
     pieces = []
     pos = 0
