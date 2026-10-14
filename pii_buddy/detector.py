@@ -140,6 +140,21 @@ def _basic_person_check(text: str) -> bool:
     return True
 
 
+def _subtract_spans(start: int, end: int, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Return the pieces of [start, end) not covered by any of ``spans``."""
+    pieces = []
+    pos = start
+    for s, e in sorted(spans):
+        if e <= pos or s >= end:
+            continue
+        if s > pos:
+            pieces.append((pos, s))
+        pos = max(pos, e)
+    if pos < end:
+        pieces.append((pos, end))
+    return pieces
+
+
 def _detect_allcaps_names(text: str) -> list[PIIEntity]:
     """Detect ALL CAPS names in resume headers."""
     entities = []
@@ -253,9 +268,7 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
                 confidence=1.0,
             ))
 
-    regex_ranges = set()
-    for ent in regex_entities:
-        regex_ranges.update(range(ent.start, ent.end))
+    regex_spans = [(ent.start, ent.end) for ent in regex_entities]
 
     # 1b. spaCy NER (names and dates)
     nlp = get_nlp()
@@ -263,18 +276,29 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
     spacy_entities = []
 
     for ent in doc.ents:
-        ent_range = set(range(ent.start_char, ent.end_char))
-        if ent_range & regex_ranges:
+        pieces = _subtract_spans(ent.start_char, ent.end_char, regex_spans)
+
+        if ent.label_ == "PERSON":
+            # spaCy often fuses a name with an adjacent email/phone; keep the
+            # name text and let the regex hit stand as its own entity.
+            for s, e in pieces:
+                raw = text[s:e]
+                piece = raw.strip(" \t\r\n|,;:-")
+                if not piece or not _basic_person_check(piece):
+                    continue
+                s += raw.index(piece)
+                spacy_entities.append(PIIEntity(
+                    text=piece,
+                    label="PERSON",
+                    start=s,
+                    end=s + len(piece),
+                ))
             continue
 
-        if ent.label_ == "PERSON" and _basic_person_check(ent.text):
-            spacy_entities.append(PIIEntity(
-                text=ent.text,
-                label="PERSON",
-                start=ent.start_char,
-                end=ent.end_char,
-            ))
-        elif ent.label_ == "DATE" and _is_specific_date(ent.text):
+        if pieces != [(ent.start_char, ent.end_char)]:
+            continue
+
+        if ent.label_ == "DATE" and _is_specific_date(ent.text):
             spacy_entities.append(PIIEntity(
                 text=ent.text,
                 label="DOB",
