@@ -19,8 +19,10 @@ class PIIEntity:
 
 # --- Regex patterns for structured PII ---
 
+# The lookbehind pins the start to the beginning of a run of local-part
+# characters; without it every position in "a.a.a.…" rescans the whole run.
 EMAIL_RE = re.compile(
-    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 )
 
 PHONE_RE = re.compile(
@@ -31,20 +33,56 @@ PHONE_RE = re.compile(
     r"(?!\d)"
 )
 
+INTL_PHONE_RE = re.compile(
+    r"(?<![\w+])\+(?:"
+    r"\d{1,3}[\s.-]?(?:\(0\)[\s.-]?)?\d{1,5}(?:[\s.-]\d{2,8}){1,3}"
+    r"|\d{8,15}"
+    r")(?!\d)"
+)
+
+_CARD_NUMBER = r"\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{1,7}|\d{4}[ -]?\d{6}[ -]?\d{4,5}"
+CARD_RE = re.compile(rf"(?<![\d-])(?:{_CARD_NUMBER})(?![\d-]?\d)")
+
+# Separators: hyphen, en/em dash, minus, space. A dotted form needs both dots so
+# "123.456789" decimals are left alone, and the first separator is mandatory so
+# a ZIP+4 ("78701-1234") is not read as 3-2-4.
 SSN_RE = re.compile(
-    r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b"
+    r"\b(?:"
+    r"\d{3}[-\u2010-\u2015\u2212 ]\d{2}[-\u2010-\u2015\u2212 ]?\d{4}"
+    r"|\d{3}\.\d{2}\.\d{4}"
+    r"|\d{9}"
+    r")\b"
 )
 
 URL_RE = re.compile(
     r"https?://[^\s<>\"']+|www\.[^\s<>\"']+"
 )
 
+# TLD is deliberately lowercase-only and short-listed: "ASP.NET", "Node.js" and
+# "file.pdf" must not read as hosts. The lookbehind keeps matching linear.
+BARE_URL_RE = re.compile(
+    r"(?<![\w.@/-])(?:[A-Za-z0-9-]+\.)+"
+    r"(?:com|org|net|io|edu|gov|dev|app|ai|info|biz|uk)\b"
+    r"(?:/[^\s<>\"']*)?"
+)
+
+HANDLE_RE = re.compile(r"(?<![\w@.])@[A-Za-z][A-Za-z0-9_]{1,29}\b")
+
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+IPV4_RE = re.compile(rf"(?<![\d.])(?:{_OCTET}\.){{3}}{_OCTET}(?!\.?\d)")
+
+_MONTH = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+
 DOB_RE = re.compile(
     r"\b(?:"
     r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
-    r"|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
-    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-    r"\s+\d{1,2},?\s+\d{2,4}"
+    r"|(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:19|20)\d{2}"
+    r"|(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+    rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{2,4}}"
+    rf"|\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?{_MONTH},?\s+(?:19|20)\d{{2}}"
     r")\b",
     re.IGNORECASE,
 )
@@ -69,16 +107,83 @@ ADDRESS_RE = re.compile(
     re.IGNORECASE,
 )
 
-ZIP_RE = re.compile(r"\b\d{5}(?:-\d{4})?\b")
+# A bare five-digit run is far too common (counts, ticket IDs) to redact on its
+# own, so a ZIP only counts directly after a US state code.
+_US_STATES = frozenset(
+    "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS "
+    "MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split()
+)
+# Codes that are also ordinary uppercase words or abbreviations ("ID 12345");
+# these count only when set off after a comma, as in "Boise, ID 83702".
+_AMBIGUOUS_STATES = frozenset({"ID", "IN", "OR", "ME", "OK", "HI", "LA", "DE", "MA"})
+ZIP_RE = re.compile(
+    r"(?<![A-Za-z])(?P<state>[A-Z]{2})\.?,?[ \t]+(?P<zip>\d{5}(?:-\d{4})?)(?![\d-]?\d)"
+)
+
+
+def _luhn_ok(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def _check_card(m: re.Match, text: str):
+    digits = re.sub(r"\D", "", m.group())
+    if 13 <= len(digits) <= 19 and _luhn_ok(digits):
+        return m.span()
+    return None
+
+
+def _check_intl_phone(m: re.Match, text: str):
+    if 8 <= len(re.sub(r"\D", "", m.group())) <= 15:
+        return m.span()
+    return None
+
+
+def _check_zip(m: re.Match, text: str):
+    state = m.group("state")
+    if state not in _US_STATES:
+        return None
+    if state in _AMBIGUOUS_STATES and not text[:m.start("state")].rstrip().endswith(","):
+        return None
+    return m.span("zip")
+
+
+def _check_bare_url(m: re.Match, text: str):
+    end = m.end()
+    while end > m.start() and text[end - 1] in ".,;:!?)]}":
+        end -= 1
+    return (m.start(), end)
+
+
+# Optional per-pattern gate: returns the (start, end) to report, or None to drop.
+_SPAN_CHECKS = {
+    CARD_RE: _check_card,
+    INTL_PHONE_RE: _check_intl_phone,
+    ZIP_RE: _check_zip,
+    BARE_URL_RE: _check_bare_url,
+}
 
 REGEX_PATTERNS = [
     (EMAIL_RE, "EMAIL"),
+    (INTL_PHONE_RE, "PHONE"),
     (PHONE_RE, "PHONE"),
+    (CARD_RE, "CARD"),
     (SSN_RE, "SSN"),
     (URL_RE, "URL"),
+    (BARE_URL_RE, "URL"),
+    (HANDLE_RE, "HANDLE"),
+    (IPV4_RE, "IP"),
     (DOB_RE, "DOB"),
     (ID_NUMBER_RE, "ID_NUMBER"),
     (ADDRESS_RE, "ADDRESS"),
+    (ZIP_RE, "ADDRESS"),
 ]
 
 _VAGUE_DATE_RE = re.compile(
@@ -259,12 +364,16 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
     # 1a. Regex (structured PII — high confidence)
     regex_entities = []
     for pattern, label in REGEX_PATTERNS:
+        check = _SPAN_CHECKS.get(pattern)
         for match in pattern.finditer(text):
+            span = check(match, text) if check else match.span()
+            if span is None:
+                continue
             regex_entities.append(PIIEntity(
-                text=match.group(),
+                text=text[span[0]:span[1]],
                 label=label,
-                start=match.start(),
-                end=match.end(),
+                start=span[0],
+                end=span[1],
                 confidence=1.0,
             ))
 
