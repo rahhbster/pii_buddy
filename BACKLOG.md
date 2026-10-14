@@ -8,65 +8,24 @@ detailed order of operations.
 
 ## Next
 
-**Free sandbox smoke test — do this first.** Status: not yet run.
+**Team-mode review is in flight (started 2026-10-14).** Three read-only
+red-team agents are reviewing: backend security/privacy; frontend,
+packaging, CI and tests; and the two unmerged branches
+(`backlog-reshape`, `claude/pii-redaction-cost-analysis-SjAw1`).
 
+1. Read the three reports. Triage into one small PR per concern, each on
+   its own branch off `main`. Write the failing test first.
+2. Merge nothing until the branch red-team verdict is in. Cost-analysis
+   doc is suspected to belong in the PRIVATE repo
+   (`rahhbster/pii_buddy_private`), not this public one. Unverified.
+3. Do not delete any remote branch without asking the owner.
 
-Do this before spending money or time on Apple Developer enrollment/certs.
-It answers the single biggest open risk for free, using **ad-hoc code
-signing** (no Apple Developer Program membership required — `codesign
---sign -` applies real entitlements and gets real App Sandbox enforcement
-on your own Mac, it just can't be distributed to anyone else).
+Still pending from before: **free sandbox smoke test** (not yet run).
+Commands are in `app_store_sandbox.md` and the "Blocking submission"
+list below. A real Mac and Console.app are required.
 
-Status as of this writing: **not yet run.** Nobody has executed this on
-real macOS yet — everything below is the plan, not a result.
-
-```bash
-cd ~/code/pii_buddy   # or wherever the clone lives
-./setup.sh            # skip if already set up
-
-./extras/build_py2app_mas.sh
-# produces dist/mas/PII Buddy.app, UNSIGNED — expected, sign it next
-
-codesign --deep --force --options runtime \
-  --entitlements extras/entitlements_mas.plist \
-  --sign - \
-  "dist/mas/PII Buddy.app"
-
-codesign --verify --deep --strict --verbose=2 "dist/mas/PII Buddy.app"
-# should report no errors
-```
-
-Then:
-1. Open **Console.app** (Spotlight → "Console"), filter/search for
-   `sandboxd`, leave it running and visible.
-2. `open "dist/mas/PII Buddy.app"` — Gatekeeper will likely block first
-   launch since it's ad-hoc signed; right-click the app in Finder → Open
-   → confirm.
-3. Click the menu bar icon → **"Choose Watch Folder…"** (this menu item
-   auto-appears — the MAS build sets its own `PII_BUDDY_MAS_BUILD` flag
-   via `LSEnvironment`, no manual env var needed). Pick any folder in the
-   real NSOpenPanel that appears.
-4. Drop a test `.txt` file with an obviously fake name/email into that
-   folder.
-5. **Read the result:**
-   - **Success:** a redacted output file appears within a few seconds,
-     no `sandboxd` denials in Console.
-   - **Failure:** nothing happens, or Console shows something like
-     `sandboxd: deny(1) file-read/file-write...` — this means
-     `startAccessingSecurityScopedResource` isn't actually granting
-     `watchdog` access inside the sandbox, and the "watch a folder in the
-     background" UX would need to become drag-and-drop instead. This
-     would be a real, structural finding — not a bug to just patch.
-
-Whatever happens, capture the Console.app output (verbatim, especially
-any `deny` lines) before moving on to certs/provisioning below.
-
-Local env: `.venv` was rebuilt on Python 3.13 (CI uses 3.12). `pytest` is
-not in `requirements.txt`; install it into the venv before running tests.
-Suite is 79 passing.
-
-After the smoke test passes, the submission checklist is under
-**Open decisions**.
+Env: `.venv` rebuilt on Python 3.13 (CI uses 3.12). `pytest` is not in
+`requirements.txt`; `.venv/bin/pip install pytest` first. Suite: 79 pass.
 
 ## Open decisions
 
