@@ -95,7 +95,7 @@ def test_bare_five_digits_are_not_zip(text):
 @pytest.mark.parametrize("url", [
     "linkedin.com/in/janetest",
     "www.example.com/about",
-    "janetest.dev",
+    "janetest.com",
     "https://example.com/x",
 ])
 def test_urls_with_and_without_scheme(url):
@@ -103,7 +103,7 @@ def test_urls_with_and_without_scheme(url):
 
 
 def test_url_trailing_punctuation_not_swallowed():
-    assert _hits("Visit janetest.dev.", "URL") == ["janetest.dev"]
+    assert _hits("Visit janetest.com.", "URL") == ["janetest.com"]
 
 
 @pytest.mark.parametrize("text", [

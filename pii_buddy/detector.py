@@ -35,7 +35,7 @@ PHONE_RE = re.compile(
 
 INTL_PHONE_RE = re.compile(
     r"(?<![\w+])\+(?:"
-    r"\d{1,3}[\s.-]?(?:\(0\)[\s.-]?)?\d{1,5}(?:[\s.-]\d{2,8}){1,3}"
+    r"\d{1,3}[\s.-]?(?:\(0\)[\s.-]?)?\d{1,5}(?:[\s.-]\d{2,8}){1,5}"
     r"|\d{8,15}"
     r")(?!\d)"
 )
@@ -43,14 +43,15 @@ INTL_PHONE_RE = re.compile(
 _CARD_NUMBER = r"\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{1,7}|\d{4}[ -]?\d{6}[ -]?\d{4,5}"
 CARD_RE = re.compile(rf"(?<![\d-])(?:{_CARD_NUMBER})(?![\d-]?\d)")
 
-# Separators: hyphen, en/em dash, minus, space. A dotted form needs both dots so
-# "123.456789" decimals are left alone, and the first separator is mandatory so
-# a ZIP+4 ("78701-1234") is not read as 3-2-4.
+# Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
+# extraction). Every optional-separator shape main redacted is kept (3-2-4,
+# 5-4, 3-6, 9); a dotted form needs both dots so "123.456789" decimals are left
+# alone. A ZIP+4 after a state code is dropped by _check_ssn and read as ADDRESS.
+_SSN_SEP = r"[-\u2010-\u2015\u2212\s]"
 SSN_RE = re.compile(
-    r"\b(?:"
-    r"\d{3}[-\u2010-\u2015\u2212 ]\d{2}[-\u2010-\u2015\u2212 ]?\d{4}"
+    rf"\b(?:"
+    rf"\d{{3}}{_SSN_SEP}?\d{{2}}{_SSN_SEP}?\d{{4}}"
     r"|\d{3}\.\d{2}\.\d{4}"
-    r"|\d{9}"
     r")\b"
 )
 
@@ -60,15 +61,32 @@ URL_RE = re.compile(
 
 # TLD is deliberately lowercase-only and short-listed: "ASP.NET", "Node.js" and
 # "file.pdf" must not read as hosts. The lookbehind keeps matching linear.
+# Hosts like "tsconfig.dev", "settings.app", "index.ai" and "model.io" are
+# indistinguishable from filenames, so those four TLDs only count with a path.
+# The negative lookahead keeps "docker-compose.com.yml"-style names out.
 BARE_URL_RE = re.compile(
-    r"(?<![\w.@/-])(?:[A-Za-z0-9-]+\.)+"
-    r"(?:com|org|net|io|edu|gov|dev|app|ai|info|biz|uk)\b"
-    r"(?:/[^\s<>\"']*)?"
+    r"(?<![\w.@/-])(?:[A-Za-z0-9-]+\.)+(?:"
+    r"(?:com|org|net|edu|gov|info|biz|uk)\b(?!\.[A-Za-z0-9])(?:/[^\s<>\"']*)?"
+    r"|(?:io|dev|app|ai)\b/[^\s<>\"']*"
+    r")"
 )
 
-HANDLE_RE = re.compile(r"(?<![\w@.])@[A-Za-z][A-Za-z0-9_]{1,29}\b")
+# Preceded by start, whitespace or an opening/separating character, so
+# "user@host" and "a.b@c" are never handles; decorator and at-rule names are
+# excluded in _check_handle.
+HANDLE_RE = re.compile(r"(?<![^\s(\[{,;:\"'])@[A-Za-z][A-Za-z0-9_]{1,29}\b")
+_NON_HANDLES = frozenset(
+    "override property staticmethod classmethod dataclass abstractmethod "
+    "cached_property wraps pytest functools deprecated overload final "
+    "media import font-face keyframes supports charset container layer "
+    "tailwind apply namespace page "
+    "param return returns see author since throws type example todo "
+    "autowired component injectable entity nullable nonnull "
+    "suppresswarnings functionalinterface".split()
+)
 
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_VERSION_PREFIX_RE = re.compile(r"(?:\bv|\bversion|\bbuild)[\s:#]*$", re.IGNORECASE)
 IPV4_RE = re.compile(rf"(?<![\d.])(?:{_OCTET}\.){{3}}{_OCTET}(?!\.?\d)")
 
 _MONTH = (
@@ -155,6 +173,31 @@ def _check_zip(m: re.Match, text: str):
     return m.span("zip")
 
 
+_SSN_ZIP4_RE = re.compile(r"\d{5}-\d{4}")
+
+
+def _check_ssn(m: re.Match, text: str):
+    # A ZIP+4 right after a state code is an address, not an SSN. Anywhere
+    # else a 5-4 shape stays an SSN: a missed ID costs more than an extra tag.
+    if _SSN_ZIP4_RE.fullmatch(m.group()):
+        for z in ZIP_RE.finditer(text, max(0, m.start() - 12), m.end()):
+            if z.start("zip") == m.start() and _check_zip(z, text) is not None:
+                return None
+    return m.span()
+
+
+def _check_handle(m: re.Match, text: str):
+    if m.group()[1:].casefold() in _NON_HANDLES:
+        return None
+    return m.span()
+
+
+def _check_ip(m: re.Match, text: str):
+    if _VERSION_PREFIX_RE.search(text, max(0, m.start() - 12), m.start()):
+        return None
+    return m.span()
+
+
 def _check_bare_url(m: re.Match, text: str):
     end = m.end()
     while end > m.start() and text[end - 1] in ".,;:!?)]}":
@@ -168,6 +211,9 @@ _SPAN_CHECKS = {
     INTL_PHONE_RE: _check_intl_phone,
     ZIP_RE: _check_zip,
     BARE_URL_RE: _check_bare_url,
+    SSN_RE: _check_ssn,
+    HANDLE_RE: _check_handle,
+    IPV4_RE: _check_ip,
 }
 
 REGEX_PATTERNS = [

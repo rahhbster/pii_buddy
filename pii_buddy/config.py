@@ -45,4 +45,7 @@ TAG_TEMPLATES = {
     "DOB": "<<DOB_{n}>>",
     "ID_NUMBER": "<<ID_{n}>>",
     "ADDRESS": "<<ADDR_{n}>>",
+    "CARD": "<<CARD_{n}>>",
+    "HANDLE": "<<HANDLE_{n}>>",
+    "IP": "<<IP_{n}>>",
 }
