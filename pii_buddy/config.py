@@ -85,6 +85,44 @@ def ensure_private_dir(path: Path) -> None:
             )
 
 
+def tighten_private_files(directory: Path) -> None:
+    """Drop group/other bits from regular files we own directly inside `directory`.
+
+    Files created before the 0600 policy keep their old modes otherwise.
+    Never loosens, never follows symlinks, ignores every error.
+    """
+    try:
+        entries = list(directory.iterdir())
+        uid = os.getuid()
+    except (OSError, AttributeError):
+        return
+    for f in entries:
+        try:
+            st = f.lstat()
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != uid:
+                continue
+            mode = stat.S_IMODE(st.st_mode)
+            if mode & 0o177 == 0:
+                continue
+            fd = os.open(f, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                os.fchmod(fd, mode & 0o600)
+            finally:
+                os.close(fd)
+        except OSError:
+            continue
+
+
+_tightened_dirs: set = set()
+
+
+def tighten_private_files_once(directory: Path) -> None:
+    """tighten_private_files, at most once per directory per process."""
+    if directory not in _tightened_dirs:
+        _tightened_dirs.add(directory)
+        tighten_private_files(directory)
+
+
 def write_private_text(path: Path, text: str) -> None:
     """Write a file that is 0600 from the moment it exists (no chmod-after-write window)."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

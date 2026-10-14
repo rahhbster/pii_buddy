@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import stat
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -71,17 +72,52 @@ class EmptyOutputError(Exception):
     """The writer produced an empty file; the input must not be discarded."""
 
 
-_OWN_OUTPUT_RE = re.compile(r"^PII_FREE_|\.\d{8}T\d{6}(-\d+)?\.[^.]+$")
-# Outputs this process just wrote into the watched folder; their own
-# `created` events must not be mistaken for new input.
-_just_written: set = set()
+# Exact paths this process just wrote into the watched folder -> monotonic
+# time written. Their own `created` events must not be mistaken for new
+# input. Names are never pattern-matched: a user's `PII_FREE_x.txt` is input.
+# Entries expire so a later drop of the same name is not swallowed.
+_just_written: dict = {}
+_JUST_WRITTEN_TTL = 30.0
+
+
+def _mark_written(filepath: Path) -> None:
+    _just_written[filepath] = time.monotonic()
 
 
 def _is_own_output(filepath: Path) -> bool:
-    if filepath in _just_written:
-        _just_written.discard(filepath)
+    stamp = _just_written.pop(filepath, None)
+    if stamp is None or time.monotonic() - stamp > _JUST_WRITTEN_TTL:
+        return False
+    logger.warning(
+        f"Skipping own output ({filepath.suffix.lower() or 'no extension'}): "
+        "written by this process moments ago"
+    )
+    return True
+
+
+def _restore_input(filepath: Path, backup: Path) -> bool:
+    """Put the backup's bytes back at `filepath` atomically (temp + replace)."""
+    tmp_name = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=filepath.parent, prefix=".restore-", suffix=".tmp")
+        with os.fdopen(fd, "wb") as dst, open(backup, "rb") as src:
+            shutil.copyfileobj(src, dst)
+            dst.flush()
+            os.fsync(dst.fileno())
+        # The replace shows up as a created/moved event on a supported name.
+        _mark_written(filepath)
+        os.replace(tmp_name, filepath)
+        tmp_name = None
         return True
-    return bool(_OWN_OUTPUT_RE.search(filepath.name))
+    except OSError as e:
+        logger.error(f"  Could not restore input from backup: {type(e).__name__}")
+        return False
+    finally:
+        if tmp_name is not None:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
 
 
 def _safe_to_unlink_input(filepath: Path, output_path: Path) -> bool:
@@ -107,6 +143,9 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
     logger.info(f"Processing: {filepath.name}")
 
     mapping_path = None
+    mapping_done = False
+    backup_dest = None
+    inplace_started = False
     try:
         input_suffix = filepath.suffix.lower()
 
@@ -165,6 +204,8 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         # 5. Determine output location and write
         cfg.ensure_private_dir(cfg.ORIGINALS_DIR)
         cfg.ensure_private_dir(cfg.MAPPINGS_DIR)
+        cfg.tighten_private_files_once(cfg.ORIGINALS_DIR)
+        cfg.tighten_private_files_once(cfg.MAPPINGS_DIR)
 
         # Claim the mapping name first and derive the output stem from it, so
         # a reprocessed filename gives `PII_FREE_c.<stamp>.txt` and
@@ -182,7 +223,9 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
             stored_original = backup_dest.name
             logger.info(f"  Backup: originals/{stored_original}")
 
-            # Write in same format to the original file's location
+            # Write in same format to the original file's location. From here
+            # a failure may leave a truncated input; the except path restores it.
+            inplace_started = True
             output_path = write_output(
                 redacted_text,
                 filepath.parent / filepath.stem,
@@ -196,13 +239,10 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
                 empty = True
             if empty:
                 # Keep the PII-bearing input; the backup already holds it.
-                if output_path == filepath:
-                    shutil.copyfile(str(backup_dest), str(filepath))
-                else:
+                if output_path != filepath:
                     output_path.unlink(missing_ok=True)
                 raise EmptyOutputError("writer produced an empty output file")
-            if output_path != filepath:
-                _just_written.add(output_path)
+            _mark_written(output_path)
             logger.info(f"  Overwritten: {output_path.name}")
 
             # A .doc is rewritten as .docx, which leaves the PII-bearing
@@ -251,6 +291,7 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
             mapping_path,
             json.dumps(mapping, indent=2, ensure_ascii=False),
         )
+        mapping_done = True
         logger.info(f"  Mapping: {mapping_path.name}")
         logger.info("")
         logger.info("  How did we do? Rate this redaction:")
@@ -259,14 +300,17 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         return True
 
     except Exception as e:
-        if mapping_path is not None:
-            try:
-                if mapping_path.stat().st_size == 0:
-                    mapping_path.unlink()
-            except OSError:
-                pass
         # Type only: exception text and tracebacks can echo document content.
         logger.error(f"  Error processing {filepath.name}: {type(e).__name__}")
+        if mapping_path is not None and not mapping_done:
+            # We claimed this name; whatever is in it is an unusable stub.
+            try:
+                mapping_path.unlink()
+            except OSError:
+                pass
+        if inplace_started and backup_dest is not None:
+            if _restore_input(filepath, backup_dest):
+                logger.info(f"  Input restored from backup: originals/{backup_dest.name}")
         return False
 
 

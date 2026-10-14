@@ -87,17 +87,6 @@ def _event(path):
 
 
 class TestOwnOutputNotReprocessed:
-    @pytest.mark.parametrize("name", [
-        "PII_FREE_CV.docx", "CV.20260101T120000.docx", "CV.20260101T120000-2.docx",
-    ])
-    def test_own_output_names_ignored(self, base, name):
-        handler = watcher.NewFileHandler(Settings.defaults())
-        with patch("pii_buddy.watcher.process_file") as pf, \
-                patch("pii_buddy.watcher.time.sleep"):
-            handler.on_created(_event(cfg.INPUT_DIR / name))
-            handler.on_moved(_event(cfg.INPUT_DIR / name))
-        pf.assert_not_called()
-
     def test_plain_name_processed(self, base):
         handler = watcher.NewFileHandler(Settings.defaults())
         with patch("pii_buddy.watcher.process_file") as pf, \
@@ -107,7 +96,7 @@ class TestOwnOutputNotReprocessed:
 
     def test_just_written_output_is_skipped_once(self, base):
         out = cfg.INPUT_DIR / "weird.docx"
-        watcher._just_written.add(out)
+        watcher._mark_written(out)
         handler = watcher.NewFileHandler(Settings.defaults())
         with patch("pii_buddy.watcher.process_file") as pf, \
                 patch("pii_buddy.watcher.time.sleep"):
