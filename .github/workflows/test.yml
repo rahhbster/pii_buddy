@@ -18,9 +18,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # sm only: exercises the detector's fallback path (SPACY_FALLBACK)
-          - python: "3.12"
-            model: en_core_web_sm
           # md only: what production prefers (SPACY_MODEL)
           - python: "3.12"
             model: en_core_web_md
@@ -47,6 +44,11 @@ jobs:
         id: spacy
         run: echo "version=$(python -c 'import spacy; print(spacy.__version__)')" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve spaCy model version
+        id: model
+        run: |
+          echo "version=$(python -c "from spacy.cli.download import get_latest_version; print(get_latest_version('${{ matrix.model }}'))")" >> "$GITHUB_OUTPUT"
+
       - name: Cache spaCy model
         id: model-cache
         uses: actions/cache@v4
@@ -54,7 +56,7 @@ jobs:
           path: |
             ${{ env.pythonLocation }}/lib/python${{ matrix.python }}/site-packages/${{ matrix.model }}
             ${{ env.pythonLocation }}/lib/python${{ matrix.python }}/site-packages/${{ matrix.model }}-*.dist-info
-          key: spacy-model-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python }}-${{ matrix.model }}-spacy${{ steps.spacy.outputs.version }}
+          key: spacy-model-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python }}-${{ matrix.model }}-spacy${{ steps.spacy.outputs.version }}-model${{ steps.model.outputs.version }}
 
       - name: Download spaCy model
         if: steps.model-cache.outputs.cache-hit != 'true'
