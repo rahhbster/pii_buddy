@@ -7,6 +7,7 @@ All feedback is privacy-safe — no raw PII is stored, only hashes,
 entity counts, and user-provided comments.
 """
 
+import fcntl
 import hashlib
 import hmac
 import json
@@ -52,34 +53,34 @@ def _install_salt() -> bytes:
     """
     cfg.ensure_private_dir(cfg.FEEDBACK_DIR)
     salt_path = cfg.FEEDBACK_DIR / ".salt"
+    lock_fd = os.open(cfg.FEEDBACK_DIR, os.O_RDONLY)  # lock the dir: no stray lock file
     try:
-        existing = salt_path.read_bytes()
-    except FileNotFoundError:
-        existing = b""
-    if len(existing) == _SALT_BYTES:
-        return existing
-
-    # Fully written and 0600 before it becomes visible as .salt, so a
-    # concurrent reader or a crash never sees a short file.
-    salt = secrets.token_bytes(_SALT_BYTES)
-    tmp = cfg.FEEDBACK_DIR / f".salt.{os.getpid()}.{secrets.token_hex(4)}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(salt)
+        # Serialises creation across threads and processes so every caller
+        # returns the salt that actually ends up on disk.
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
         try:
-            os.link(tmp, salt_path)  # fails if another process won the race
-        except FileExistsError:
-            current = salt_path.read_bytes()
-            if len(current) == _SALT_BYTES:
-                return current
-            os.replace(tmp, salt_path)  # replace a short/corrupt salt
-    finally:
-        try:
-            os.unlink(tmp)
+            existing = salt_path.read_bytes()
         except FileNotFoundError:
-            pass
-    return salt
+            existing = b""
+        if len(existing) == _SALT_BYTES:
+            return existing
+
+        # Fully written and 0600 before it becomes visible as .salt, so a
+        # concurrent reader or a crash never sees a short file.
+        tmp = cfg.FEEDBACK_DIR / f".salt.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(secrets.token_bytes(_SALT_BYTES))
+            os.replace(tmp, salt_path)
+        finally:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+        return salt_path.read_bytes()
+    finally:
+        os.close(lock_fd)
 
 
 def _hash_filename(filename: str) -> str:

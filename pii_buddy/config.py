@@ -54,16 +54,24 @@ def ensure_private_dir(path: Path) -> None:
     """Create a directory readable only by the owner.
 
     A pre-existing directory is only tightened (group/other bits dropped,
-    owner bits untouched), never loosened, and its contents are not visited.
+    owner rwx guaranteed), never loosened, a symlink is left alone, and its contents are not visited.
     """
     try:
         path.mkdir(mode=0o700, parents=True)
         return
     except FileExistsError:
         pass
+    if path.is_symlink():
+        return  # never chmod through a link to somewhere else
     current = stat.S_IMODE(path.stat().st_mode)
-    if current & 0o077:
-        os.chmod(path, current & 0o700)
+    # An owner lacking r or x has locked themselves out; restore rwx. An
+    # owner who has r and x (e.g. a deliberate 0o500) is left as-is.
+    owner = current & 0o700
+    if owner & 0o500 != 0o500:
+        owner = 0o700
+    wanted = owner
+    if current != wanted:
+        os.chmod(path, wanted)
 
 
 def write_private_text(path: Path, text: str) -> None:

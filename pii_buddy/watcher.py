@@ -67,6 +67,17 @@ def _apply_tag(clean_name: str, settings: Settings) -> str:
     return f"{clean_name}_redacted"
 
 
+def _safe_to_unlink_input(filepath: Path, output_path: Path) -> bool:
+    if output_path == filepath or not filepath.exists():
+        return False
+    try:
+        if output_path.stat().st_size == 0:
+            return False
+        return not os.path.samefile(output_path, filepath)
+    except OSError:
+        return False
+
+
 def process_file(filepath: Path, settings: Settings = None) -> bool:
     """Process a single file. Returns True on success."""
     if settings is None:
@@ -159,14 +170,17 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
                 redacted_text,
                 filepath.parent / filepath.stem,
                 "same",
-                input_suffix,
+                filepath.suffix,
                 overwrite_existing=True,
             )
             logger.info(f"  Overwritten: {output_path.name}")
 
             # A .doc is rewritten as .docx, which leaves the PII-bearing
             # original beside the output; the backup above already holds it.
-            if output_path.resolve() != filepath.resolve():
+            # Only after the output is verified, and never when it is the
+            # input itself (resolved-path comparison misses case-variant
+            # names on case-insensitive filesystems).
+            if _safe_to_unlink_input(filepath, output_path):
                 filepath.unlink()
         else:
             output_dir = settings.output_dir or cfg.OUTPUT_DIR

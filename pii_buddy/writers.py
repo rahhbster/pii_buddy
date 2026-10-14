@@ -50,7 +50,7 @@ def write_output(
         text: Redacted text content.
         path: Output path (without extension — we'll set the correct one).
         output_format: "txt" or "same".
-        input_suffix: Original file's suffix (e.g. ".pdf", ".docx", ".txt").
+        input_suffix: Original file's suffix (e.g. ".pdf", ".docx", ".txt"), case preserved.
         overwrite_existing: Replace the input file in place. Honoured only
             when the output extension equals the input's; otherwise (and
             when False) an existing file is never touched and a unique name
@@ -68,8 +68,11 @@ def write_output(
 
     # Overwriting is only safe when the output is the input file itself. A
     # .doc -> .docx rewrite could otherwise clobber an unrelated sibling.
+    # The input's own suffix is used verbatim: on a case-insensitive
+    # filesystem `CV.txt` and `CV.TXT` are one file, and callers must be able
+    # to tell that the output is the input.
     if overwrite_existing and ext == input_suffix.lower():
-        out = parent / f"{name}{ext}"
+        out = parent / f"{name}{input_suffix}"
     else:
         out = claim_name(parent, name, ext, 0o666)
     writer(text, out)

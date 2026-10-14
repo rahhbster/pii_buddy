@@ -344,4 +344,7 @@ def seed_settings_file(base_dir: Path) -> None:
         logger.info(f"Created default settings file: {config_path}")
     else:
         # settings.conf can hold API keys; older installs created it 0644
-        os.chmod(config_path, 0o600)
+        try:
+            os.chmod(config_path, 0o600)
+        except OSError as e:
+            logger.warning(f"Could not tighten permissions on {config_path}: {e}")
