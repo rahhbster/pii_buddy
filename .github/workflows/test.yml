@@ -6,24 +6,68 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: py${{ matrix.python }} / ${{ matrix.model }}
     runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # sm only: exercises the detector's fallback path (SPACY_FALLBACK)
+          - python: "3.12"
+            model: en_core_web_sm
+          # md only: what production prefers (SPACY_MODEL)
+          - python: "3.12"
+            model: en_core_web_md
+          # README promises 3.9+; keep the floor honest
+          - python: "3.9"
+            model: en_core_web_md
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements-dev.txt
 
-      - name: Download spaCy model (fallback, small)
-        run: python -m spacy download en_core_web_sm
+      - name: Resolve spaCy version
+        id: spacy
+        run: echo "version=$(python -c 'import spacy; print(spacy.__version__)')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache spaCy model
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.pythonLocation }}/lib/python${{ matrix.python }}/site-packages/${{ matrix.model }}
+            ${{ env.pythonLocation }}/lib/python${{ matrix.python }}/site-packages/${{ matrix.model }}-*.dist-info
+          key: spacy-model-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python }}-${{ matrix.model }}-spacy${{ steps.spacy.outputs.version }}
+
+      - name: Download spaCy model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: python -m spacy download ${{ matrix.model }}
+
+      - name: Verify detector loads the expected model
+        run: |
+          python - <<'PY'
+          from pii_buddy.detector import get_nlp
+          meta = get_nlp().meta
+          loaded = meta["lang"] + "_" + meta["name"]
+          assert loaded == "${{ matrix.model }}", loaded
+          PY
 
       - name: Run tests
         run: pytest -q
