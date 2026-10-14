@@ -23,7 +23,7 @@ class PIIEntity:
 # The lookbehind pins the start to the beginning of a run of local-part
 # characters; without it every position in "a.a.a.…" rescans the whole run.
 EMAIL_RE = re.compile(
-    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    r"(?:(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+|(?<=-)[A-Za-z0-9._%+-]{1,64})@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
     r"(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)*"
 )
 
@@ -47,13 +47,24 @@ _INTL_BODY = (
 INTL_PHONE_RE = re.compile(_INTL_BODY + r"(?![-/]\d)")
 INTL_PHONE_WIDE_RE = re.compile(_INTL_BODY)
 
-_CARD_NUMBER = r"\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{1,7}|\d{4}[ -]?\d{6}[ -]?\d{4,5}"
+# Card groups may be split by a space, hyphen, any Unicode space (NBSP, narrow
+# NBSP, thin space from PDF extraction) or dash (en/em dash, minus). Luhn still
+# gates every match.
+_CSEP = r"[ \-\u00a0\u2000-\u200a\u202f\u2010-\u2015\u2212]"
+_CARD_NUMBER = (
+    rf"\d{{4}}{_CSEP}?\d{{4}}{_CSEP}?\d{{4}}{_CSEP}?\d{{1,7}}"
+    rf"|\d{{4}}{_CSEP}?\d{{6}}{_CSEP}?\d{{4,5}}"
+)
 # The optional tail is a trailing 1-4 digit group ("4111 1111 1111 1111 123");
 # _check_card absorbs it when the number before it is a valid PAN.
 # The tail sits in a lookahead so a following card ("4111 1111 1111 1111 5500
 # 0000 0000 0004") is still found by the next match instead of being eaten.
+# Only a digit blocks the start: a hyphen before a card is a separator from the
+# previous item ("10.0.0.1-4012888888881881", "123-45-6789-5500 ..."), and
+# blocking it hid the card. A Luhn-valid run inside a longer hyphenated number
+# is redacted (fail closed).
 CARD_RE = re.compile(
-    rf"(?<![\d-])(?P<base>{_CARD_NUMBER})(?=(?P<tail>[ -]\d{{1,4}})?(?![\d-]?\d))"
+    rf"(?<!\d)(?P<base>{_CARD_NUMBER})(?=(?P<tail>{_CSEP}\d{{1,4}})?(?!\d))"
 )
 
 # Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
@@ -80,7 +91,7 @@ URL_RE = re.compile(
 # path. The negative lookahead keeps "docker-compose.com.yml"-style names out.
 _URL_TAIL = r"(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?"
 BARE_URL_RE = re.compile(
-    r"(?<![\w.@-])(?:[A-Za-z0-9-]+\.)+(?:"
+    r"(?:(?<![\w.@-])(?:[A-Za-z0-9-]+\.)+|(?<=-)(?:[A-Za-z0-9-]{1,63}\.)+)(?:"
     rf"(?:com|org|net|edu|gov|info|biz|uk|co|us|ca|de|tech|xyz)\b(?!\.[A-Za-z0-9]){_URL_TAIL}"
     r"|(?:io|dev|app|ai|page|me|ly)\b(?::\d{1,5})?/[^\s<>\"']*"
     r")",
@@ -588,13 +599,29 @@ class _SpanSet:
 def _resolve_overlaps(entities: list[PIIEntity], text: str) -> list[PIIEntity]:
     # An address inside a URL ("site.com?email=a@b.c") is part of that link:
     # the URL stays whole rather than being cut around it.
-    urls = [(e.start, e.end) for e in entities if e.label == "URL"]
-    entities = [
-        e for e in entities
-        if not (e.label == "EMAIL"
-                and any(s <= e.start and e.end <= t and (s, t) != (e.start, e.end)
-                        for s, t in urls))
-    ]
+    urls = sorted((e.start, e.end) for e in entities if e.label == "URL")
+    if urls:
+        url_starts = [u[0] for u in urls]
+        prefix_max = []
+        top = -1
+        for _, t in urls:
+            top = max(top, t)
+            prefix_max.append(top)
+
+        def _inside_url(e: PIIEntity) -> bool:
+            # a different URL span that contains the email: either one starting
+            # at or before it and ending after it, or starting strictly before
+            # it and ending at the same place.
+            i = bisect.bisect_right(url_starts, e.start)
+            if i and prefix_max[i - 1] > e.end:
+                return True
+            j = bisect.bisect_left(url_starts, e.start)
+            return bool(j and prefix_max[j - 1] >= e.end)
+
+        entities = [
+            e for e in entities
+            if not (e.label == "EMAIL" and _inside_url(e))
+        ]
     ordered = sorted(
         entities,
         key=lambda e: (_PRIORITY.get(e.label, len(_PRIORITY)), -(e.end - e.start),

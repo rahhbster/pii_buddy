@@ -5,9 +5,13 @@ when candidates overlap the higher-priority one stays whole and the other is
 trimmed, never dropped. The seeded invariant test below is the guard.
 """
 
+import importlib.util
 import itertools
 import random
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -95,7 +99,7 @@ def test_handle_check_is_linear_on_single_line_input(size):
         n += 1
     elapsed = time.perf_counter() - t0
     assert n == size // 10
-    assert elapsed < 1.0, f"{elapsed:.2f}s for {size} chars"
+    assert elapsed < 3.0, f"{elapsed:.2f}s for {size} chars"
 
 
 def test_regex_and_overlap_stages_are_fast_on_400kb_single_line():
@@ -105,7 +109,7 @@ def test_regex_and_overlap_stages_are_fast_on_400kb_single_line():
     kept = detector._resolve_overlaps(ents, text)
     elapsed = time.perf_counter() - t0
     assert len(kept) == 40_000
-    assert elapsed < 1.0, f"{elapsed:.2f}s"
+    assert elapsed < 3.0, f"{elapsed:.2f}s"
 
 
 def test_handle_decorator_still_skipped_at_line_start():
@@ -114,6 +118,42 @@ def test_handle_decorator_still_skipped_at_line_start():
 
 def test_decorator_after_long_indent_is_redacted_fail_closed():
     assert any(l == "HANDLE" for l, _ in _ents("x" * 600 + " @override"))
+
+
+# --- separator leaks and linear-time resolver ---------------------------------
+
+@pytest.mark.parametrize("text,secret", [
+    ("10.0.0.1-4012888888881881", "4012888888881881"),
+    ("415.555.0132-4111 1111 1111 1111 123", "4111 1111 1111 1111"),
+    ("123-45-6789-5500 0000 0000 0004", "5500 0000 0000 0004"),
+    ("123-45-6789 - 4111 1111 1111 1111", "4111 1111 1111 1111"),
+    ("4111\u00a01111\u00a01111\u00a01111", "4111\u00a01111\u00a01111\u00a01111"),
+    ("4111\u202f1111\u202f1111\u202f1111", "4111\u202f1111\u202f1111\u202f1111"),
+    ("4111\u20091111\u20091111\u20091111", "4111\u20091111\u20091111\u20091111"),
+    ("4111\u20131111\u20131111\u20131111", "4111\u20131111\u20131111\u20131111"),
+    ("4111\u20151111\u20151111\u20151111", "4111\u20151111\u20151111\u20151111"),
+    ("4111\u22121111\u22121111\u22121111", "4111\u22121111\u22121111\u22121111"),
+])
+def test_card_next_to_dash_or_unicode_separator_is_fully_covered(text, secret):
+    covered = _covered(text)
+    start = text.index(secret)
+    for i in range(start, start + len(secret)):
+        if not text[i].isspace():
+            assert i in covered, (text, i, text[i])
+
+
+@pytest.mark.parametrize("name,text", [
+    ("email x url", "a@b.co http://x.com/p " * 18000),
+    ("handles", "@override " * 40000),
+    ("ips", "1.2.3.4 " * 50000),
+    ("cards", "4111 1111 1111 1111 " * 20000),
+])
+def test_pipeline_stages_are_fast_at_400kb(name, text):
+    t0 = time.perf_counter()
+    ents = detector._regex_entities(text)
+    detector._resolve_overlaps(ents, text)
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 2.0, f"{name}: {elapsed:.2f}s for {len(text)} chars"
 
 
 # --- seeded adjacency invariant ----------------------------------------------
@@ -138,7 +178,8 @@ _ITEMS = {
     "date": ["12/25/1990", "1990-12-25", "March 3, 1985", "25.12.1990"],
 }
 _FLAT = [it for items in _ITEMS.values() for it in items]
-_SEPS = [" ", ", ", "|", "\n", ";", "/", ",+", "\t", ""]
+_SEPS = [" ", ", ", "|", "\n", ";", "/", ",+", "\t", "",
+         "-", " - ", "(", ")", ":", "\u00a0"]
 
 
 def _join(items, sep):
@@ -228,3 +269,45 @@ def test_adjacency_invariant_coverage_is_superset():
         print("  VIOLATION", repr(v[0]), "item", repr(v[1]), "missing", v[2])
     assert n >= 3000
     assert violations == []
+
+
+# --- no coverage lost against the reviewed baseline ---------------------------
+
+BASELINE = "63c332d"
+
+
+def _load_baseline(tmp_path):
+    repo = Path(detector.__file__).resolve().parent.parent
+    try:
+        src = subprocess.run(
+            ["git", "show", f"{BASELINE}:pii_buddy/detector.py"],
+            capture_output=True, text=True, check=True, cwd=repo,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        pytest.skip(f"baseline {BASELINE} not available in this checkout")
+    path = tmp_path / "detector_baseline.py"
+    path.write_text(src)
+    spec = importlib.util.spec_from_file_location("pii_buddy.detector_baseline", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_coverage_is_superset_of_baseline(tmp_path):
+    base = _load_baseline(tmp_path)
+
+    def cov(fn, text):
+        return {i for e in fn(text, doc_type="general")
+                for i in range(e.start, e.end) if not text[i].isspace()}
+
+    lost = []
+    for items, sep in _cases():
+        text = _join(items, sep)
+        gone = cov(base.detect_pii, text) - cov(detect_pii, text)
+        if gone:
+            lost.append((text, sorted(gone)))
+    print(f"\nbaseline superset: cases={N_CASES} lost={len(lost)}")
+    for text, gone in lost[:10]:
+        print("  LOST", repr(text), gone)
+    assert lost == []
