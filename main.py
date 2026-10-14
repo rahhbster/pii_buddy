@@ -433,7 +433,8 @@ def main():
             reload_blocklist()
             logger.info("Blocklist update complete.")
         if result.status in ("refused", "failed"):
-            print(f"Blocklist update {result.status}: {result.message}", file=sys.stderr)
+            # The updater already logged the reason; repeating it printed it twice.
+            print(f"Blocklist update {result.status}.", file=sys.stderr)
             sys.exit(1)
         return
 
