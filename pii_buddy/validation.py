@@ -68,9 +68,11 @@ def _load_blocklist(filepath: Path) -> set[str]:
     if not filepath.exists():
         return set()
     entries = set()
-    with filepath.open('r', encoding='utf-8') as f:
+    with filepath.open('r', encoding='utf-8', errors='replace') as f:
         for line in f:
             line = line.strip()
+            if '\ufffd' in line:
+                continue
             if line and not line.startswith('#'):
                 entries.add(line.lower())
     return entries
