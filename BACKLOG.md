@@ -12,8 +12,8 @@ Regression tests: `tests/test_dir_override.py`.
 
 ## Next
 
-**Free sandbox smoke test — do this first.** Status: **not yet run.**
-Needs a real Mac and Console.app. Run the tests first:
+**Free sandbox smoke test — do this first.** Needs a real Mac and
+Console.app. Run the tests first:
 `pip install pytest && pytest -q` (pytest is not in `requirements.txt`;
 CI uses Python 3.12).
 
