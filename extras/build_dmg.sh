@@ -17,6 +17,11 @@
 # Requirements:
 #   macOS with hdiutil, iconutil, sips (all standard)
 #
+# Environment:
+#   PII_BUDDY_ALLOW_UNTRACKED_PY=1  build even when untracked .py files exist
+#                                   under pii_buddy/ (they are NOT bundled, and
+#                                   tracked code importing them will break).
+#
 
 set -euo pipefail
 
@@ -91,20 +96,69 @@ printf "[3/5] Copying project files...  "
 
 BUNDLE_PROJECT="${CONTENTS}/Resources/pii_buddy"
 
-rsync -a --quiet \
-    --exclude='.git' \
-    --exclude='.venv' \
-    --exclude='venv' \
-    --exclude='__pycache__' \
-    --exclude='*.pyc' \
-    --exclude='.DS_Store' \
-    --exclude='dist' \
-    --exclude='build' \
-    --exclude='*.egg-info' \
-    --exclude='arbie_pii_buddy_ready.png' \
-    --exclude='arbie_pii_buddy_processing.png' \
-    --exclude='arbie_pii_buddy_done.png' \
-    "${PROJECT_DIR}/" "${BUNDLE_PROJECT}/"
+# Built from `git archive HEAD` (tracked files only), not by rsyncing the
+# working tree: an rsync denylist silently ships anything it forgot, and the
+# working tree holds unredacted /originals, .env files, agent worktrees under
+# /.claude, backups and caches. Uncommitted edits are NOT bundled.
+mkdir -p "$BUNDLE_PROJECT"
+
+if ! git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "FAILED"
+    echo "error: ${PROJECT_DIR} is not a git checkout; cannot build from git archive." >&2
+    exit 1
+fi
+if [ -n "$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=no)" ]; then
+    echo ""
+    echo "warning: uncommitted changes to tracked files are NOT in the bundle (building HEAD)." >&2
+fi
+
+# Untracked, non-ignored files are not in `git archive` either. A new .py in
+# the package would be imported by tracked code and crash the shipped app.
+UNTRACKED="$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=all | sed -n 's/^?? //p')"
+if [ -n "$UNTRACKED" ]; then
+    echo ""
+    echo "warning: untracked files are NOT in the bundle (git add + commit them to ship):" >&2
+    echo "$UNTRACKED" | sed 's/^/    /' >&2
+    UNTRACKED_PKG="$(echo "$UNTRACKED" | grep -E '^pii_buddy/.*\.py$' || true)"
+    if [ -n "$UNTRACKED_PKG" ] && [ "${PII_BUDDY_ALLOW_UNTRACKED_PY:-}" != "1" ]; then
+        echo "FAILED"
+        echo "error: untracked Python files under pii_buddy/ would be missing from the bundle:" >&2
+        echo "$UNTRACKED_PKG" | sed 's/^/    /' >&2
+        echo "Commit them, or set PII_BUDDY_ALLOW_UNTRACKED_PY=1 to build anyway." >&2
+        exit 1
+    fi
+fi
+
+# Tracked files that still must not ship. The privacy-sensitive paths are
+# listed even though they should never be tracked, as a second line of defence.
+git -C "$PROJECT_DIR" archive --format=tar HEAD -- . \
+    ':(exclude)tests' \
+    ':(exclude).github' \
+    ':(exclude)BACKLOG.md' \
+    ':(exclude)input' \
+    ':(exclude)output' \
+    ':(exclude)mappings' \
+    ':(exclude)logs' \
+    ':(exclude)originals' \
+    ':(exclude).claude' \
+    ':(exclude).pytest_cache' \
+    ':(exclude).env' \
+    ':(exclude).env.*' \
+    ':(exclude)*.backup_*' \
+    ':(exclude)arbie_pii_buddy_ready.png' \
+    ':(exclude)arbie_pii_buddy_processing.png' \
+    ':(exclude)arbie_pii_buddy_done.png' \
+    | tar -x -C "$BUNDLE_PROJECT"
+
+# Fail the build rather than ship user data if any of these slipped through.
+LEAKED="$(find "$BUNDLE_PROJECT" \( -name originals -o -name .claude -o -name .pytest_cache \
+    -o -name '.env' -o -name '.env.*' -o -name '*.backup_*' -o -name .git \) -print)"
+if [ -n "$LEAKED" ]; then
+    echo "FAILED"
+    echo "error: sensitive paths found in bundle:" >&2
+    echo "$LEAKED" >&2
+    exit 1
+fi
 
 echo "✓"
 
@@ -141,10 +195,53 @@ APPLESCRIPT
         exit 0
     fi
 
-    # Remove old version if present
-    rm -rf "$DEST"
-    # Copy app to /Applications
-    cp -R "${APP_BUNDLE}" "$DEST"
+    # Copy next to the destination first so a failed copy never deletes the
+    # installed app; swap it in only once the copy is complete.
+    STAGED="${DEST}.installing"
+    rm -rf "$STAGED"
+    if ! cp -R "${APP_BUNDLE}" "$STAGED"; then
+        rm -rf "$STAGED"
+        osascript -e 'display dialog "PII Buddy could not be copied to Applications. Your existing installation was left untouched." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        exit 1
+    fi
+    # Swap with rollback: keep the old install until the new one is in place.
+    # A leftover .old with no installed app is the only surviving copy from a
+    # failed earlier install; put it back before anything is deleted.
+    if [ -e "${DEST}.old" ] && [ ! -e "$DEST" ]; then
+        if ! mv "${DEST}.old" "$DEST"; then
+            osascript - "${DEST}.old" "$DEST" <<'APPLESCRIPT' >/dev/null 2>&1
+on run argv
+    display dialog "PII Buddy found an interrupted install and could not restore it. Your previous installation is at:" & return & (item 1 of argv) & return & return & "Move it to " & (item 2 of argv) & " manually, then try again." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution
+end run
+APPLESCRIPT
+            exit 1
+        fi
+    fi
+    rm -rf "${DEST}.old"
+    if [ -e "$DEST" ] && ! mv "$DEST" "${DEST}.old"; then
+        rm -rf "$STAGED"
+        osascript -e 'display dialog "PII Buddy could not replace the existing installation. It was left untouched." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        exit 1
+    fi
+    if ! mv "$STAGED" "$DEST"; then
+        if [ ! -e "${DEST}.old" ]; then
+            # Fresh install, nothing to restore.
+            rm -rf "$STAGED"
+            osascript -e 'display dialog "PII Buddy could not be installed." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        elif mv "${DEST}.old" "$DEST"; then
+            rm -rf "$STAGED"
+            osascript -e 'display dialog "PII Buddy could not be installed. Your previous installation was restored." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        else
+            # Both moves failed: keep every copy and say where they are.
+            osascript - "${DEST}.old" "$STAGED" "$DEST" <<'APPLESCRIPT' >/dev/null 2>&1
+on run argv
+    display dialog "PII Buddy could not be installed, and your previous installation could not be restored automatically. Nothing was deleted." & return & return & "Previous installation: " & (item 1 of argv) & return & "New copy: " & (item 2 of argv) & return & return & "Move one of them to " & (item 3 of argv) & " to finish." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution
+end run
+APPLESCRIPT
+        fi
+        exit 1
+    fi
+    rm -rf "${DEST}.old"
     # Eject the DMG
     VOLUME_PATH="$(cd "$(dirname "$0")/../../../.." && pwd)"
     if [[ "$VOLUME_PATH" == /Volumes/* ]]; then
@@ -213,10 +310,14 @@ APPLESCRIPT
     SETUP_SCRIPT="${BUNDLE_DIR}/extras/first_run_setup.sh"
     chmod +x "$SETUP_SCRIPT"
 
-    osascript -e "
-    tell application \"Terminal\"
+    # Paths go in as argv and are shell-quoted by AppleScript, never spliced
+    # into the script text.
+    osascript - "$SETUP_SCRIPT" "$BUNDLE_DIR" "$PYTHON" <<'APPLESCRIPT' &
+on run argv
+    set setupCmd to "bash " & quoted form of (item 1 of argv) & " " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv)
+    tell application "Terminal"
         activate
-        set setupTab to do script \"bash '${SETUP_SCRIPT}' '${BUNDLE_DIR}' '${PYTHON}'\"
+        set setupTab to do script setupCmd
         -- Wait for the setup script to finish, then close the tab
         repeat
             delay 2
@@ -225,11 +326,13 @@ APPLESCRIPT
         delay 1
         close (every window whose selected tab is setupTab)
     end tell
-    " &
+end run
+APPLESCRIPT
 else
     # Normal launch — use launchctl for proper GUI access without Terminal
-    PLIST="/tmp/dev.piibuddy.launcher.plist"
-    launchctl unload "$PLIST" 2>/dev/null
+    PLIST_DIR="$(mktemp -d)"
+    PLIST="${PLIST_DIR}/dev.piibuddy.launcher.plist"
+    launchctl remove dev.piibuddy.launcher 2>/dev/null
     cat > "$PLIST" << PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -257,6 +360,7 @@ else
 </plist>
 PLISTEOF
     launchctl load "$PLIST"
+    rm -rf "$PLIST_DIR"
 fi
 LAUNCHER
 

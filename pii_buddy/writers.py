@@ -3,6 +3,8 @@
 import logging
 from pathlib import Path
 
+from .config import claim_name
+
 logger = logging.getLogger("pii_buddy")
 
 
@@ -34,7 +36,13 @@ def write_pdf(text: str, path: Path) -> None:
     pdf.output(str(path))
 
 
-def write_output(text: str, path: Path, output_format: str, input_suffix: str) -> None:
+def write_output(
+    text: str,
+    path: Path,
+    output_format: str,
+    input_suffix: str,
+    overwrite_existing: bool = False,
+) -> Path:
     """
     Dispatcher — write output in the appropriate format.
 
@@ -42,20 +50,30 @@ def write_output(text: str, path: Path, output_format: str, input_suffix: str) -
         text: Redacted text content.
         path: Output path (without extension — we'll set the correct one).
         output_format: "txt" or "same".
-        input_suffix: Original file's suffix (e.g. ".pdf", ".docx", ".txt").
+        input_suffix: Original file's suffix (e.g. ".pdf", ".docx", ".txt"), case preserved.
+        overwrite_existing: Replace the input file in place. Honoured only
+            when the output extension equals the input's; otherwise (and
+            when False) an existing file is never touched and a unique name
+            is chosen instead.
     """
-    stem = path.stem
+    name = path.name
     parent = path.parent
 
     if output_format == "same" and input_suffix.lower() in (".docx", ".doc"):
-        out = parent / f"{stem}.docx"
-        write_docx(text, out)
+        ext, writer = ".docx", write_docx
     elif output_format == "same" and input_suffix.lower() == ".pdf":
-        out = parent / f"{stem}.pdf"
-        write_pdf(text, out)
+        ext, writer = ".pdf", write_pdf
     else:
-        # Default: plain text
-        out = parent / f"{stem}.txt"
-        write_txt(text, out)
+        ext, writer = ".txt", write_txt
 
+    # Overwriting is only safe when the output is the input file itself. A
+    # .doc -> .docx rewrite could otherwise clobber an unrelated sibling.
+    # The input's own suffix is used verbatim: on a case-insensitive
+    # filesystem `CV.txt` and `CV.TXT` are one file, and callers must be able
+    # to tell that the output is the input.
+    if overwrite_existing and ext == input_suffix.lower():
+        out = parent / f"{name}{input_suffix}"
+    else:
+        out = claim_name(parent, name, ext, 0o666)
+    writer(text, out)
     return out

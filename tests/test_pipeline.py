@@ -58,52 +58,178 @@ class TestMultiPassComposition:
 # -----------------------------------------------------------------------
 # Graceful degradation
 # -----------------------------------------------------------------------
+@pytest.fixture
+def run_process_file(tmp_path, monkeypatch):
+    """Run watcher.process_file on a throwaway .txt with every optional pass
+    replaced by a recording fake. No spaCy model and no network are touched.
+
+    Returns a callable(settings) -> (ok, calls) where calls maps each pass
+    name to its MagicMock.
+    """
+    import sys
+
+    from pii_buddy import config as cfg, watcher
+
+    for name in ("MAPPINGS_DIR", "ORIGINALS_DIR", "OUTPUT_DIR"):
+        d = tmp_path / name
+        d.mkdir()
+        monkeypatch.setattr(cfg, name, d)
+        monkeypatch.setattr(watcher, name, d, raising=False)
+    monkeypatch.setattr(watcher, "detect_pii", lambda text: [])
+
+    def passthrough(text, mapping, *args, **kwargs):
+        return text, mapping
+
+    calls = {name: MagicMock(side_effect=passthrough)
+             for name in ("audit", "openrouter", "venice", "verify")}
+
+    monkeypatch.setattr("pii_buddy.audit.audit_redacted", calls["audit"])
+    for module, attr, name in (
+        ("pii_buddy.openrouter_verifier", "openrouter_verify_and_patch", "openrouter"),
+        ("pii_buddy.venice_verifier", "venice_verify_and_patch", "venice"),
+        ("pii_buddy.verifier", "verify_and_patch", "verify"),
+    ):
+        fake = MagicMock()
+        setattr(fake, attr, calls[name])
+        monkeypatch.setitem(sys.modules, module, fake)
+
+    def run(settings):
+        settings.output_dir = tmp_path / "OUTPUT_DIR"
+        src = tmp_path / "note.txt"
+        src.write_text("Meeting notes with nothing sensitive.", encoding="utf-8")
+        return watcher.process_file(src, settings), calls
+
+    return run
+
+
 class TestGracefulDegradation:
-    def test_verify_disabled_skips_cleanly(self, default_settings):
-        """When verify is disabled, the pipeline should skip Pass 4 entirely."""
+    def test_verify_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 4 must not run when cloud verify is off, even if a key is present."""
         default_settings.verify_enabled = False
-        assert not default_settings.verify_enabled
+        default_settings.verify_api_key = "paid-key"
+        ok, calls = run_process_file(default_settings)
 
-    def test_openrouter_disabled_skips_cleanly(self, default_settings):
-        """When OpenRouter is disabled, Pass 3 should be skipped entirely."""
-        assert not default_settings.openrouter_enabled
+        assert ok is True
+        calls["verify"].assert_not_called()
 
-    def test_venice_disabled_skips_cleanly(self, default_settings):
-        """When Venice is disabled, Pass 3b should be skipped entirely."""
-        assert not default_settings.venice_enabled
+    def test_openrouter_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 3 must not run when OpenRouter is off, even if a key is present."""
+        default_settings.openrouter_enabled = False
+        default_settings.openrouter_api_key = "sk-or-test"
+        ok, calls = run_process_file(default_settings)
 
-    def test_audit_disabled_skips_cleanly(self, default_settings):
-        """When audit is disabled via --no-audit, Pass 2 should be skipped."""
+        assert ok is True
+        calls["openrouter"].assert_not_called()
+
+    def test_venice_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 3b must not run when Venice is off, even if a key is present."""
+        default_settings.venice_enabled = False
+        default_settings.venice_api_key = "venice-test-key"
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        calls["venice"].assert_not_called()
+
+    def test_audit_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 2 must not run under --no-audit."""
         default_settings.audit_enabled = False
-        assert not default_settings.audit_enabled
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        calls["audit"].assert_not_called()
+
+    def test_enabled_without_key_skips_cleanly(self, run_process_file, default_settings):
+        """Enabled-but-keyless premium passes are skipped, not attempted."""
+        default_settings.verify_enabled = True
+        default_settings.openrouter_enabled = True
+        default_settings.venice_enabled = True
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        calls["verify"].assert_not_called()
+        calls["openrouter"].assert_not_called()
+        calls["venice"].assert_not_called()
+
+    def test_enabled_passes_do_run(self, run_process_file, default_settings):
+        """Control: the same harness does call each pass once when enabled,
+        so the not_called assertions above can fail."""
+        default_settings.verify_enabled = True
+        default_settings.verify_api_key = "paid-key"
+        default_settings.openrouter_enabled = True
+        default_settings.openrouter_api_key = "sk-or-test"
+        default_settings.venice_enabled = True
+        default_settings.venice_api_key = "venice-test-key"
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        for name in ("audit", "openrouter", "venice", "verify"):
+            calls[name].assert_called_once()
 
 
 # -----------------------------------------------------------------------
 # Upsell messaging
 # -----------------------------------------------------------------------
+@pytest.fixture
+def run_paste(tmp_path, monkeypatch, caplog, default_settings):
+    """Drive `main.py --paste` end to end with fake passes and capture logs.
+
+    The upsell lives in main()'s paste branch (watcher.process_file has no
+    upsell), so this goes through main() with sys.argv and stdin faked.
+    Returns a callable(extra_tags, argv_extra) -> caplog text.
+    """
+    import io
+    import sys
+
+    from pii_buddy import config as cfg
+
+    for attr in ("BASE_DIR", "INPUT_DIR", "OUTPUT_DIR", "MAPPINGS_DIR",
+                 "ORIGINALS_DIR", "LOGS_DIR", "USER_BLOCKLISTS_DIR",
+                 "FEEDBACK_DIR", "ALL_DIRS"):
+        monkeypatch.setattr(cfg, attr, getattr(cfg, attr))
+    monkeypatch.setattr("pii_buddy.detector.detect_pii", lambda text, *a, **k: [])
+    monkeypatch.setattr("sys.stdin", io.StringIO("Meeting notes, nothing sensitive."))
+
+    def run(extra_tags, argv_extra=()):
+        def fake_audit(text, mapping, *args, **kwargs):
+            tags = dict(mapping.get("tags", {}))
+            for i in range(extra_tags):
+                tags[f"<<AUDIT_{i}>>"] = "x"
+            return text, {**mapping, "tags": tags}
+
+        def passthrough(text, mapping, *args, **kwargs):
+            return text, mapping
+
+        monkeypatch.setattr("pii_buddy.audit.audit_redacted", fake_audit)
+        fake = MagicMock()
+        fake.verify_and_patch = passthrough
+        monkeypatch.setitem(sys.modules, "pii_buddy.verifier", fake)
+
+        import main
+        argv = ["main.py", "--paste", "--dir", str(tmp_path / "base"), *argv_extra]
+        with patch.object(sys, "argv", argv), \
+                caplog.at_level(logging.INFO, logger="pii_buddy"):
+            main.main()
+        return caplog.text
+
+    return run
+
+
 class TestUpsellMessaging:
-    def test_upsell_when_audit_finds_pii_and_verify_disabled(
-        self, sample_redacted_text, sample_mapping, caplog
-    ):
-        """When audit finds extra PII and verify is off, show upsell message."""
-        from pii_buddy.audit import audit_redacted
+    def test_upsell_when_audit_finds_pii_and_verify_disabled(self, run_paste):
+        """Audit added 2 tags and verify is off: user is told about Verify."""
+        text = run_paste(extra_tags=2)
+        assert "Audit found 2 additional items" in text
+        assert "piibuddy.com" in text
 
-        with caplog.at_level(logging.INFO, logger="pii_buddy"):
-            text, mapping = audit_redacted(sample_redacted_text, sample_mapping)
+    def test_no_upsell_when_verify_enabled(self, run_paste):
+        """Verify already on (key set): no upsell even if audit found PII."""
+        text = run_paste(extra_tags=2, argv_extra=("--verify", "--verify-key", "paid-key"))
+        assert "additional items" not in text
 
-        # The audit should have found additional items
-        pre_count = len(sample_mapping["tags"])
-        post_count = len(mapping["tags"])
-        extra = post_count - pre_count
-
-        # If extra PII was found, the caller (main.py/watcher.py) should log upsell
-        assert extra > 0, "Audit should find additional PII in sample text"
-
-    def test_no_upsell_when_verify_enabled(self, default_settings):
-        """No upsell message when cloud verify is already enabled."""
-        default_settings.verify_enabled = True
-        default_settings.verify_api_key = "paid-key"
-        assert default_settings.verify_enabled and default_settings.verify_api_key
+    def test_no_upsell_when_audit_finds_nothing(self, run_paste):
+        """Control: nothing extra found, verify off: still no upsell."""
+        text = run_paste(extra_tags=0)
+        assert "additional items" not in text
 
 
 # -----------------------------------------------------------------------
