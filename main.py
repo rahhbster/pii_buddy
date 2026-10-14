@@ -164,6 +164,11 @@ def main():
         help="Download latest blocklists from GitHub",
     )
     parser.add_argument(
+        "--force-update",
+        action="store_true",
+        help="Like --update, but override the new-entries safety cap",
+    )
+    parser.add_argument(
         "--update-app",
         action="store_true",
         help="Update PII Buddy to the latest version via git pull",
@@ -421,14 +426,18 @@ def main():
             logger.info("Update complete. Restart PII Buddy to use the new version.")
         return
 
-    if args.update:
+    if args.update or args.force_update:
         from pii_buddy.updater import update_blocklists
         from pii_buddy.validation import reload_blocklist
 
-        updated = update_blocklists()
-        if updated:
+        result = update_blocklists(force=args.force_update)
+        if result:
             reload_blocklist()
             logger.info("Blocklist update complete.")
+        if result.status in ("refused", "failed"):
+            # The updater already logged the reason; repeating it printed it twice.
+            print(f"Blocklist update {result.status}.", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.subscribe:
