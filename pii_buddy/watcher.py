@@ -2,23 +2,19 @@
 
 import json
 import logging
+import os
 import re
 import shutil
+import stat
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from .config import (
-    INPUT_DIR,
-    MAPPINGS_DIR,
-    ORIGINALS_DIR,
-    ORIGINALS_RETENTION_HOURS,
-    OUTPUT_DIR,
-    SUPPORTED_EXTENSIONS,
-)
+from . import config as cfg
+from .config import INPUT_DIR, ORIGINALS_RETENTION_HOURS, SUPPORTED_EXTENSIONS
 from .detector import detect_pii
 from .extractor import extract_text
 from .redactor import redact
@@ -138,11 +134,15 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         tagged_name = _apply_tag(clean_name, settings)
 
         # 5. Determine output location and write
+        cfg.ensure_private_dir(cfg.ORIGINALS_DIR)
+        cfg.ensure_private_dir(cfg.MAPPINGS_DIR)
+
         if settings.overwrite:
             # Overwrite mode: back up original, then write output to input location
-            backup_dest = ORIGINALS_DIR / filepath.name
-            shutil.copy2(str(filepath), str(backup_dest))
-            logger.info(f"  Backup: originals/{filepath.name}")
+            backup_dest = cfg.claim_path(cfg.ORIGINALS_DIR / filepath.name)
+            shutil.copyfile(str(filepath), str(backup_dest))
+            stored_original = backup_dest.name
+            logger.info(f"  Backup: originals/{stored_original}")
 
             # Write in same format to the original file's location
             output_path = write_output(
@@ -150,10 +150,17 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
                 filepath.parent / filepath.stem,
                 "same",
                 input_suffix,
+                overwrite_existing=True,
             )
             logger.info(f"  Overwritten: {output_path.name}")
+
+            # A .doc is rewritten as .docx, which leaves the PII-bearing
+            # original beside the output; the backup above already holds it.
+            if output_path.resolve() != filepath.resolve():
+                filepath.unlink()
         else:
-            output_dir = settings.output_dir or OUTPUT_DIR
+            output_dir = settings.output_dir or cfg.OUTPUT_DIR
+            output_dir.mkdir(parents=True, exist_ok=True)
             # Write primary output
             output_path = write_output(
                 redacted_text,
@@ -165,26 +172,30 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
 
             # Write additional .txt if text_output is set and primary isn't .txt
             if settings.text_output and output_path.suffix.lower() != ".txt":
-                txt_path = output_dir / f"{tagged_name}.txt"
+                txt_path = cfg.claim_name(output_dir, tagged_name, ".txt", 0o666)
                 write_txt(redacted_text, txt_path)
                 logger.info(f"  Text output: {txt_path.name}")
 
-            # Move original to originals folder
-            dest = ORIGINALS_DIR / filepath.name
+            # Move original to originals folder (owner-only, never replacing
+            # an earlier original that happens to share the filename)
+            dest = cfg.claim_path(cfg.ORIGINALS_DIR / filepath.name)
+            os.chmod(filepath, 0o600)
             shutil.move(str(filepath), str(dest))
-            logger.info(f"  Original moved to: originals/{filepath.name}")
+            stored_original = dest.name
+            logger.info(f"  Original moved to: originals/{stored_original}")
 
         # 6. Save mapping for reversibility
         mapping["metadata"] = {
             "original_file": filepath.name,
+            "stored_original": stored_original,
             "output_file": output_path.name,
             "processed_at": datetime.now().isoformat(),
             "entities_found": len(entities),
         }
-        mapping_path = MAPPINGS_DIR / f"{clean_name}.map.json"
-        mapping_path.write_text(
+        mapping_path = cfg.claim_name(cfg.MAPPINGS_DIR, clean_name, ".map.json")
+        cfg.write_private_text(
+            mapping_path,
             json.dumps(mapping, indent=2, ensure_ascii=False),
-            encoding="utf-8",
         )
         logger.info(f"  Mapping: {mapping_path.name}")
         logger.info("")
@@ -198,15 +209,29 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         return False
 
 
-def cleanup_originals():
-    """Delete originals older than the retention period."""
-    cutoff = datetime.now() - timedelta(hours=ORIGINALS_RETENTION_HOURS)
-    for f in ORIGINALS_DIR.iterdir():
-        if f.is_file():
-            mtime = datetime.fromtimestamp(f.stat().st_mtime)
-            if mtime < cutoff:
-                f.unlink()
-                logger.info(f"Cleaned up original: {f.name}")
+def cleanup_originals(retention_hours: float = ORIGINALS_RETENTION_HOURS) -> int:
+    """Delete originals older than the retention period. Returns the count removed.
+
+    Only regular files directly inside the originals folder are touched;
+    symlinks are never followed.
+    """
+    cutoff = time.time() - retention_hours * 3600
+    removed = 0
+    try:
+        entries = list(cfg.ORIGINALS_DIR.iterdir())
+    except FileNotFoundError:
+        return 0
+    for f in entries:
+        try:
+            st = f.lstat()
+            if not stat.S_ISREG(st.st_mode) or st.st_mtime >= cutoff:
+                continue
+            f.unlink()
+            removed += 1
+            logger.info(f"Cleaned up original: {f.name}")
+        except OSError as e:
+            logger.warning(f"Could not clean up {f.name}: {e}")
+    return removed
 
 
 class NewFileHandler(FileSystemEventHandler):

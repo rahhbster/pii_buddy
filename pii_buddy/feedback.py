@@ -8,13 +8,16 @@ entity counts, and user-provided comments.
 """
 
 import hashlib
+import hmac
 import json
 import logging
+import os
+import secrets
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from .config import FEEDBACK_DIR
+from . import config as cfg
 
 logger = logging.getLogger("pii_buddy")
 
@@ -24,7 +27,7 @@ class FeedbackEntry:
     """A single feedback submission."""
 
     timestamp: str = ""
-    file_hash: str = ""          # SHA-256 of the original filename (not contents)
+    file_hash: str = ""          # salted HMAC of the original filename (not contents)
     source: str = ""             # "cli", "menubar", "watch", "paste", "clipboard"
     doc_type: str = ""           # "resume", "transcript", "general"
     entities_found: int = 0
@@ -38,18 +41,39 @@ class FeedbackEntry:
             self.timestamp = datetime.now().isoformat()
 
 
+def _install_salt() -> bytes:
+    """Per-install random salt, created 0600 on first use and never uploaded.
+
+    Without it, a bare hash of a filename such as `jane_testperson_resume.pdf`
+    can be confirmed by anyone who can guess the name.
+    """
+    cfg.ensure_private_dir(cfg.FEEDBACK_DIR)
+    salt_path = cfg.FEEDBACK_DIR / ".salt"
+    try:
+        fd = os.open(salt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return salt_path.read_bytes()
+    salt = secrets.token_bytes(32)
+    with os.fdopen(fd, "wb") as f:
+        f.write(salt)
+    return salt
+
+
 def _hash_filename(filename: str) -> str:
     """Hash a filename for privacy-safe storage."""
-    return hashlib.sha256(filename.encode()).hexdigest()[:16]
+    digest = hmac.new(_install_salt(), filename.encode(), hashlib.sha256)
+    return digest.hexdigest()[:16]
 
 
 def save_feedback(entry: FeedbackEntry) -> Path:
     """Append a feedback entry to the JSONL log. Returns the log path."""
-    FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = FEEDBACK_DIR / "feedback.jsonl"
+    cfg.ensure_private_dir(cfg.FEEDBACK_DIR)
+    log_path = cfg.FEEDBACK_DIR / "feedback.jsonl"
 
     line = json.dumps(asdict(entry), ensure_ascii=False)
-    with open(log_path, "a", encoding="utf-8") as f:
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
     logger.info(f"Feedback saved to {log_path.name}")
@@ -97,7 +121,7 @@ def record_acceptance(
 
 def load_feedback(limit: int = 100) -> list[dict]:
     """Load recent feedback entries. Returns newest first."""
-    log_path = FEEDBACK_DIR / "feedback.jsonl"
+    log_path = cfg.FEEDBACK_DIR / "feedback.jsonl"
     if not log_path.exists():
         return []
 

@@ -2,10 +2,11 @@
 
 import configparser
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import SETTINGS_FILENAME
+from .config import SETTINGS_FILENAME, write_private_text
 
 logger = logging.getLogger("pii_buddy")
 
@@ -339,5 +340,8 @@ def seed_settings_file(base_dir: Path) -> None:
     """Create settings.conf with commented-out defaults if it doesn't exist."""
     config_path = base_dir / SETTINGS_FILENAME
     if not config_path.exists():
-        config_path.write_text(SETTINGS_TEMPLATE, encoding="utf-8")
+        write_private_text(config_path, SETTINGS_TEMPLATE)
         logger.info(f"Created default settings file: {config_path}")
+    else:
+        # settings.conf can hold API keys; older installs created it 0644
+        os.chmod(config_path, 0o600)

@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from pathlib import Path
 
 # Base directory — defaults to ~/PII_Buddy but can be overridden via env var
@@ -46,3 +47,48 @@ TAG_TEMPLATES = {
     "ID_NUMBER": "<<ID_{n}>>",
     "ADDRESS": "<<ADDR_{n}>>",
 }
+
+
+def ensure_private_dir(path: Path) -> None:
+    """Create a directory readable only by the owner (tightens an existing one)."""
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path, 0o700)
+
+
+def write_private_text(path: Path, text: str) -> None:
+    """Write a file that is 0600 from the moment it exists (no chmod-after-write window)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+
+
+def claim_path(path: Path, mode: int = 0o600) -> Path:
+    """Atomically create an empty file at `path`, or at a unique sibling if taken.
+
+    Never overwrites an existing file. The first claimant keeps the bare
+    name; later ones get `<stem>.<YYYYmmddTHHMMSS>[-n]<suffix>`.
+    """
+    return claim_name(path.parent, path.stem, path.suffix, mode)
+
+
+def claim_name(directory: Path, stem: str, suffix: str, mode: int = 0o600) -> Path:
+    """Like claim_path but with an explicit stem and (possibly compound) suffix."""
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    candidate = directory / f"{stem}{suffix}"
+    n = 0
+    while True:
+        try:
+            os.close(os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode))
+            return candidate
+        except FileExistsError:
+            n += 1
+            tail = stamp if n == 1 else f"{stamp}-{n - 1}"
+            candidate = directory / f"{stem}.{tail}{suffix}"
