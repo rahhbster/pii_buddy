@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,15 +66,22 @@ class ValidationContext:
 
 
 def _load_blocklist(filepath: Path) -> set[str]:
-    if not filepath.exists():
+    try:
+        if not filepath.exists():
+            return set()
+        entries = set()
+        with filepath.open('r', encoding='utf-8-sig', errors='replace') as f:
+            for line in f:
+                line = line.replace('\xa0', ' ').replace('\t', ' ').strip()
+                if '\ufffd' in line:
+                    continue
+                if line and not line.startswith('#'):
+                    entries.add(line.lower())
+        return entries
+    except PermissionError as e:
+        logging.getLogger("pii_buddy").warning(
+            "Blocklist unreadable (%s); continuing without it.", type(e).__name__)
         return set()
-    entries = set()
-    with filepath.open('r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#'):
-                entries.add(line.lower())
-    return entries
 
 
 _blocklist_cache = None
