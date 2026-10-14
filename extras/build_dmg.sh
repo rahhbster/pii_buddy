@@ -101,6 +101,13 @@ rsync -a --quiet \
     --exclude='dist' \
     --exclude='build' \
     --exclude='*.egg-info' \
+    --exclude='/tests' \
+    --exclude='/.github' \
+    --exclude='/BACKLOG.md' \
+    --exclude='/input' \
+    --exclude='/output' \
+    --exclude='/mappings' \
+    --exclude='/logs' \
     --exclude='arbie_pii_buddy_ready.png' \
     --exclude='arbie_pii_buddy_processing.png' \
     --exclude='arbie_pii_buddy_done.png' \
@@ -141,10 +148,17 @@ APPLESCRIPT
         exit 0
     fi
 
-    # Remove old version if present
+    # Copy next to the destination first so a failed copy never deletes the
+    # installed app; swap it in only once the copy is complete.
+    STAGED="${DEST}.installing"
+    rm -rf "$STAGED"
+    if ! cp -R "${APP_BUNDLE}" "$STAGED"; then
+        rm -rf "$STAGED"
+        osascript -e 'display dialog "PII Buddy could not be copied to Applications. Your existing installation was left untouched." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        exit 1
+    fi
     rm -rf "$DEST"
-    # Copy app to /Applications
-    cp -R "${APP_BUNDLE}" "$DEST"
+    mv "$STAGED" "$DEST"
     # Eject the DMG
     VOLUME_PATH="$(cd "$(dirname "$0")/../../../.." && pwd)"
     if [[ "$VOLUME_PATH" == /Volumes/* ]]; then
@@ -213,10 +227,14 @@ APPLESCRIPT
     SETUP_SCRIPT="${BUNDLE_DIR}/extras/first_run_setup.sh"
     chmod +x "$SETUP_SCRIPT"
 
-    osascript -e "
-    tell application \"Terminal\"
+    # Paths go in as argv and are shell-quoted by AppleScript, never spliced
+    # into the script text.
+    osascript - "$SETUP_SCRIPT" "$BUNDLE_DIR" "$PYTHON" <<'APPLESCRIPT' &
+on run argv
+    set setupCmd to "bash " & quoted form of (item 1 of argv) & " " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv)
+    tell application "Terminal"
         activate
-        set setupTab to do script \"bash '${SETUP_SCRIPT}' '${BUNDLE_DIR}' '${PYTHON}'\"
+        set setupTab to do script setupCmd
         -- Wait for the setup script to finish, then close the tab
         repeat
             delay 2
@@ -225,11 +243,13 @@ APPLESCRIPT
         delay 1
         close (every window whose selected tab is setupTab)
     end tell
-    " &
+end run
+APPLESCRIPT
 else
     # Normal launch — use launchctl for proper GUI access without Terminal
-    PLIST="/tmp/dev.piibuddy.launcher.plist"
-    launchctl unload "$PLIST" 2>/dev/null
+    PLIST_DIR="$(mktemp -d)"
+    PLIST="${PLIST_DIR}/dev.piibuddy.launcher.plist"
+    launchctl remove dev.piibuddy.launcher 2>/dev/null
     cat > "$PLIST" << PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -257,6 +277,7 @@ else
 </plist>
 PLISTEOF
     launchctl load "$PLIST"
+    rm -rf "$PLIST_DIR"
 fi
 LAUNCHER
 
