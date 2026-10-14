@@ -2,11 +2,50 @@
 
 Tracked follow-up work after the sandbox-compliance build
 (`pii_buddy/mac_sandbox/`). See `app_store_sandbox.md` for the full
-writeup of what's implemented/tested vs. unverified, and the
-"if you're picking this up to actually ship it" section for the
-detailed order of operations.
+writeup of what's implemented/tested vs. unverified.
 
-## Next immediate step — free sandbox smoke test (DO THIS FIRST)
+Fixed, kept for history: `main.py --once` threw `FileNotFoundError` in
+`--dir` mode because `ensure_dirs()` used a stale `ALL_DIRS` /
+`USER_BLOCKLISTS_DIR` binding captured at import time, and the `--dir`
+override block never created `USER_BLOCKLISTS_DIR` / `FEEDBACK_DIR`.
+Regression tests: `tests/test_dir_override.py`.
+
+## Next
+
+**Team-mode review wave, mostly merged (2026-10-14).** The detailed log
+(defects, verdicts, incidents) is in the PRIVATE repo:
+`pii_buddy_private/docs/reviews/2026-10-14-team-review.md`. It lists
+unfixed defects, so it is not kept here.
+
+Merged to `main`: #1 (name next to email/phone), #2 (LICENSE), #3
+(blocklist updater), #4 (redactor/restorer), #5 (site/README), #7
+(watcher: collisions, perms), #8 (CI, py3.10+3.12), #9 (synthetic
+fixtures), #10 (non-vacuous tests), #11 (DMG build), #13 (`--restore`
+crash), #14 (`--force-update`, exit codes), #15 (test isolation).
+
+Still open:
+1. **#6 menubar** (`fix/menubar-lock-and-clipboard`): login-item plist is
+   never auto-rewritten; lock path, clipboard order, 0600 logs. Final fix
+   a349597 needs one more independent review (an automated scan flagged a
+   "parser differential" in menubar.py at the latest commit, unverified).
+2. **#12 detector regex coverage** (`fix/detector-regex-coverage`): five
+   review rounds. Hard-stop round in progress: bound `BARE_URL_RE`, keep
+   overlap remainders, standard card groupings only. If the next
+   independent review rejects it, ship the proven subset only.
+3. Follow-up PRs: Python floor is 3.10 (the repo still says "3.9+" in
+   README, `setup.sh`, `build_dmg.sh`); mappings and prefs through the
+   private-write helper and `PII_BUDDY_DIR` (`main.py` paste path,
+   `menubar.py`); `main.py --dir` mutates config globals (a reverse-order
+   test leak); local API + MCP server (design in the private log).
+4. Never run the suite without `PII_BUDDY_DIR` set to a temp dir, and do
+   not delete any remote branch without asking the owner.
+
+Also pending: the free sandbox smoke test below (not yet run).
+
+**Free sandbox smoke test — do this first.** Needs a real Mac and
+Console.app. Run the tests first:
+`pip install pytest && pytest -q` (pytest is not in `requirements.txt`;
+CI uses Python 3.12).
 
 Do this before spending money or time on Apple Developer enrollment/certs.
 It answers the single biggest open risk for free, using **ad-hoc code
@@ -58,7 +97,7 @@ Then:
 Whatever happens, capture the Console.app output (verbatim, especially
 any `deny` lines) before moving on to certs/provisioning below.
 
-## Blocking submission (after the smoke test above passes)
+### Then, after the smoke test passes
 
 - [ ] Get an Apple Developer Program membership (if not already enrolled).
 - [ ] Create the "3rd Party Mac Developer Application" and "3rd Party Mac
@@ -78,17 +117,22 @@ any `deny` lines) before moving on to certs/provisioning below.
       one rejection cycle — Apple may reject the "watch a folder in the
       background" pattern outright regardless of correct entitlements.
 
-## Known gaps, unrelated to this work
+## Open decisions
 
-- [x] ~~Pre-existing bug: `main.py --once` throws `FileNotFoundError` in
-      non-MAS `--dir` mode~~ — root-caused and fixed: `ensure_dirs()`
-      referenced a stale `ALL_DIRS`/`USER_BLOCKLISTS_DIR` binding captured
-      at import time, so a `--dir` override's directories were never
-      actually created before the file copy ran. The `--dir` override
-      block was also missing `USER_BLOCKLISTS_DIR`/`FEEDBACK_DIR` from the
-      dirs it created. Both fixed; regression tests in
-      `tests/test_dir_override.py`.
-- [ ] Bookmark staleness behavior across OS upgrades, volume renames, or
-      iCloud Drive folders is only observable through real, long-term
-      usage — current code logs a warning and proceeds on `is_stale`, UX
-      not yet validated.
+- **Does a sandboxed app get background folder access via
+  `startAccessingSecurityScopedResource`?** The smoke test answers this.
+  If it fails, "watch a folder" becomes drag-and-drop. That is a
+  structural change, not a patch.
+- **Will App Review accept the "watch a folder in the background"
+  pattern?** Budget for one rejection cycle regardless of entitlements.
+- **Where does `claude/pii-redaction-cost-analysis-SjAw1` go?** It holds a
+  business-plan doc (pricing tiers, revenue, margins) that should not
+  ship in this public repo. Options: move to `pii_buddy_private`, or
+  delete. Owner decides; unmerged for now.
+- **Bookmark staleness** across OS upgrades, volume renames or iCloud
+  Drive folders is only observable through long-term use. Code logs a
+  warning and proceeds on `is_stale`; UX not validated.
+
+## Ruled out
+
+None yet.
