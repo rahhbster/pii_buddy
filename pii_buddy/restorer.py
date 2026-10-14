@@ -14,10 +14,11 @@ def restore(redacted_text: str, mapping_path: Path) -> str:
     mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
     tags = mapping.get("tags", {})
 
-    restored = redacted_text
+    if not tags:
+        return redacted_text
 
-    # Replace longest tags first to avoid partial matches
-    for tag in sorted(tags, key=len, reverse=True):
-        restored = restored.replace(tag, tags[tag])
-
-    return restored
+    # One pass, longest tag first: restored values are never re-scanned.
+    pattern = re.compile(
+        "|".join(re.escape(t) for t in sorted(tags, key=len, reverse=True))
+    )
+    return pattern.sub(lambda m: tags[m.group()], redacted_text)
