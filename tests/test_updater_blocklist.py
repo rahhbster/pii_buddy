@@ -262,6 +262,17 @@ class TestStatuses:
         r = updater.update_blocklists()
         assert r.status == "unchanged" and not r and r.reason
 
+    def test_unchanged_when_local_has_blank_lines(self, target, monkeypatch):
+        messy = "# header\n\nskills\n\n\neducation\n  \nsummary\n\n"
+        target.write_text(messy, encoding="utf-8")
+        before = target.stat().st_mtime_ns
+        serve_raw(monkeypatch, OLD.encode())
+        r = updater.update_blocklists()
+        assert r.status == "unchanged"
+        assert target.read_text(encoding="utf-8") == messy
+        assert target.stat().st_mtime_ns == before
+        assert not list(target.parent.glob("person_blocklist.backup_*"))
+
     def test_refused_over_cap(self, target, monkeypatch):
         serve_raw(monkeypatch, (OLD + _names("c", updater.MAX_NEW_ENTRIES + 1)).encode())
         r = updater.update_blocklists()
