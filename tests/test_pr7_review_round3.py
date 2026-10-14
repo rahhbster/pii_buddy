@@ -96,6 +96,7 @@ class TestOwnOutputNotReprocessed:
 
     def test_just_written_output_is_skipped_once(self, base):
         out = cfg.INPUT_DIR / "weird.docx"
+        out.write_bytes(b"fake")
         watcher._mark_written(out)
         handler = watcher.NewFileHandler(Settings.defaults())
         with patch("pii_buddy.watcher.process_file") as pf, \

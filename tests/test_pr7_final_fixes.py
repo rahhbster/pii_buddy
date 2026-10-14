@@ -84,8 +84,10 @@ class TestUserNamesLookingLikeOutputs:
 
     def test_stale_entry_expires(self, base):
         out = cfg.INPUT_DIR / "late.txt"
+        out.write_text("fake", encoding="utf-8")
         watcher._mark_written(out)
-        watcher._just_written[out] -= 3600
+        for k in list(watcher._just_written):
+            watcher._just_written[k] -= 3600
         assert not watcher._is_own_output(out)
 
 
