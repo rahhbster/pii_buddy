@@ -41,6 +41,9 @@ class FeedbackEntry:
             self.timestamp = datetime.now().isoformat()
 
 
+_SALT_BYTES = 32
+
+
 def _install_salt() -> bytes:
     """Per-install random salt, created 0600 on first use and never uploaded.
 
@@ -50,12 +53,32 @@ def _install_salt() -> bytes:
     cfg.ensure_private_dir(cfg.FEEDBACK_DIR)
     salt_path = cfg.FEEDBACK_DIR / ".salt"
     try:
-        fd = os.open(salt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return salt_path.read_bytes()
-    salt = secrets.token_bytes(32)
-    with os.fdopen(fd, "wb") as f:
-        f.write(salt)
+        existing = salt_path.read_bytes()
+    except FileNotFoundError:
+        existing = b""
+    if len(existing) == _SALT_BYTES:
+        return existing
+
+    # Fully written and 0600 before it becomes visible as .salt, so a
+    # concurrent reader or a crash never sees a short file.
+    salt = secrets.token_bytes(_SALT_BYTES)
+    tmp = cfg.FEEDBACK_DIR / f".salt.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(salt)
+        try:
+            os.link(tmp, salt_path)  # fails if another process won the race
+        except FileExistsError:
+            current = salt_path.read_bytes()
+            if len(current) == _SALT_BYTES:
+                return current
+            os.replace(tmp, salt_path)  # replace a short/corrupt salt
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
     return salt
 
 

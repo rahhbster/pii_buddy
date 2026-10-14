@@ -51,9 +51,10 @@ def write_output(
         path: Output path (without extension — we'll set the correct one).
         output_format: "txt" or "same".
         input_suffix: Original file's suffix (e.g. ".pdf", ".docx", ".txt").
-        overwrite_existing: Replace a file already at the target path. When
-            False (the default) an existing file is never touched; a unique
-            name is chosen instead.
+        overwrite_existing: Replace the input file in place. Honoured only
+            when the output extension equals the input's; otherwise (and
+            when False) an existing file is never touched and a unique name
+            is chosen instead.
     """
     name = path.name
     parent = path.parent
@@ -65,7 +66,9 @@ def write_output(
     else:
         ext, writer = ".txt", write_txt
 
-    if overwrite_existing:
+    # Overwriting is only safe when the output is the input file itself. A
+    # .doc -> .docx rewrite could otherwise clobber an unrelated sibling.
+    if overwrite_existing and ext == input_suffix.lower():
         out = parent / f"{name}{ext}"
     else:
         out = claim_name(parent, name, ext, 0o666)

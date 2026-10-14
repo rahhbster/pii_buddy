@@ -79,7 +79,7 @@ class TestFilenameCollisions:
     def test_first_file_keeps_bare_name(self, base):
         assert _run(_drop(base, "FIRST fake document"))
         assert (cfg.ORIGINALS_DIR / "resume.txt").exists()
-        assert (cfg.MAPPINGS_DIR / "resume.map.json").exists()
+        assert (cfg.MAPPINGS_DIR / "PII_FREE_resume.map.json").exists()
 
     def test_overwrite_mode_backups_do_not_collide(self, base):
         settings = Settings.defaults()

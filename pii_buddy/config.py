@@ -1,4 +1,5 @@
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 
@@ -50,9 +51,19 @@ TAG_TEMPLATES = {
 
 
 def ensure_private_dir(path: Path) -> None:
-    """Create a directory readable only by the owner (tightens an existing one)."""
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(path, 0o700)
+    """Create a directory readable only by the owner.
+
+    A pre-existing directory is only tightened (group/other bits dropped,
+    owner bits untouched), never loosened, and its contents are not visited.
+    """
+    try:
+        path.mkdir(mode=0o700, parents=True)
+        return
+    except FileExistsError:
+        pass
+    current = stat.S_IMODE(path.stat().st_mode)
+    if current & 0o077:
+        os.chmod(path, current & 0o700)
 
 
 def write_private_text(path: Path, text: str) -> None:

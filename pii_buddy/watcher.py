@@ -78,6 +78,7 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
 
     logger.info(f"Processing: {filepath.name}")
 
+    mapping_path = None
     try:
         input_suffix = filepath.suffix.lower()
 
@@ -137,6 +138,15 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         cfg.ensure_private_dir(cfg.ORIGINALS_DIR)
         cfg.ensure_private_dir(cfg.MAPPINGS_DIR)
 
+        # Claim the mapping name first and derive the output stem from it, so
+        # a reprocessed filename gives `PII_FREE_c.<stamp>.txt` and
+        # `PII_FREE_c.<stamp>.map.json` rather than two unrelated suffixes.
+        if settings.overwrite:
+            mapping_path = cfg.claim_name(cfg.MAPPINGS_DIR, clean_name, ".map.json")
+        else:
+            mapping_path = cfg.claim_name(cfg.MAPPINGS_DIR, tagged_name, ".map.json")
+            tagged_name = mapping_path.name.removesuffix(".map.json")
+
         if settings.overwrite:
             # Overwrite mode: back up original, then write output to input location
             backup_dest = cfg.claim_path(cfg.ORIGINALS_DIR / filepath.name)
@@ -189,10 +199,10 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
             "original_file": filepath.name,
             "stored_original": stored_original,
             "output_file": output_path.name,
+            "mapping_file": mapping_path.name,
             "processed_at": datetime.now().isoformat(),
             "entities_found": len(entities),
         }
-        mapping_path = cfg.claim_name(cfg.MAPPINGS_DIR, clean_name, ".map.json")
         cfg.write_private_text(
             mapping_path,
             json.dumps(mapping, indent=2, ensure_ascii=False),
@@ -205,6 +215,12 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
         return True
 
     except Exception as e:
+        if mapping_path is not None:
+            try:
+                if mapping_path.stat().st_size == 0:
+                    mapping_path.unlink()
+            except OSError:
+                pass
         logger.error(f"  Error processing {filepath.name}: {e}", exc_info=True)
         return False
 
