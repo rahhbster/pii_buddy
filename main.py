@@ -443,13 +443,13 @@ def main():
         # Check for duplicates
         existing = subscribe_file.read_text(encoding="utf-8") if subscribe_file.exists() else ""
         if email in existing:
-            logger.info(f"Already subscribed: {email}")
+            logger.info(f"Already saved locally: {email}")
         else:
             with open(subscribe_file, "a", encoding="utf-8") as f:
                 from datetime import datetime
                 f.write(f"{email}\tcli\t{datetime.now().isoformat()}\n")
-            logger.info(f"Subscribed! You'll receive product updates at {email}")
-            logger.info("(Subscription will sync when the update server is live.)")
+            logger.info(f"Address saved locally in {subscribe_file}: {email}")
+            logger.info("No update server exists yet, so nothing was sent and you are not subscribed to anything.")
         return
 
     if args.rate or args.feedback:

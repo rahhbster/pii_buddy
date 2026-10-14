@@ -333,7 +333,7 @@ Priority: CLI flags > settings.conf > hardcoded defaults.
 
 `--rate` and `--feedback` are stored locally in `~/PII_Buddy/feedback/feedback.jsonl`. They are not sent anywhere.
 
-`--subscribe` only appends your address to `~/PII_Buddy/feedback/pending_subscriptions.txt` on your machine. There is no live update server yet, so nothing is transmitted. To hear about releases, use **Watch > Custom > Releases** on the GitHub repo.
+`--subscribe` only appends your address to `feedback/pending_subscriptions.txt` in the active base folder (`~/PII_Buddy` by default; it follows `--dir` and `PII_BUDDY_DIR`). The file is plaintext and unencrypted. There is no live update server yet, so nothing is transmitted. To hear about releases, use **Watch > Custom > Releases** on the GitHub repo.
 
 ### Updating PII Buddy
 
@@ -343,6 +343,8 @@ Priority: CLI flags > settings.conf > hardcoded defaults.
 ```
 
 `--update-app` and `--update` (blocklists, below) use the network, apart from the optional verification flags above.
+
+**What `--update-app` does to your local edits:** if the install folder has uncommitted changes to tracked files, it runs `git stash` before pulling and never restores them. Your edits are not lost, but they vanish from the working tree until you run `git stash pop` in the install folder (`git stash list` shows them first). Untracked files are not stashed.
 
 ### Custom Directory
 
