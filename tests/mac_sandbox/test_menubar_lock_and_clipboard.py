@@ -8,6 +8,7 @@ the attributes each method touches are provided.
 import errno
 import fcntl
 import logging
+import os
 import logging.handlers
 import plistlib
 import re
@@ -93,29 +94,12 @@ class TestSingleInstanceLock:
         assert menubar._lock_file is None
 
     def test_user_lock_path_is_fixed_and_independent_of_base_dir(self):
-        import os
-        assert str(menubar._USER_LOCK_FILE_PATH) == os.path.join(
-            os.path.expanduser("~/Library/Application Support/PII Buddy"),
-            "menubar.lock",
+        assert menubar._USER_LOCK_FILE_PATH.parts[-4:] == (
+            "Library", "Application Support", "PII Buddy", "menubar.lock",
         )
 
     def test_default_lock_path_is_inside_configured_base_dir(self):
         assert menubar._LOCK_FILE_PATH == menubar.BASE_DIR / "menubar.lock"
-
-    def test_held_flock_skips_bundle_check(self, lock_path, monkeypatch):
-        # Two racing launches both see 2 running copies; the flock winner
-        # must not exit on that count or both exit(0).
-        fake = SimpleNamespace(
-            NSRunningApplication=SimpleNamespace(
-                runningApplicationsWithBundleIdentifier_=lambda bid: [1, 2]
-            )
-        )
-        monkeypatch.setitem(sys.modules, "AppKit", fake)
-
-        menubar._exit_if_already_running()
-
-        assert menubar._lock_file is not None
-        menubar._lock_file.close()
 
     def test_bundle_check_still_applies_when_lock_unavailable(
         self, lock_path, monkeypatch, capsys
@@ -428,7 +412,7 @@ class TestLoginItem:
         def deny(self, *a, **k):
             raise PermissionError(errno.EACCES, "denied")
 
-        monkeypatch.setattr(Path, "write_bytes", deny)
+        monkeypatch.setattr(os, "replace", deny)
         bar._prefs = {"start_at_login": False}
         sender = SimpleNamespace(state=False)
 
@@ -447,7 +431,7 @@ class TestLoginItem:
         def deny(self, *a, **k):
             raise PermissionError(errno.EACCES, "denied")
 
-        monkeypatch.setattr(Path, "write_bytes", deny)
+        monkeypatch.setattr(os, "replace", deny)
         bar._prefs = {"start_at_login": False, "prompted_login": False}
         bar._login_toggle = SimpleNamespace(state=False)
         bar._rumps = SimpleNamespace(alert=lambda **kw: 1)
@@ -479,76 +463,6 @@ class TestLoginItem:
         assert sender.state is False
         assert bar._prefs["start_at_login"] is False
         assert bar.notifications
-
-
-class TestStaleLaunchAgent:
-    def _write(self, agent, d):
-        agent.parent.mkdir(parents=True, exist_ok=True)
-        agent.write_bytes(plistlib.dumps(d))
-
-    def test_tmp_log_path_plist_is_rewritten(self, agent, monkeypatch):
-        monkeypatch.delattr(sys, "frozen", raising=False)
-        self._write(agent, {
-            "Label": "dev.piibuddy.menubar",
-            "ProgramArguments": [sys.executable, "-m", "pii_buddy.menubar"],
-            "StandardOutPath": "/tmp/pii_buddy_menubar.log",
-            "StandardErrorPath": "/tmp/pii_buddy_menubar.log",
-        })
-
-        assert menubar._refresh_stale_launchagent() is True
-
-        data = plistlib.loads(agent.read_bytes())
-        assert "StandardOutPath" not in data
-        assert "/tmp/pii_buddy_menubar.log" not in str(data)
-
-    def test_unreachable_interpreter_is_rewritten(self, agent, monkeypatch):
-        monkeypatch.delattr(sys, "frozen", raising=False)
-        self._write(agent, {
-            "Label": "dev.piibuddy.menubar",
-            "ProgramArguments": ["/nonexistent/venv/bin/python", "-m", "x"],
-        })
-
-        assert menubar._refresh_stale_launchagent() is True
-        args = plistlib.loads(agent.read_bytes())["ProgramArguments"]
-        assert args[0] == sys.executable
-
-    def test_current_plist_is_left_alone(self, agent, monkeypatch):
-        monkeypatch.delattr(sys, "frozen", raising=False)
-        menubar._set_login_item(True)
-        before = agent.read_bytes()
-
-        assert menubar._refresh_stale_launchagent() is False
-        assert agent.read_bytes() == before
-
-    def test_missing_plist_is_not_created(self, agent):
-        assert menubar._refresh_stale_launchagent() is False
-        assert not agent.exists()
-
-    def test_mas_build_never_rewrites(self, agent, monkeypatch):
-        self._write(agent, {"ProgramArguments": ["/nonexistent/python"]})
-        monkeypatch.setattr(menubar, "PII_BUDDY_MAS_BUILD", True)
-        before = agent.read_bytes()
-
-        assert menubar._refresh_stale_launchagent() is False
-        assert agent.read_bytes() == before
-
-    def test_main_refreshes_after_taking_lock(self, monkeypatch):
-        order = []
-        monkeypatch.setattr(
-            menubar, "_exit_if_already_running", lambda: order.append("lock")
-        )
-        monkeypatch.setattr(
-            menubar, "_refresh_stale_launchagent", lambda: order.append("refresh")
-        )
-        monkeypatch.setattr(menubar, "_make_log_handler", lambda: logging.NullHandler())
-        monkeypatch.setattr(
-            menubar, "PIIBuddyMenuBar",
-            lambda: SimpleNamespace(run=lambda: order.append("run")),
-        )
-
-        menubar.main()
-
-        assert order == ["lock", "refresh", "run"]
 
 
 class TestPlistProgramArguments:

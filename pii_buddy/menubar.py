@@ -19,7 +19,9 @@ import os
 import subprocess
 import sys
 import plistlib
+import tempfile
 import threading
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +80,8 @@ _USER_LOCK_FILE_PATH = (
 )
 _lock_file = None  # keep reference alive to hold the lock
 _extra_lock_files = []
+_BUNDLE_POLLS = 5
+_BUNDLE_POLL_INTERVAL = 0.2
 
 _LOG_PATH = LOGS_DIR / "menubar.log"
 
@@ -124,22 +128,48 @@ def _write_private_text(path: Path, text: str):
             os.close(fd)
 
 
+def _claim_mapping_path(directory: Path, now: datetime) -> Path:
+    """Reserve a unique, owner-only mapping file name (O_EXCL, no overwrite)."""
+    stem = f"clipboard_{now.strftime('%Y%m%d_%H%M%S')}"
+    counter = 0
+    while True:
+        suffix = f"_{counter}" if counter else ""
+        path = directory / f"{stem}{suffix}.map.json"
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            counter += 1
+            continue
+        os.close(fd)
+        return path
+
+
 def _log_failure(message: str, exc: BaseException):
     """Log the exception type and frames only; messages can carry user text."""
     frames = "".join(traceback.format_tb(exc.__traceback__))
     logger.error(f"{message}: {type(exc).__name__}\n{frames}")
 
 
-def _try_lock(path: Path):
+def _try_lock(path: Path, created: list):
     """Take an exclusive flock on ``path``.
 
     Returns ``(state, file)``: "acquired" with the open file, "held" when
-    another process owns it, "unavailable" when it can't be used.
+    another process owns it, "unavailable" when it can't be used.  Every
+    file or directory this call creates is appended to ``created`` so a
+    losing instance can remove what it made.
     """
-    # Append mode so a losing instance doesn't truncate the holder's PID.
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(path, "a")
+        missing = [p for p in (path.parent, *path.parent.parents) if not p.exists()]
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        created.extend(missing)
+        # O_APPEND so a losing instance doesn't truncate the holder's PID.
+        flags = os.O_WRONLY | os.O_APPEND
+        try:
+            fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+            created.append(path)
+        except FileExistsError:
+            fd = os.open(path, flags, 0o600)
+        lock_file = os.fdopen(fd, "a")
     except OSError as e:
         logger.error(f"Single-instance lock unavailable: {type(e).__name__}")
         print(
@@ -167,6 +197,35 @@ def _try_lock(path: Path):
     return "acquired", lock_file
 
 
+def _remove_created(created: list):
+    """Undo files and directories a losing instance made (deepest first)."""
+    for p in sorted(created, key=lambda p: len(p.parts), reverse=True):
+        try:
+            p.rmdir() if p.is_dir() else p.unlink()
+        except OSError:
+            pass
+
+
+def _other_bundle_instances() -> int:
+    """Count other running copies of this bundle; 0 when AppKit is absent."""
+    try:
+        from AppKit import NSRunningApplication
+    except ImportError:
+        return 0
+    running = list(
+        NSRunningApplication.runningApplicationsWithBundleIdentifier_(
+            "dev.piibuddy.menubar"
+        )
+    )
+    pids = []
+    for app in running:
+        getter = getattr(app, "processIdentifier", None)
+        pids.append(getter() if callable(getter) else None)
+    if all(pid is None for pid in pids):
+        return max(len(running) - 1, 0)
+    return sum(1 for pid in pids if pid != os.getpid())
+
+
 def _exit_if_already_running():
     """Prevent multiple instances using two independent checks.
 
@@ -176,9 +235,9 @@ def _exit_if_already_running():
       collide.  The OS releases them when the process exits.
 
     Option B — NSRunningApplication (native macOS, bundle-aware):
-      Counts running processes that share our bundle identifier.
-      Only effective when running as a .app bundle; silently skipped
-      when launched from a plain ``python`` invocation.
+      Counts other running processes that share our bundle identifier,
+      always, as a second guard behind the locks.  Only effective when
+      running as a .app bundle; a no-op without PyObjC.
     """
     global _lock_file
 
@@ -188,11 +247,13 @@ def _exit_if_already_running():
         paths.append(_USER_LOCK_FILE_PATH)
 
     acquired = []
+    created = []
     for path in paths:
-        state, lock_file = _try_lock(path)
+        state, lock_file = _try_lock(path, created)
         if state == "held":
             for f in acquired:
                 f.close()
+            _remove_created(created)
             print("PII Buddy is already running (lock held).", file=sys.stderr)
             sys.exit(0)
         if state == "acquired":
@@ -201,20 +262,19 @@ def _exit_if_already_running():
     if acquired:
         _lock_file = acquired[0]
         _extra_lock_files[:] = acquired[1:]
-        # We own a lock, so no other instance can: a bundle count > 1 here
-        # is a racing launch that also sees us, and both would exit.
-        return
 
-    # --- Option B: NSRunningApplication check (lock unavailable only) ---
-    try:
-        from AppKit import NSRunningApplication
-        bundle_id = "dev.piibuddy.menubar"
-        running = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
-        if len(running) > 1:
-            print("PII Buddy is already running (bundle check).", file=sys.stderr)
-            sys.exit(0)
-    except ImportError:
-        pass  # PyObjC not available; file lock is sufficient
+    # --- Option B: NSRunningApplication check (always) ---
+    # An old build only holds the old lock path, so winning our flocks
+    # doesn't prove we're alone.  A racing launch that lost the flock is
+    # still visible for a few ms before it exits, so re-poll briefly: it
+    # vanishes, an old-build holder doesn't.
+    for attempt in range(_BUNDLE_POLLS):
+        if _other_bundle_instances() == 0:
+            return
+        if attempt < _BUNDLE_POLLS - 1:
+            time.sleep(_BUNDLE_POLL_INTERVAL)
+    print("PII Buddy is already running (bundle check).", file=sys.stderr)
+    sys.exit(0)
 
 # Icon paths (relative to this file)
 _ICONS_DIR = Path(__file__).parent / "data" / "icons"
@@ -315,11 +375,11 @@ def _build_launchagent_plist() -> dict:
     }
 
 
-def _refresh_stale_launchagent() -> bool:
-    """Rewrite a LaunchAgent plist left by an older build.
+def _warn_if_stale_launchagent() -> bool:
+    """Log one line when the login-item plist looks left over by an old build.
 
-    Stale means it still logs to the /tmp path or points at an interpreter
-    that no longer exists.  Returns True when the plist was rewritten.
+    Read-only: the plist is the user's and is only ever rewritten by the
+    explicit "Start at login" toggle.  Returns True when it warned.
     """
     if PII_BUDDY_MAS_BUILD or not _LAUNCHAGENT_PATH.exists():
         return False
@@ -333,14 +393,56 @@ def _refresh_stale_launchagent() -> bool:
             or not args
             or not os.path.exists(args[0])
         )
-        if not stale:
-            return False
-        _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(_build_launchagent_plist()))
-        logger.info("Login item plist refreshed.")
-        return True
     except Exception as e:
-        logger.warning(f"Could not refresh login item: {type(e).__name__}")
+        logger.warning(f"Could not inspect login item: {type(e).__name__}")
         return False
+    if stale:
+        logger.warning(
+            "Login item plist looks outdated; toggle Start at login off and on."
+        )
+    return stale
+
+
+def _write_launchagent_plist(explicit: bool) -> bool:
+    """Atomically write the login-item plist; False when it refused.
+
+    Without ``explicit`` (the user's own toggle) an existing plist with our
+    Label but different ProgramArguments is never replaced.  An explicit
+    write keeps unknown keys (EnvironmentVariables, ThrottleInterval, ...)
+    from a plist carrying our Label.
+    """
+    new = _build_launchagent_plist()
+    if _LAUNCHAGENT_PATH.exists():
+        try:
+            old = plistlib.loads(_LAUNCHAGENT_PATH.read_bytes())
+        except Exception:
+            old = {}
+        if old.get("Label") == _LAUNCHAGENT_LABEL:
+            if not explicit and old.get("ProgramArguments") != new["ProgramArguments"]:
+                logger.warning("Login item differs; not overwriting it.")
+                return False
+            kept = {
+                k: v for k, v in old.items()
+                if k not in new
+                and k not in ("StandardOutPath", "StandardErrorPath", "WorkingDirectory")
+            }
+            new = {**kept, **new}
+    _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        dir=_LAUNCHAGENT_DIR, prefix=f".{_LAUNCHAGENT_PATH.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(plistlib.dumps(new))
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, _LAUNCHAGENT_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return True
 
 
 def _set_login_item(enabled: bool) -> bool:
@@ -354,8 +456,7 @@ def _set_login_item(enabled: bool) -> bool:
             # read by launchd; honouring the toggle would be a lie.
             logger.warning("Start at Login is unavailable in the sandboxed build.")
             return False
-        _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
-        _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(_build_launchagent_plist()))
+        _write_launchagent_plist(explicit=True)
         logger.info(f"Login item created: {_LAUNCHAGENT_PATH}")
         return True
     else:
@@ -771,13 +872,12 @@ class PIIBuddyMenuBar:
             # Mapping first: if it can't be saved the clipboard still holds
             # the original, which is otherwise unrecoverable.
             MAPPINGS_DIR.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             mapping["metadata"] = {
                 "source": "menubar",
                 "processed_at": datetime.now().isoformat(),
                 "entities_found": len(entities),
             }
-            mapping_path = MAPPINGS_DIR / f"clipboard_{timestamp}.map.json"
+            mapping_path = _claim_mapping_path(MAPPINGS_DIR, datetime.now())
             _write_private_text(
                 mapping_path, json.dumps(mapping, indent=2, ensure_ascii=False)
             )
@@ -871,7 +971,7 @@ def main():
     except OSError as e:
         print(f"PII Buddy could not open its log file: {e}", file=sys.stderr)
     _exit_if_already_running()
-    _refresh_stale_launchagent()
+    _warn_if_stale_launchagent()
     app = PIIBuddyMenuBar()
     app.run()
 
