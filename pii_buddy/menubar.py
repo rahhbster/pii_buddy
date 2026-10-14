@@ -381,6 +381,33 @@ def _under_world_readable_root(path: str) -> bool:
     return False
 
 
+def _same_dir_as_world_readable_root(path: str) -> bool:
+    """True if ``path`` or an ancestor is the same directory (dev, inode) as
+    a world-readable root. Spelling is irrelevant: APFS folds case and
+    Unicode, so a byte-wise compare misses ``/PRIVATE/TMP`` or ``/Uſers``."""
+    ids = set()
+    for root in _WORLD_READABLE_ROOTS:
+        try:
+            st = os.stat(root)
+        except OSError:
+            continue
+        ids.add((st.st_dev, st.st_ino))
+    if not ids:
+        return False
+    current = path
+    while True:
+        try:
+            st = os.stat(current)
+        except OSError:
+            st = None
+        if st is not None and (st.st_dev, st.st_ino) in ids:
+            return True
+        parent = os.path.dirname(current)
+        if parent == current:
+            return False
+        current = parent
+
+
 def _is_stale_log_path(value) -> bool:
     """True for a launchd log path another local user could read.
 
@@ -403,6 +430,7 @@ def _is_stale_log_path(value) -> bool:
             _under_world_readable_root(os.path.normpath(value))
             or _under_world_readable_root(os.path.realpath(value))
             or os.path.realpath(value) == os.path.realpath(_STALE_LOG_PATH)
+            or _same_dir_as_world_readable_root(os.path.realpath(value))
         )
     except (ValueError, OSError):
         return True

@@ -75,6 +75,11 @@ cases = {
     "subprocess.run(osascript)": lambda: subprocess.run(["osascript", "-e", "1"]),
     "subprocess.run(gh)": lambda: subprocess.run(["gh", "pr", "list"]),
     "os.system(gh)": lambda: os.system("gh auth status"),
+    "subprocess.run(open)": lambda: subprocess.run(["open", "https://example.invalid"]),
+    "os.system(open)": lambda: os.system("open https://example.invalid"),
+    "subprocess.run(/usr/bin/open)": lambda: subprocess.run(
+        ["/usr/bin/open", "https://example.invalid"]
+    ),
 }
 # Linux-only; absent on macOS, so only exercised where they exist.
 if hasattr(os, "setxattr"):
@@ -101,6 +106,7 @@ EXPECTED = [
     "subprocess.call", "os.system", "os.popen", "os.execv", "os.execvp",
     "os.execl", "os.spawnv", "os.spawnvp", "os.spawnl",
     "subprocess.run(osascript)", "subprocess.run(gh)", "os.system(gh)",
+    "subprocess.run(open)", "os.system(open)", "subprocess.run(/usr/bin/open)",
 ]
 
 
