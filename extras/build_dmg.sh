@@ -91,27 +91,52 @@ printf "[3/5] Copying project files...  "
 
 BUNDLE_PROJECT="${CONTENTS}/Resources/pii_buddy"
 
-rsync -a --quiet \
-    --exclude='.git' \
-    --exclude='.venv' \
-    --exclude='venv' \
-    --exclude='__pycache__' \
-    --exclude='*.pyc' \
-    --exclude='.DS_Store' \
-    --exclude='dist' \
-    --exclude='build' \
-    --exclude='*.egg-info' \
-    --exclude='/tests' \
-    --exclude='/.github' \
-    --exclude='/BACKLOG.md' \
-    --exclude='/input' \
-    --exclude='/output' \
-    --exclude='/mappings' \
-    --exclude='/logs' \
-    --exclude='arbie_pii_buddy_ready.png' \
-    --exclude='arbie_pii_buddy_processing.png' \
-    --exclude='arbie_pii_buddy_done.png' \
-    "${PROJECT_DIR}/" "${BUNDLE_PROJECT}/"
+# Built from `git archive HEAD` (tracked files only), not by rsyncing the
+# working tree: an rsync denylist silently ships anything it forgot, and the
+# working tree holds unredacted /originals, .env files, agent worktrees under
+# /.claude, backups and caches. Uncommitted edits are NOT bundled.
+mkdir -p "$BUNDLE_PROJECT"
+
+if ! git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "FAILED"
+    echo "error: ${PROJECT_DIR} is not a git checkout; cannot build from git archive." >&2
+    exit 1
+fi
+if [ -n "$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=no)" ]; then
+    echo ""
+    echo "warning: uncommitted changes to tracked files are NOT in the bundle (building HEAD)." >&2
+fi
+
+# Tracked files that still must not ship. The privacy-sensitive paths are
+# listed even though they should never be tracked, as a second line of defence.
+git -C "$PROJECT_DIR" archive --format=tar HEAD -- . \
+    ':(exclude)tests' \
+    ':(exclude).github' \
+    ':(exclude)BACKLOG.md' \
+    ':(exclude)input' \
+    ':(exclude)output' \
+    ':(exclude)mappings' \
+    ':(exclude)logs' \
+    ':(exclude)originals' \
+    ':(exclude).claude' \
+    ':(exclude).pytest_cache' \
+    ':(exclude).env' \
+    ':(exclude).env.*' \
+    ':(exclude)*.backup_*' \
+    ':(exclude)arbie_pii_buddy_ready.png' \
+    ':(exclude)arbie_pii_buddy_processing.png' \
+    ':(exclude)arbie_pii_buddy_done.png' \
+    | tar -x -C "$BUNDLE_PROJECT"
+
+# Fail the build rather than ship user data if any of these slipped through.
+LEAKED="$(find "$BUNDLE_PROJECT" \( -name originals -o -name .claude -o -name .pytest_cache \
+    -o -name '.env' -o -name '.env.*' -o -name '*.backup_*' -o -name .git \) -print)"
+if [ -n "$LEAKED" ]; then
+    echo "FAILED"
+    echo "error: sensitive paths found in bundle:" >&2
+    echo "$LEAKED" >&2
+    exit 1
+fi
 
 echo "✓"
 
@@ -157,8 +182,23 @@ APPLESCRIPT
         osascript -e 'display dialog "PII Buddy could not be copied to Applications. Your existing installation was left untouched." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
         exit 1
     fi
-    rm -rf "$DEST"
-    mv "$STAGED" "$DEST"
+    # Swap with rollback: keep the old install until the new one is in place.
+    rm -rf "${DEST}.old"
+    if [ -e "$DEST" ] && ! mv "$DEST" "${DEST}.old"; then
+        rm -rf "$STAGED"
+        osascript -e 'display dialog "PII Buddy could not replace the existing installation. It was left untouched." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        exit 1
+    fi
+    if ! mv "$STAGED" "$DEST"; then
+        # Restore the previous install (if there was one) and do not launch.
+        if [ -e "${DEST}.old" ]; then
+            mv "${DEST}.old" "$DEST"
+        fi
+        rm -rf "$STAGED"
+        osascript -e 'display dialog "PII Buddy could not be installed. Your previous installation was restored." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        exit 1
+    fi
+    rm -rf "${DEST}.old"
     # Eject the DMG
     VOLUME_PATH="$(cd "$(dirname "$0")/../../../.." && pwd)"
     if [[ "$VOLUME_PATH" == /Volumes/* ]]; then
