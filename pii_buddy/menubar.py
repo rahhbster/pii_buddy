@@ -10,13 +10,19 @@ Usage:
     python -m pii_buddy.menubar
 """
 
+import errno
 import fcntl
 import json
 import logging
+import logging.handlers
 import os
 import subprocess
 import sys
+import plistlib
+import tempfile
 import threading
+import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +33,7 @@ logger = logging.getLogger("pii_buddy")
 # Only wired into the menu when PII_BUDDY_MAS_BUILD is set (see
 # setup_py2app.py's MAS variant / extras/entitlements_mas.plist). The
 # existing direct-download build never references this.
-from .config import PII_BUDDY_MAS_BUILD  # noqa: E402
+from .config import BASE_DIR, LOGS_DIR, PII_BUDDY_MAS_BUILD  # noqa: E402
 from .mac_sandbox.bookmark_store import BookmarkStore  # noqa: E402
 
 
@@ -65,44 +71,222 @@ class WatchFolderMenuController:
 
 # --- Single-instance guard ---
 
-_LOCK_FILE_PATH = "/tmp/pii_buddy_menubar.lock"
+_LOCK_FILE_PATH = BASE_DIR / "menubar.lock"
+# Fixed per-user path (the container's home in the MAS build) so instances
+# started with different PII_BUDDY_DIR values still exclude each other.
+_USER_LOCK_FILE_PATH = (
+    Path(os.path.expanduser("~/Library/Application Support/PII Buddy"))
+    / "menubar.lock"
+)
 _lock_file = None  # keep reference alive to hold the lock
+_extra_lock_files = []
+_BUNDLE_POLLS = 5
+_BUNDLE_POLL_INTERVAL = 0.2
+
+_LOG_PATH = LOGS_DIR / "menubar.log"
+
+
+def _ensure_private_log() -> Path:
+    """Create the menubar log owner-readable only and return its path."""
+    _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(_LOG_PATH, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+    os.close(fd)
+    os.chmod(_LOG_PATH, 0o600)
+    return _LOG_PATH
+
+
+class _PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotating handler whose files, including rotated ones, stay 0600."""
+
+    def _open(self):
+        stream = super()._open()
+        os.chmod(self.baseFilename, 0o600)
+        return stream
+
+
+def _make_log_handler(max_bytes=1_000_000, backup_count=3):
+    handler = _PrivateRotatingFileHandler(
+        _ensure_private_log(),
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s"))
+    return handler
+
+
+def _write_private_text(path: Path, text: str):
+    """Write ``text`` to ``path`` owner-readable only (mappings hold PII)."""
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1
+            f.write(text)
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
+def _claim_mapping_path(directory: Path, now: datetime) -> Path:
+    """Reserve a unique, owner-only mapping file name (O_EXCL, no overwrite)."""
+    stem = f"clipboard_{now.strftime('%Y%m%d_%H%M%S')}"
+    counter = 0
+    while True:
+        suffix = f"_{counter}" if counter else ""
+        path = directory / f"{stem}{suffix}.map.json"
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            counter += 1
+            continue
+        os.close(fd)
+        return path
+
+
+def _log_failure(message: str, exc: BaseException):
+    """Log the exception type and frames only; messages can carry user text."""
+    frames = "".join(traceback.format_tb(exc.__traceback__))
+    logger.error(f"{message}: {type(exc).__name__}\n{frames}")
+
+
+def _try_lock(path: Path, created: list):
+    """Take an exclusive flock on ``path``.
+
+    Returns ``(state, file)``: "acquired" with the open file, "held" when
+    another process owns it, "unavailable" when it can't be used.  Every
+    directory this call creates is appended to ``created`` so a losing
+    instance can remove it if still empty.  The lock file itself is never
+    unlinked: a racing opener may hold a flock on that inode.
+    """
+    try:
+        # Only directories whose mkdir succeeds here are ours to remove; one
+        # a racing winner made first must survive our cleanup.
+        for d in reversed([path.parent, *path.parent.parents]):
+            if d.exists():
+                continue
+            try:
+                os.mkdir(d, 0o700)
+            except FileExistsError:
+                continue
+            created.append(d)
+        # O_APPEND so a losing instance doesn't truncate the holder's PID.
+        flags = os.O_WRONLY | os.O_APPEND
+        try:
+            fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            fd = os.open(path, flags, 0o600)
+        lock_file = os.fdopen(fd, "a")
+    except OSError as e:
+        logger.error(f"Single-instance lock unavailable: {type(e).__name__}")
+        print(
+            f"PII Buddy could not create its lock file ({type(e).__name__}); "
+            "continuing without the file-lock guard.",
+            file=sys.stderr,
+        )
+        return "unavailable", None
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        lock_file.close()
+        if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+            return "held", None
+        logger.error(f"Single-instance lock failed: {type(e).__name__}")
+        print(
+            f"PII Buddy could not take its lock ({type(e).__name__}); "
+            "continuing without the file-lock guard.",
+            file=sys.stderr,
+        )
+        return "unavailable", None
+    lock_file.truncate(0)
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    return "acquired", lock_file
+
+
+def _remove_created(created: list):
+    """Remove directories a losing instance made, if empty (deepest first)."""
+    for p in sorted(created, key=lambda p: len(p.parts), reverse=True):
+        try:
+            p.rmdir()
+        except OSError:
+            pass
+
+
+def _other_bundle_instances() -> int:
+    """Count other running copies of this bundle; 0 when AppKit is absent."""
+    try:
+        from AppKit import NSRunningApplication
+    except ImportError:
+        return 0
+    running = list(
+        NSRunningApplication.runningApplicationsWithBundleIdentifier_(
+            "dev.piibuddy.menubar"
+        )
+    )
+    pids = []
+    for app in running:
+        getter = getattr(app, "processIdentifier", None)
+        pids.append(getter() if callable(getter) else None)
+    if all(pid is None for pid in pids):
+        return max(len(running) - 1, 0)
+    return sum(1 for pid in pids if pid != os.getpid())
 
 
 def _exit_if_already_running():
     """Prevent multiple instances using two independent checks.
 
-    Option A — file lock (works everywhere, survives crashes):
-      An exclusive flock on a temp file.  The OS releases it automatically
-      when the process exits for any reason.
+    Option A — file locks (work everywhere, survive crashes):
+      Exclusive flocks on a lock under BASE_DIR and on one at a fixed
+      per-user path, so launches with different PII_BUDDY_DIR values still
+      collide.  The OS releases them when the process exits.
 
     Option B — NSRunningApplication (native macOS, bundle-aware):
-      Counts running processes that share our bundle identifier.
-      Only effective when running as a .app bundle; silently skipped
-      when launched from a plain ``python`` invocation.
+      Counts other running processes that share our bundle identifier,
+      always, as a second guard behind the locks.  Only effective when
+      running as a .app bundle; a no-op without PyObjC.
     """
     global _lock_file
 
-    # --- Option A: file lock ---
-    try:
-        _lock_file = open(_LOCK_FILE_PATH, "w")
-        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _lock_file.write(str(os.getpid()))
-        _lock_file.flush()
-    except (IOError, OSError):
-        print("PII Buddy is already running (lock held).", file=sys.stderr)
-        sys.exit(0)
+    # --- Option A: file locks (BASE_DIR one, then the fixed per-user one) ---
+    paths = [_LOCK_FILE_PATH]
+    if _USER_LOCK_FILE_PATH != _LOCK_FILE_PATH:
+        paths.append(_USER_LOCK_FILE_PATH)
 
-    # --- Option B: NSRunningApplication check ---
-    try:
-        from AppKit import NSRunningApplication
-        bundle_id = "dev.piibuddy.menubar"
-        running = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
-        if len(running) > 1:
-            print("PII Buddy is already running (bundle check).", file=sys.stderr)
+    acquired = []
+    created = []
+    for path in paths:
+        state, lock_file = _try_lock(path, created)
+        if state == "held":
+            for f in acquired:
+                # Leave an empty file, not our PID, once we step aside.
+                try:
+                    f.truncate(0)
+                except OSError:
+                    pass
+                f.close()
+            _remove_created(created)
+            print("PII Buddy is already running (lock held).", file=sys.stderr)
             sys.exit(0)
-    except ImportError:
-        pass  # PyObjC not available; file lock is sufficient
+        if state == "acquired":
+            acquired.append(lock_file)
+
+    if acquired:
+        _lock_file = acquired[0]
+        _extra_lock_files[:] = acquired[1:]
+
+    # --- Option B: NSRunningApplication check (always) ---
+    # An old build only holds the old lock path, so winning our flocks
+    # doesn't prove we're alone.  A racing launch that lost the flock is
+    # still visible for a few ms before it exits, so re-poll briefly: it
+    # vanishes, an old-build holder doesn't.
+    for attempt in range(_BUNDLE_POLLS):
+        if _other_bundle_instances() == 0:
+            return
+        if attempt < _BUNDLE_POLLS - 1:
+            time.sleep(_BUNDLE_POLL_INTERVAL)
+    print("PII Buddy is already running (bundle check).", file=sys.stderr)
+    sys.exit(0)
 
 # Icon paths (relative to this file)
 _ICONS_DIR = Path(__file__).parent / "data" / "icons"
@@ -116,6 +300,21 @@ _DONE_DISPLAY_SECONDS = 5
 # Preferences file path
 _PREFS_DIR = Path.home() / "PII_Buddy"
 _PREFS_PATH = _PREFS_DIR / "menubar_prefs.json"
+
+_GENERIC_ERROR_MESSAGE = (
+    "Something went wrong. See the logs folder in your PII Buddy "
+    "directory for details."
+)
+
+_LOGIN_UNAVAILABLE_MESSAGE = (
+    "Start at Login isn't available in the App Store version. "
+    "Add PII Buddy under System Settings > General > Login Items."
+)
+
+_LOGIN_FAILED_MESSAGE = (
+    "Couldn't change the Start at Login setting. "
+    "You can add PII Buddy under System Settings > General > Login Items."
+)
 
 # LaunchAgent for "Start at Login"
 _LAUNCHAGENT_DIR = Path.home() / "Library" / "LaunchAgents"
@@ -160,46 +359,239 @@ def _save_prefs(prefs: dict):
             json.dumps(prefs, indent=2), encoding="utf-8"
         )
     except Exception as e:
-        logger.warning(f"Could not save preferences: {e}")
+        logger.warning(f"Could not save preferences: {type(e).__name__}")
 
 
 # --- LaunchAgent for login item ---
 
-def _set_login_item(enabled: bool):
-    """Create or remove a LaunchAgent plist for auto-start at login."""
+_STALE_LOG_PATH = "/tmp/pii_buddy_menubar.log"
+_LOG_KEYS = ("StandardOutPath", "StandardErrorPath")
+
+
+_WORLD_READABLE_ROOTS = (
+    "/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", "/Users/Shared",
+)
+
+
+def _under_world_readable_root(path: str) -> bool:
+    for root in _WORLD_READABLE_ROOTS:
+        for r in {root, os.path.realpath(root)}:
+            if path == r or path.startswith(r + os.sep):
+                return True
+    return False
+
+
+def _same_dir_as_world_readable_root(path: str) -> bool:
+    """True if ``path`` or an ancestor is the same directory (dev, inode) as
+    a world-readable root. Spelling is irrelevant: APFS folds case and
+    Unicode, so a byte-wise compare misses ``/PRIVATE/TMP`` or ``/Uſers``."""
+    ids = set()
+    for root in _WORLD_READABLE_ROOTS:
+        try:
+            st = os.stat(root)
+        except OSError:
+            continue
+        ids.add((st.st_dev, st.st_ino))
+    if not ids:
+        return False
+    current = path
+    while True:
+        try:
+            st = os.stat(current)
+        except OSError:
+            st = None
+        if st is not None and (st.st_dev, st.st_ino) in ids:
+            return True
+        parent = os.path.dirname(current)
+        if parent == current:
+            return False
+        current = parent
+
+
+def _is_stale_log_path(value) -> bool:
+    """True for a launchd log path another local user could read.
+
+    That is the old /tmp file, a relative/empty/non-string value, or a path
+    that resolves (symlinks and ``..`` included) into a world-readable root.
+    Any other absolute path is the owner's choice and is kept.
+    """
+    if value is None:
+        return False
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\0" in value
+        or not os.path.isabs(value)
+        or value == _STALE_LOG_PATH
+    ):
+        return True
+    try:
+        return (
+            _under_world_readable_root(os.path.normpath(value))
+            or _under_world_readable_root(os.path.realpath(value))
+            or os.path.realpath(value) == os.path.realpath(_STALE_LOG_PATH)
+            or _same_dir_as_world_readable_root(os.path.realpath(value))
+        )
+    except (ValueError, OSError):
+        return True
+
+
+def _build_launchagent_plist() -> dict:
+    if getattr(sys, "frozen", False):
+        # py2app bundle: sys.executable is the app's own launcher and
+        # "-m pii_buddy.menubar" is meaningless to it.
+        program_args = [sys.executable]
+        extra = {}
+    else:
+        program_args = [sys.executable, "-m", "pii_buddy.menubar"]
+        extra = {"WorkingDirectory": str(Path(__file__).parent.parent)}
+    # No StandardOut/ErrorPath: main() logs to a rotating file itself,
+    # and pointing launchd at the same file duplicates every line.
+    return {
+        "Label": _LAUNCHAGENT_LABEL,
+        "ProgramArguments": program_args,
+        **extra,
+        "RunAtLoad": True,
+        "KeepAlive": False,
+    }
+
+
+def _warn_if_stale_launchagent() -> bool:
+    """Log one line when the login-item plist looks left over by an old build.
+
+    Read-only: the plist is the user's and is only ever rewritten by the
+    explicit "Start at login" toggle.  Returns True when it warned.
+    """
+    if PII_BUDDY_MAS_BUILD or not _LAUNCHAGENT_PATH.exists():
+        return False
+    try:
+        old = plistlib.loads(_LAUNCHAGENT_PATH.read_bytes())
+        args = old.get("ProgramArguments") or []
+        stale = (
+            any(_is_stale_log_path(old.get(k)) for k in _LOG_KEYS)
+            or not args
+            or not os.path.exists(args[0])
+        )
+    except Exception as e:
+        logger.warning(f"Could not inspect login item: {type(e).__name__}")
+        return False
+    if stale:
+        logger.warning(
+            "Login item plist looks outdated; toggle Start at login off and on."
+        )
+    return stale
+
+
+class LoginItemRefused(Exception):
+    """The login-item plist was left alone; ``str(exc)`` is user-facing."""
+
+
+_LOGIN_FOREIGN_MESSAGE = (
+    "Another login item already uses PII Buddy's file in LaunchAgents, so "
+    "it was left alone. Add PII Buddy under System Settings > General > "
+    "Login Items instead."
+)
+
+_LOGIN_DIFFERS_MESSAGE = (
+    "A different PII Buddy login item already exists and was left as it is."
+)
+
+
+def _write_launchagent_plist(allow_replace: bool) -> bool:
+    """Atomically write the login-item plist; True once it is on disk.
+
+    Never returns False: when the existing file is not ours to replace it
+    raises ``LoginItemRefused`` and touches nothing.  A plist whose Label is
+    not ours (or that can't be parsed) is never replaced.  One with our Label
+    but different ProgramArguments is replaced only with ``allow_replace``,
+    and then only ProgramArguments/WorkingDirectory/RunAtLoad change; every
+    other key (log paths, EnvironmentVariables, ThrottleInterval, ...) stays.
+    StandardOutPath/StandardErrorPath are dropped when they are relative or
+    resolve into a world-readable root (/tmp, /Users/Shared, ...), since
+    that file could be read by other users; other absolute paths are kept.  An
+    identical Label and ProgramArguments is left untouched, except that such
+    log keys alone are removed (no confirmation: it only hardens the file).
+    """
+    _apply_launchagent_plist(allow_replace)
+    return True
+
+
+def _apply_launchagent_plist(allow_replace: bool) -> bool:
+    """Do the work of ``_write_launchagent_plist``; True if the file changed."""
+    new = _build_launchagent_plist()
+    if _LAUNCHAGENT_PATH.exists():
+        try:
+            old = plistlib.loads(_LAUNCHAGENT_PATH.read_bytes())
+        except Exception:
+            old = {}
+        if not isinstance(old, dict) or old.get("Label") != _LAUNCHAGENT_LABEL:
+            logger.warning("Login item file is not ours; not overwriting it.")
+            raise LoginItemRefused(_LOGIN_FOREIGN_MESSAGE)
+        if old.get("ProgramArguments") != new["ProgramArguments"]:
+            if not allow_replace:
+                logger.warning("Login item differs; not overwriting it.")
+                raise LoginItemRefused(_LOGIN_DIFFERS_MESSAGE)
+            merged = dict(old)
+            merged.pop("WorkingDirectory", None)
+            for k in ("ProgramArguments", "WorkingDirectory", "RunAtLoad"):
+                if k in new:
+                    merged[k] = new[k]
+        elif any(_is_stale_log_path(old.get(k)) for k in _LOG_KEYS):
+            merged = dict(old)
+        else:
+            return False
+        for k in _LOG_KEYS:
+            if _is_stale_log_path(merged.get(k)):
+                merged.pop(k, None)
+        new = merged
+    _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        dir=_LAUNCHAGENT_DIR, prefix=f".{_LAUNCHAGENT_PATH.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(plistlib.dumps(new))
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, _LAUNCHAGENT_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return True
+
+
+def _set_login_item(enabled: bool, confirm_replace=None) -> bool:
+    """Create or remove a LaunchAgent plist for auto-start at login.
+
+    Returns False when enabling is not possible (MAS sandbox).  Raises
+    ``LoginItemRefused`` when an existing plist is not ours to replace, or
+    is ours but differs and ``confirm_replace`` (a no-argument callable
+    asking the user) is absent or answers False.  Never reports success
+    for a file it did not write.
+    """
     if enabled:
-        python_path = sys.executable
-        project_dir = str(Path(__file__).parent.parent)
-        plist = f"""\
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{_LAUNCHAGENT_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python_path}</string>
-        <string>-m</string>
-        <string>pii_buddy.menubar</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{project_dir}</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>/tmp/pii_buddy_menubar.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/pii_buddy_menubar.log</string>
-</dict>
-</plist>
-"""
-        _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
-        _LAUNCHAGENT_PATH.write_text(plist, encoding="utf-8")
-        logger.info(f"Login item created: {_LAUNCHAGENT_PATH}")
+        if PII_BUDDY_MAS_BUILD:
+            # A LaunchAgent written into the sandbox container is never
+            # read by launchd; honouring the toggle would be a lie.
+            logger.warning("Start at Login is unavailable in the sandboxed build.")
+            return False
+        allow = False
+        if _LAUNCHAGENT_PATH.exists() and confirm_replace is not None:
+            try:
+                differs = (
+                    plistlib.loads(_LAUNCHAGENT_PATH.read_bytes()).get("ProgramArguments")
+                    != _build_launchagent_plist()["ProgramArguments"]
+                )
+            except Exception:
+                differs = False  # unparseable/foreign: the writer refuses it
+            allow = bool(confirm_replace()) if differs else False
+        if _apply_launchagent_plist(allow_replace=allow):
+            logger.info("Login item written.")
+        else:
+            logger.info("Login item unchanged.")
+        return True
     else:
         if _LAUNCHAGENT_PATH.exists():
             # Unload first, then remove
@@ -209,6 +601,7 @@ def _set_login_item(enabled: bool):
             )
             _LAUNCHAGENT_PATH.unlink()
             logger.info("Login item removed.")
+        return True
 
 
 # --- Dock visibility ---
@@ -337,7 +730,7 @@ class PIIBuddyMenuBar:
         threading.Thread(target=self._setup_dock_menu, daemon=True).start()
 
         # Prompt to start at login on first launch (fires once after 2s)
-        if not self._prefs.get("prompted_login"):
+        if not self._prefs.get("prompted_login") and not PII_BUDDY_MAS_BUILD:
             self._login_prompt_timer = rumps.Timer(
                 self._prompt_start_at_login, 2
             )
@@ -382,9 +775,19 @@ class PIIBuddyMenuBar:
             )
             clicked_yes = response == 1
         if clicked_yes:
-            self._login_toggle.state = True
-            self._prefs["start_at_login"] = True
-            _set_login_item(True)
+            try:
+                enabled = _set_login_item(True, self._confirm_replace_login_item)
+            except LoginItemRefused as e:
+                self._notify(str(e))
+            except OSError as e:
+                logger.error(f"Login item failed: {type(e).__name__}")
+                self._notify(_LOGIN_FAILED_MESSAGE)
+            else:
+                if enabled:
+                    self._login_toggle.state = True
+                    self._prefs["start_at_login"] = True
+                else:
+                    self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
         self._prefs["prompted_login"] = True
         _save_prefs(self._prefs)
 
@@ -409,9 +812,7 @@ class PIIBuddyMenuBar:
             class _Target(NSObject):
                 @objc.typedSelector(b'v@:@')
                 def removePII_(self, sender):
-                    _app_ref._on_remove_pii(
-                        _app_ref.app.menu["Remove PII from Clipboard"]
-                    )
+                    _app_ref._dock_remove_pii()
 
                 @objc.typedSelector(b'v@:@')
                 def restoreLast_(self, sender):
@@ -447,7 +848,15 @@ class PIIBuddyMenuBar:
                 applicationDockMenu_,
             )
         except Exception as e:
-            logger.debug(f"Dock menu setup skipped: {e}")
+            logger.debug(f"Dock menu setup skipped: {type(e).__name__}")
+
+    def _dock_remove_pii(self):
+        # rumps keys menu items by title, which reads "Processing..." mid-run.
+        try:
+            item = self.app.menu["Remove PII from Clipboard"]
+        except KeyError:
+            item = None
+        self._on_remove_pii(item)
 
     # --- Icon state management ---
 
@@ -494,12 +903,35 @@ class PIIBuddyMenuBar:
         _save_prefs(self._prefs)
         _set_dock_visible(new_state)
 
+    def _confirm_replace_login_item(self) -> bool:
+        response = self._rumps.alert(
+            title="Replace existing login item?",
+            message=(
+                "A different PII Buddy login item is already installed. "
+                "Replace it with this copy?"
+            ),
+            ok="Replace",
+            cancel="Keep existing",
+        )
+        return response == 1
+
     def _on_toggle_login(self, sender):
         new_state = not sender.state
+        try:
+            changed = _set_login_item(new_state, self._confirm_replace_login_item)
+        except LoginItemRefused as e:
+            self._notify(str(e))
+            return
+        except OSError as e:
+            logger.error(f"Login item failed: {type(e).__name__}")
+            self._notify(_LOGIN_FAILED_MESSAGE)
+            return
+        if not changed:
+            self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
+            return
         sender.state = new_state
         self._prefs["start_at_login"] = new_state
         _save_prefs(self._prefs)
-        _set_login_item(new_state)
 
     # --- Feedback callbacks ---
 
@@ -585,23 +1017,35 @@ class PIIBuddyMenuBar:
                         redacted_text, mapping, settings
                     )
                 except Exception as e:
-                    logger.warning(f"Verify skipped: {e}")
+                    logger.warning(f"Verify skipped: {type(e).__name__}")
 
-            self._write_clipboard(redacted_text)
-
-            # Save mapping
-            MAPPINGS_DIR.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Mapping first: if it can't be saved the clipboard still holds
+            # the original, which is otherwise unrecoverable.
+            MAPPINGS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
             mapping["metadata"] = {
                 "source": "menubar",
                 "processed_at": datetime.now().isoformat(),
                 "entities_found": len(entities),
             }
-            mapping_path = MAPPINGS_DIR / f"clipboard_{timestamp}.map.json"
-            mapping_path.write_text(
-                json.dumps(mapping, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            mapping_path = _claim_mapping_path(MAPPINGS_DIR, datetime.now())
+            try:
+                _write_private_text(
+                    mapping_path, json.dumps(mapping, indent=2, ensure_ascii=False)
+                )
+            except BaseException:
+                try:
+                    mapping_path.unlink()
+                except OSError:
+                    pass
+                raise
+            if not self._copy_back(redacted_text):
+                # The clipboard still holds the original, so the mapping is
+                # useless and would sit on disk holding the PII.
+                try:
+                    mapping_path.unlink()
+                except OSError:
+                    pass
+                return
             self._last_mapping_path = mapping_path
             self._last_entities_found = len(entities)
 
@@ -611,8 +1055,8 @@ class PIIBuddyMenuBar:
             )
             self._show_done_then_reset()
         except Exception as e:
-            self._notify(f"Error: {e}")
-            logger.error(f"Menu bar error: {e}", exc_info=True)
+            self._notify(_GENERIC_ERROR_MESSAGE)
+            _log_failure("Menu bar error", e)
             self._set_icon(_ICON_READY)
         finally:
             if sender:
@@ -629,11 +1073,13 @@ class PIIBuddyMenuBar:
 
             from .restorer import restore
             restored = restore(text, self._last_mapping_path)
-            self._write_clipboard(restored)
+            if not self._copy_back(restored):
+                return
             self._notify("PII Restored! Original text copied to clipboard.")
             self._show_done_then_reset()
         except Exception as e:
-            self._notify(f"Error: {e}")
+            self._notify(_GENERIC_ERROR_MESSAGE)
+            _log_failure("Menu bar restore error", e)
             self._set_icon(_ICON_READY)
         finally:
             self._processing = False
@@ -649,7 +1095,20 @@ class PIIBuddyMenuBar:
 
     @staticmethod
     def _write_clipboard(text: str):
-        subprocess.run(["pbcopy"], input=text, text=True)
+        subprocess.run(["pbcopy"], input=text, text=True, check=True)
+
+    def _copy_back(self, text: str) -> bool:
+        """Write to the clipboard; on failure say so without the text."""
+        try:
+            self._write_clipboard(text)
+        except (subprocess.CalledProcessError, OSError) as e:
+            logger.error(f"Clipboard write failed: {type(e).__name__}")
+            self._notify(
+                "Couldn't copy to the clipboard. Your clipboard is unchanged."
+            )
+            self._set_icon(_ICON_READY)
+            return False
+        return True
 
     def _notify(self, message: str):
         self._rumps.notification("PII Buddy", "", message)
@@ -664,7 +1123,12 @@ def main():
         format="%(asctime)s  %(message)s",
         datefmt="%H:%M:%S",
     )
+    try:
+        logger.addHandler(_make_log_handler())
+    except OSError as e:
+        print(f"PII Buddy could not open its log file ({type(e).__name__})", file=sys.stderr)
     _exit_if_already_running()
+    _warn_if_stale_launchagent()
     app = PIIBuddyMenuBar()
     app.run()
 

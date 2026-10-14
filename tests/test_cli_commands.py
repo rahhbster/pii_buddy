@@ -129,7 +129,8 @@ class TestArgparseFlagsExist:
     def test_buy_flag_recognized(self):
         """--buy should be a recognized argument."""
         import sys
-        with patch("sys.argv", ["main.py", "--buy"]):
+        with patch("sys.argv", ["main.py", "--buy"]), \
+                patch("webbrowser.open"):
             from main import main
             try:
                 main()
