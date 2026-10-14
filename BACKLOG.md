@@ -12,22 +12,24 @@ Regression tests: `tests/test_dir_override.py`.
 
 ## Next
 
-**Team-mode wave in flight (2026-10-14).** Read each PR's "Design notes",
-"Objections" and "Needs owner decision" sections before merging.
+**Team-mode review wave, in flight (2026-10-14).** Detailed running log
+(defects, verdicts, incidents) is in the PRIVATE repo:
+`pii_buddy_private/docs/reviews/2026-10-14-team-review.md`. It lists
+unfixed defects, so it is not kept here.
 
-1. Fix PRs (open, unmerged, none red-teamed yet): #3 updater/blocklist,
-   #4 redactor/restorer tag collisions. Still being written: detector
-   (2 stacked PRs), watcher collisions + permissions, menubar, site +
-   LICENSE, CI + fixtures. Run `gh pr list` for the live set.
-2. Next step: dispatch a red-team agent per PR (not its author), then
-   merge in this order to avoid conflicts: 4, 3, detector stack,
-   watcher, menubar, site/LICENSE, CI.
-3. Local API + MCP server: an Architect design is being produced
-   (design only, no code). Reuse tool names from
-   `pii_buddy_private/docs/strategy/08-mcp-hosted-service-design.md`.
-   Mac App Store build cannot host a server (needs network.server);
-   server is CLI/DMG build only.
-4. Do not delete any remote branch without asking the owner.
+1. Open fix PRs, all red-teamed, fixers pushing to the same branches:
+   #1, #12 (detector), #3 (updater), #4 (redactor), #7 (watcher),
+   #6 (menubar), #2, #5 (LICENSE, site), #8-#11 (CI, tests, DMG).
+   `gh pr list` is the live set. Merge nothing until each branch's
+   latest commit has been re-reviewed by someone who did not write it.
+2. Merge order: 4, 3, 1 then 12, 7, 6, 2/5, 8-11.
+3. Then build the local API + MCP server from the Architect design
+   (private log has the full design): core.py first, tests first.
+4. Never run the test suite without `PII_BUDDY_DIR` pointed at a temp
+   dir. A prior run emptied `~/PII_Buddy/originals`.
+5. Do not delete any remote branch without asking the owner.
+
+Also pending: the free sandbox smoke test below (not yet run).
 
 **Free sandbox smoke test — do this first.** Needs a real Mac and
 Console.app. Run the tests first:
