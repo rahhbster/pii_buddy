@@ -68,12 +68,13 @@ def run_process_file(tmp_path, monkeypatch):
     """
     import sys
 
-    from pii_buddy import watcher
+    from pii_buddy import config as cfg, watcher
 
     for name in ("MAPPINGS_DIR", "ORIGINALS_DIR", "OUTPUT_DIR"):
         d = tmp_path / name
         d.mkdir()
-        monkeypatch.setattr(watcher, name, d)
+        monkeypatch.setattr(cfg, name, d)
+        monkeypatch.setattr(watcher, name, d, raising=False)
     monkeypatch.setattr(watcher, "detect_pii", lambda text: [])
 
     def passthrough(text, mapping, *args, **kwargs):
