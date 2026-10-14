@@ -5,11 +5,8 @@ when candidates overlap the higher-priority one stays whole and the other is
 trimmed, never dropped. The seeded invariant test below is the guard.
 """
 
-import importlib.util
-import itertools
+import json
 import random
-import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -99,7 +96,7 @@ def test_handle_check_is_linear_on_single_line_input(size):
         n += 1
     elapsed = time.perf_counter() - t0
     assert n == size // 10
-    assert elapsed < 3.0, f"{elapsed:.2f}s for {size} chars"
+    assert elapsed < 1.0, f"{elapsed:.2f}s for {size} chars"
 
 
 def test_regex_and_overlap_stages_are_fast_on_400kb_single_line():
@@ -109,7 +106,7 @@ def test_regex_and_overlap_stages_are_fast_on_400kb_single_line():
     kept = detector._resolve_overlaps(ents, text)
     elapsed = time.perf_counter() - t0
     assert len(kept) == 40_000
-    assert elapsed < 3.0, f"{elapsed:.2f}s"
+    assert elapsed < 1.0, f"{elapsed:.2f}s"
 
 
 def test_handle_decorator_still_skipped_at_line_start():
@@ -153,7 +150,7 @@ def test_pipeline_stages_are_fast_at_400kb(name, text):
     ents = detector._regex_entities(text)
     detector._resolve_overlaps(ents, text)
     elapsed = time.perf_counter() - t0
-    assert elapsed < 2.0, f"{name}: {elapsed:.2f}s for {len(text)} chars"
+    assert elapsed < 1.0, f"{name}: {elapsed:.2f}s for {len(text)} chars"
 
 
 # --- seeded adjacency invariant ----------------------------------------------
@@ -273,41 +270,25 @@ def test_adjacency_invariant_coverage_is_superset():
 
 # --- no coverage lost against the reviewed baseline ---------------------------
 
-BASELINE = "63c332d"
+CORPUS = Path(__file__).parent / "data" / "baseline_covered_spans.json"
 
 
-def _load_baseline(tmp_path):
-    repo = Path(detector.__file__).resolve().parent.parent
-    try:
-        src = subprocess.run(
-            ["git", "show", f"{BASELINE}:pii_buddy/detector.py"],
-            capture_output=True, text=True, check=True, cwd=repo,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError):
-        pytest.skip(f"baseline {BASELINE} not available in this checkout")
-    path = tmp_path / "detector_baseline.py"
-    path.write_text(src)
-    spec = importlib.util.spec_from_file_location("pii_buddy.detector_baseline", path)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def test_coverage_is_superset_of_baseline(tmp_path):
-    base = _load_baseline(tmp_path)
-
-    def cov(fn, text):
-        return {i for e in fn(text, doc_type="general")
-                for i in range(e.start, e.end) if not text[i].isspace()}
-
+def test_coverage_is_superset_of_baseline():
+    """Frozen from 63c332d by tests/data/make_baseline_corpus.py, so no git
+    checkout is needed. A missing corpus is a failure, never a skip."""
+    if not CORPUS.is_file():
+        pytest.fail(f"baseline corpus missing: {CORPUS}")
+    cases = json.loads(CORPUS.read_text())["cases"]
+    assert len(cases) >= 600
     lost = []
-    for items, sep in _cases():
-        text = _join(items, sep)
-        gone = cov(base.detect_pii, text) - cov(detect_pii, text)
+    for case in cases:
+        text = case["text"]
+        got = {i for e in detect_pii(text, doc_type="general")
+               for i in range(e.start, e.end) if not text[i].isspace()}
+        gone = sorted(set(case["covered"]) - got)
         if gone:
-            lost.append((text, sorted(gone)))
-    print(f"\nbaseline superset: cases={N_CASES} lost={len(lost)}")
+            lost.append((text, gone))
+    print(f"\nbaseline superset: cases={len(cases)} lost={len(lost)}")
     for text, gone in lost[:10]:
         print("  LOST", repr(text), gone)
     assert lost == []

@@ -51,9 +51,20 @@ INTL_PHONE_WIDE_RE = re.compile(_INTL_BODY)
 # NBSP, thin space from PDF extraction) or dash (en/em dash, minus). Luhn still
 # gates every match.
 _CSEP = r"[ \-\u00a0\u2000-\u200a\u202f\u2010-\u2015\u2212]"
+# Separated numbers must be in a standard card grouping: 4-4-4-4 (16), 4-4-4-4-3
+# (19), 4-6-5 (Amex), 4-6-4 (Diners). Anything else ("INV-5642-29793087-1525",
+# "91-4066-4944-80939-07") is an ordinary hyphenated ID, not a card. An
+# unseparated run of 13-19 digits is a candidate whatever the grouping.
+# Space-separated groups (never hyphens) are matched leniently where digits are
+# glued on without a separator, as PDF extraction does: "894111 1111 1111 1111"
+# and "4111 1111 1111 1111078" still yield the card, and _check_card absorbs the
+# glued digits so none stay visible.
+_CWS = r"[ \u00a0\u2000-\u200a\u202f]"
 _CARD_NUMBER = (
-    rf"\d{{4}}{_CSEP}?\d{{4}}{_CSEP}?\d{{4}}{_CSEP}?\d{{1,7}}"
-    rf"|\d{{4}}{_CSEP}?\d{{6}}{_CSEP}?\d{{4,5}}"
+    r"(?<!\d)\d{13,19}"
+    rf"|(?<!\d)\d{{4}}{_CSEP}\d{{4}}{_CSEP}\d{{4}}{_CSEP}\d{{4}}(?:{_CSEP}\d{{3}})?"
+    rf"|\d{{4}}{_CWS}\d{{4}}{_CWS}\d{{4}}{_CWS}\d{{4,7}}"
+    rf"|(?<!\d)\d{{4}}{_CSEP}\d{{6}}{_CSEP}\d{{4,5}}"
 )
 # The optional tail is a trailing 1-4 digit group ("4111 1111 1111 1111 123");
 # _check_card absorbs it when the number before it is a valid PAN.
@@ -64,7 +75,7 @@ _CARD_NUMBER = (
 # blocking it hid the card. A Luhn-valid run inside a longer hyphenated number
 # is redacted (fail closed).
 CARD_RE = re.compile(
-    rf"(?<!\d)(?P<base>{_CARD_NUMBER})(?=(?P<tail>{_CSEP}\d{{1,4}})?(?!\d))"
+    rf"(?P<base>{_CARD_NUMBER})(?=(?P<tail>{_CSEP}\d{{1,4}})?(?!\d))"
 )
 
 # Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
@@ -89,9 +100,12 @@ URL_RE = re.compile(
 # "settings.app", "index.ai", "model.io", "x.page", "q.me" and "r.ly" are
 # indistinguishable from filenames or words, so those TLDs only count with a
 # path. The negative lookahead keeps "docker-compose.com.yml"-style names out.
+# The hyphen-glued start ("10.0.0.1-example.com") is capped at 4 labels: every
+# hyphen is a start, and an uncapped or deeper run rescans the same labels from
+# each one (quadratic; 4 keeps the worst 400 KB shape near 0.5 s).
 _URL_TAIL = r"(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?"
 BARE_URL_RE = re.compile(
-    r"(?:(?<![\w.@-])(?:[A-Za-z0-9-]+\.)+|(?<=-)(?:[A-Za-z0-9-]{1,63}\.)+)(?:"
+    r"(?:(?<![\w.@-])(?:[A-Za-z0-9-]+\.)+|(?<=-)(?:[A-Za-z0-9-]{1,63}\.){1,4})(?:"
     rf"(?:com|org|net|edu|gov|info|biz|uk|co|us|ca|de|tech|xyz)\b(?!\.[A-Za-z0-9]){_URL_TAIL}"
     r"|(?:io|dev|app|ai|page|me|ly)\b(?::\d{1,5})?/[^\s<>\"']*"
     r")",
@@ -215,7 +229,11 @@ def _pan_ok(raw: str) -> bool:
 
 def _check_card(m: re.Match, text: str):
     # A valid PAN swallows a short trailing group so no digits are left visible.
-    if _pan_ok(m.group("base")):
+    base = m.group("base")
+    # More than 16 digits that are not a valid PAN as a whole may still be a
+    # valid 16-digit PAN followed by a short or glued group; the alternation
+    # cannot back off to it itself, and the extra digits must not stay visible.
+    if _pan_ok(base) or (len(base) > 19 and _pan_ok(base[:19])):
         return m.start(), (m.end("tail") if m.group("tail") else m.end())
     if m.group("tail") and _pan_ok(m.group() + m.group("tail")):
         return m.start(), m.end("tail")
@@ -685,17 +703,23 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
                 ))
             continue
 
-        if pieces != [(ent.start_char, ent.end_char)]:
+        if ent.label_ != "DATE" or not _is_specific_date(ent.text):
             continue
-
-        if ent.label_ == "DATE" and _is_specific_date(ent.text):
-            spacy_entities.append(PIIEntity(
-                text=ent.text,
-                label="DOB",
-                start=ent.start_char,
-                end=ent.end_char,
-                confidence=0.8,
-            ))
+        # A regex hit inside the date wins its own characters, but whatever of
+        # the date it did not cover is still a date: keep that as DOB.
+        for s, e in pieces:
+            while s < e and text[s].isspace():
+                s += 1
+            while e > s and text[e - 1].isspace():
+                e -= 1
+            if s < e:
+                spacy_entities.append(PIIEntity(
+                    text=text[s:e],
+                    label="DOB",
+                    start=s,
+                    end=e,
+                    confidence=0.8,
+                ))
 
     # 1c. Clean up spaCy PERSON entities (strip job title suffixes)
     spacy_entities = _clean_person_entities(spacy_entities)
