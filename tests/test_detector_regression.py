@@ -200,3 +200,84 @@ def test_round2_bare_urls_redacted_whole(url):
 ])
 def test_round2_ambiguous_pathless_stay_unredacted(name):
     assert [t for t, l in _ents(f"See {name} now") if l == "URL"] == []
+
+
+# --- round 3 red-team ------------------------------------------------------
+
+@pytest.mark.parametrize("text,needle", [
+    ("@jane@localhost", "@jane"),
+    ("@jane@x", "@jane"),
+    ("@jane@x.c", "@jane"),
+    ("@jane@192.168.0.1", "@jane"),
+    ("@josé@janetest.dev", "@josé"),
+])
+def test_round3_handle_before_non_email_tail_is_redacted(text, needle):
+    assert _redacted(text, needle), _ents(text)
+
+
+@pytest.mark.parametrize("text", [
+    "**@jane**", "|@jane|", "<@jane>", ">@jane thanks", "“@jane”",
+    "—@jane", ".@jane", "_@jane_", "!@jane", "#@jane", "=@jane",
+])
+def test_round3_handle_after_punctuation_is_redacted(text):
+    assert _redacted(text, "@jane"), _ents(text)
+
+
+@pytest.mark.parametrize("text", ["user@host", "a.b@c", "josé@host", "x_1@host"])
+def test_round3_mid_word_at_is_not_a_handle(text):
+    assert [t for t, l in _ents(text) if l == "HANDLE"] == []
+
+
+@pytest.mark.parametrize("handle", [
+    "@josé", "@renée", "@жane", "@" + "a" * 40, "@" + "j" * 200,
+])
+def test_round3_unicode_and_long_handles_redacted_whole(handle):
+    text = f"ping {handle} now"
+    assert [t for t, l in _ents(text) if l == "HANDLE"] == [handle]
+
+
+@pytest.mark.parametrize("text,ip", [
+    ("Version 10.1.2.3 is our server", "10.1.2.3"),
+    ("version 10.1.2.3 (host)", "10.1.2.3"),
+    ("Gateway v10.0.0.1", "10.0.0.1"),
+    ("router version 192.168.1.1", "192.168.1.1"),
+    ("DNS v8.8.8.8", "8.8.8.8"),
+    ("ssh v10.2.3.4", "10.2.3.4"),
+    ("version 10.9.9.9 proxy", "10.9.9.9"),
+])
+def test_round3_ip_context_words_and_trailing_context(text, ip):
+    assert [t for t, l in _ents(text) if l == "IP"] == [ip]
+
+
+@pytest.mark.parametrize("text", ["version 10.0.1.2", "Version 10.0.1.2 shipped"])
+def test_round3_plain_versions_still_not_ips(text):
+    assert [t for t, l in _ents(text) if l == "IP"] == []
+
+
+@pytest.mark.parametrize("name", ["example.jane", "author.jane", "see.jane", "param.jane"])
+def test_round3_compound_code_names_alone_on_line_are_handles(name):
+    text = f"x\n@{name}\ny"
+    assert [t for t, l in _ents(text) if l == "HANDLE"] == [f"@{name}"]
+
+
+@pytest.mark.parametrize("text", ["@author\n", "@author(x)", "@example\nclass A {}"])
+def test_round3_bare_annotation_names_still_skipped(text):
+    assert [t for t, l in _ents(text) if l == "HANDLE"] == []
+
+
+@pytest.mark.parametrize("text,whole", [
+    ("card 4111 1111 1111 1111 123 ok", "4111 1111 1111 1111 123"),
+    ("card 4111-1111-1111-1111-1234 ok", "4111-1111-1111-1111-1234"),
+])
+def test_round3_card_trailing_group_absorbed(text, whole):
+    assert [t for t, l in _ents(text) if l == "CARD"] == [whole]
+
+
+@pytest.mark.parametrize("text", [
+    "ping .@jane.doe@janetest.dev end",
+    "ping -@jane.doe@fosstodon.org end",
+    "ping a@b.com@janetest.dev end",
+])
+def test_round3_chained_at_address_fully_redacted(text):
+    assert _redacted(text, text.split()[1] if "a@b" not in text else "a@b.com@janetest.dev")
+    assert _redacted(text, text[text.rindex("@"):text.rindex(" end")]), _ents(text)

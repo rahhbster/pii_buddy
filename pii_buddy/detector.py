@@ -23,6 +23,7 @@ class PIIEntity:
 # characters; without it every position in "a.a.a.…" rescans the whole run.
 EMAIL_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    r"(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)*"
 )
 
 PHONE_RE = re.compile(
@@ -41,7 +42,11 @@ INTL_PHONE_RE = re.compile(
 )
 
 _CARD_NUMBER = r"\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{1,7}|\d{4}[ -]?\d{6}[ -]?\d{4,5}"
-CARD_RE = re.compile(rf"(?<![\d-])(?:{_CARD_NUMBER})(?![\d-]?\d)")
+# The optional tail is a trailing 1-4 digit group ("4111 1111 1111 1111 123");
+# _check_card absorbs it when the number before it is a valid PAN.
+CARD_RE = re.compile(
+    rf"(?<![\d-])(?P<base>{_CARD_NUMBER})(?P<tail>[ -]\d{{1,4}})?(?![\d-]?\d)"
+)
 
 # Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
 # extraction). Every optional-separator shape main redacted is kept (3-2-4,
@@ -75,11 +80,15 @@ BARE_URL_RE = re.compile(
 )
 _NOT_HOSTS = frozenset({"asp.net", "vb.net", "ado.net"})
 
-# Preceded by start, whitespace or an opening/separating character, so
-# "user@host" and "a.b@c" are never handles. The lookahead rejects the front of
-# a fediverse address ("@jane@host.tld"); that is an EMAIL.
+# Not preceded by a letter, digit or "@", so "user@host" and "a.b@c" are never
+# handles but "**@jane**", ">@jane" and "_@jane_" are. Letters are Unicode-aware
+# ("@jos\u00e9") and the run has no length cap. A trailing "@host" is swallowed so
+# "@jane@localhost" is one span. The lookahead hands "@jane@host.tld" to EMAIL
+# only when EMAIL_RE would really match that tail; otherwise it is a handle.
 HANDLE_RE = re.compile(
-    r"(?<![^\s(\[{,;:\"'])@(?![A-Za-z0-9_.-]+@)[A-Za-z][A-Za-z0-9_.-]{1,29}\b"
+    r"(?<![^\W_])(?<!@)@"
+    r"(?![A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)"
+    r"[^\W\d_][\w.-]+(?:@[\w.-]+)?(?![\w])"
 )
 # Decorator and at-rule names are skipped only where code puts them: at the
 # start of a line and followed by "(", end of line, or a declaration keyword.
@@ -92,6 +101,11 @@ _NON_HANDLES = frozenset(
     "param return returns see author since throws type example todo "
     "autowired component injectable entity nullable nonnull "
     "suppresswarnings functionalinterface".split()
+)
+# "@pytest.fixture", "@functools.wraps(f)": only these module prefixes are
+# skipped as dotted names; "@author.jane" is a handle.
+_DECORATOR_NAMESPACES = frozenset(
+    "pytest functools abc dataclasses typing contextlib unittest mock".split()
 )
 _CODE_CONTEXT_RE = re.compile(
     r"[ \t]*(?:\(|$)"
@@ -106,7 +120,9 @@ _OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
 _VERSION_ATTACHED_RE = re.compile(r"\bv$", re.IGNORECASE)
 _VERSION_WORD_RE = re.compile(r"\b(?:[Vv]ersion|[Bb]uild)[ \t]+$")
 _IP_CONTEXT_RE = re.compile(
-    r"\bip\b|host|server|address|vpn|connect|from|client", re.IGNORECASE
+    r"\bip\b|host|server|address|vpn|connect|from|client"
+    r"|\b(?:gateway|router|dns|ssh|ping|proxy|network|subnet|endpoint|node|ipv[46])",
+    re.IGNORECASE
 )
 IPV4_RE = re.compile(rf"(?<![\d.])(?:{_OCTET}\.){{3}}{_OCTET}(?!\.?\d)")
 
@@ -172,9 +188,16 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
+def _pan_ok(raw: str) -> bool:
+    digits = re.sub(r"\D", "", raw)
+    return 13 <= len(digits) <= 19 and _luhn_ok(digits)
+
+
 def _check_card(m: re.Match, text: str):
-    digits = re.sub(r"\D", "", m.group())
-    if 13 <= len(digits) <= 19 and _luhn_ok(digits):
+    # A valid PAN swallows a short trailing group so no digits are left visible.
+    if _pan_ok(m.group("base")):
+        return m.span()
+    if m.group("tail") and _pan_ok(m.group()):
         return m.span()
     return None
 
@@ -214,7 +237,9 @@ def _check_handle(m: re.Match, text: str):
     name = text[start + 1:end]
     if len(name) < 2:
         return None
-    if name.split(".")[0].casefold() in _NON_HANDLES or name.casefold() in _NON_HANDLES:
+    if name.casefold() in _NON_HANDLES or (
+        name.split(".")[0].casefold() in _DECORATOR_NAMESPACES
+    ):
         line_start = text.rfind("\n", 0, start) + 1
         if not text[line_start:start].strip() and _CODE_CONTEXT_RE.match(text, end):
             return None
@@ -224,8 +249,10 @@ def _check_handle(m: re.Match, text: str):
 def _check_ip(m: re.Match, text: str):
     before = text[max(0, m.start() - 60):m.start()]
     prefix = _VERSION_ATTACHED_RE.search(before) or _VERSION_WORD_RE.search(before)
-    if prefix and not _IP_CONTEXT_RE.search(before[:prefix.start()][-40:]):
-        return None
+    if prefix:
+        context = before[:prefix.start()][-40:] + " " + text[m.end():m.end() + 40]
+        if not _IP_CONTEXT_RE.search(context):
+            return None
     return m.span()
 
 
