@@ -6,11 +6,13 @@
   <title>PII Buddy — Automatic PII Redaction for Documents</title>
   <meta name="description" content="Drop a document in, get a clean file out. PII Buddy watches a folder and automatically redacts names, emails, SSNs, and 11+ PII types from PDFs, Word docs, and text files.">
   <meta property="og:title" content="PII Buddy — Your Documents. Your Privacy.">
-  <meta property="og:description" content="Automatic PII redaction for resumes, transcripts, and documents. Open source, runs locally, no data leaves your machine.">
+  <meta property="og:description" content="Automatic PII redaction for resumes, transcripts, and documents. Open source and local by default. Your documents are only sent anywhere if you turn on optional cloud verification.">
   <meta property="og:image" content="https://piibuddy.com/images/og-image.png">
+  <meta property="og:image:alt" content="PII Buddy mascot Arbie with the tagline Your Documents. Your Privacy.">
   <meta property="og:url" content="https://piibuddy.com">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://piibuddy.com/images/og-image.png">
   <link rel="icon" type="image/x-icon" href="images/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16.png">
@@ -26,7 +28,7 @@
         <img src="images/favicon-32.png" alt="Arbie" width="32" height="32">
         PII Buddy
       </a>
-      <ul class="nav-links">
+      <ul class="nav-links" id="nav-links">
         <li><a href="#features">Features</a></li>
         <li><a href="#how-it-works">How It Works</a></li>
         <li><a href="#pricing">Pricing</a></li>
@@ -34,7 +36,7 @@
         <li><a href="#feedback">Feedback</a></li>
         <li><a href="#download" class="nav-cta">Get Started</a></li>
       </ul>
-      <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+      <button class="nav-toggle" aria-label="Toggle navigation" aria-controls="nav-links" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>
     </div>
@@ -45,7 +47,7 @@
     <div class="container">
       <div class="hero-content">
         <h1>Your Documents.<br><span class="accent">Your Privacy.</span></h1>
-        <p>Drop a file in, get a clean file out. PII Buddy watches a folder and automatically redacts names, emails, SSNs, phone numbers, and 11+ PII types from PDFs, Word docs, and text files. Runs locally &mdash; no data leaves your machine.</p>
+        <p>Drop a file in, get a clean file out. PII Buddy watches a folder and automatically redacts names, emails, SSNs, phone numbers, and 11+ PII types from PDFs, Word docs, and text files. Detection runs locally by default &mdash; nothing is sent over the network unless you enable optional cloud verification or run an explicit update command.</p>
         <div class="hero-buttons">
           <a href="https://github.com/rahhbster/pii_buddy/releases" class="btn btn-primary">Download for Mac</a>
           <a href="https://github.com/rahhbster/pii_buddy" class="btn btn-secondary">View on GitHub</a>
@@ -175,7 +177,7 @@ January 2020 - Present</pre>
     <div class="container">
       <div class="section-header">
         <h2>Pricing</h2>
-        <p>Core redaction is free and runs entirely on your machine. Cloud verification adds an optional LLM-powered accuracy boost.</p>
+        <p>Core redaction is free and runs entirely on your machine, except explicit update commands. Cloud verification adds an optional LLM-powered accuracy boost.</p>
       </div>
       <div class="pricing-grid">
         <div class="price-card">
@@ -274,13 +276,12 @@ January 2020 - Present</pre>
     <div class="container">
       <div class="section-header">
         <h2>Stay Updated</h2>
-        <p>Get notified about new features, detection improvements, and releases. No spam, ever.</p>
+        <p>Get GitHub notifications for new releases of PII Buddy.</p>
       </div>
-      <form class="subscribe-form" id="subscribeForm">
-        <input type="email" placeholder="you@example.com" required aria-label="Email address" id="subscribeEmail">
-        <button type="submit" class="btn btn-primary">Subscribe</button>
-      </form>
-      <p class="subscribe-note">Or subscribe via CLI: <code>./run.sh --subscribe you@example.com</code></p>
+      <div class="subscribe-form">
+        <a href="https://github.com/rahhbster/pii_buddy" class="btn btn-primary">Watch releases on GitHub</a>
+      </div>
+      <p class="subscribe-note">On the repo page choose Watch &rarr; Custom &rarr; Releases.</p>
     </div>
   </section>
 
