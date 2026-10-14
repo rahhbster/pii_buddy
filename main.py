@@ -472,7 +472,6 @@ def main():
         return
 
     if args.paste or args.clipboard:
-        import json
         from datetime import datetime
         from pii_buddy.detector import detect_pii
         from pii_buddy.redactor import redact
