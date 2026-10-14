@@ -58,24 +58,111 @@ class TestMultiPassComposition:
 # -----------------------------------------------------------------------
 # Graceful degradation
 # -----------------------------------------------------------------------
+@pytest.fixture
+def run_process_file(tmp_path, monkeypatch):
+    """Run watcher.process_file on a throwaway .txt with every optional pass
+    replaced by a recording fake. No spaCy model and no network are touched.
+
+    Returns a callable(settings) -> (ok, calls) where calls maps each pass
+    name to its MagicMock.
+    """
+    import sys
+
+    from pii_buddy import watcher
+
+    for name in ("MAPPINGS_DIR", "ORIGINALS_DIR", "OUTPUT_DIR"):
+        d = tmp_path / name
+        d.mkdir()
+        monkeypatch.setattr(watcher, name, d)
+    monkeypatch.setattr(watcher, "detect_pii", lambda text: [])
+
+    def passthrough(text, mapping, *args, **kwargs):
+        return text, mapping
+
+    calls = {name: MagicMock(side_effect=passthrough)
+             for name in ("audit", "openrouter", "venice", "verify")}
+
+    monkeypatch.setattr("pii_buddy.audit.audit_redacted", calls["audit"])
+    for module, attr, name in (
+        ("pii_buddy.openrouter_verifier", "openrouter_verify_and_patch", "openrouter"),
+        ("pii_buddy.venice_verifier", "venice_verify_and_patch", "venice"),
+        ("pii_buddy.verifier", "verify_and_patch", "verify"),
+    ):
+        fake = MagicMock()
+        setattr(fake, attr, calls[name])
+        monkeypatch.setitem(sys.modules, module, fake)
+
+    def run(settings):
+        settings.output_dir = tmp_path / "OUTPUT_DIR"
+        src = tmp_path / "note.txt"
+        src.write_text("Meeting notes with nothing sensitive.", encoding="utf-8")
+        return watcher.process_file(src, settings), calls
+
+    return run
+
+
 class TestGracefulDegradation:
-    def test_verify_disabled_skips_cleanly(self, default_settings):
-        """When verify is disabled, the pipeline should skip Pass 4 entirely."""
+    def test_verify_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 4 must not run when cloud verify is off, even if a key is present."""
         default_settings.verify_enabled = False
-        assert not default_settings.verify_enabled
+        default_settings.verify_api_key = "paid-key"
+        ok, calls = run_process_file(default_settings)
 
-    def test_openrouter_disabled_skips_cleanly(self, default_settings):
-        """When OpenRouter is disabled, Pass 3 should be skipped entirely."""
-        assert not default_settings.openrouter_enabled
+        assert ok is True
+        calls["verify"].assert_not_called()
 
-    def test_venice_disabled_skips_cleanly(self, default_settings):
-        """When Venice is disabled, Pass 3b should be skipped entirely."""
-        assert not default_settings.venice_enabled
+    def test_openrouter_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 3 must not run when OpenRouter is off, even if a key is present."""
+        default_settings.openrouter_enabled = False
+        default_settings.openrouter_api_key = "sk-or-test"
+        ok, calls = run_process_file(default_settings)
 
-    def test_audit_disabled_skips_cleanly(self, default_settings):
-        """When audit is disabled via --no-audit, Pass 2 should be skipped."""
+        assert ok is True
+        calls["openrouter"].assert_not_called()
+
+    def test_venice_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 3b must not run when Venice is off, even if a key is present."""
+        default_settings.venice_enabled = False
+        default_settings.venice_api_key = "venice-test-key"
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        calls["venice"].assert_not_called()
+
+    def test_audit_disabled_skips_cleanly(self, run_process_file, default_settings):
+        """Pass 2 must not run under --no-audit."""
         default_settings.audit_enabled = False
-        assert not default_settings.audit_enabled
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        calls["audit"].assert_not_called()
+
+    def test_enabled_without_key_skips_cleanly(self, run_process_file, default_settings):
+        """Enabled-but-keyless premium passes are skipped, not attempted."""
+        default_settings.verify_enabled = True
+        default_settings.openrouter_enabled = True
+        default_settings.venice_enabled = True
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        calls["verify"].assert_not_called()
+        calls["openrouter"].assert_not_called()
+        calls["venice"].assert_not_called()
+
+    def test_enabled_passes_do_run(self, run_process_file, default_settings):
+        """Control: the same harness does call each pass once when enabled,
+        so the not_called assertions above can fail."""
+        default_settings.verify_enabled = True
+        default_settings.verify_api_key = "paid-key"
+        default_settings.openrouter_enabled = True
+        default_settings.openrouter_api_key = "sk-or-test"
+        default_settings.venice_enabled = True
+        default_settings.venice_api_key = "venice-test-key"
+        ok, calls = run_process_file(default_settings)
+
+        assert ok is True
+        for name in ("audit", "openrouter", "venice", "verify"):
+            calls[name].assert_called_once()
 
 
 # -----------------------------------------------------------------------
