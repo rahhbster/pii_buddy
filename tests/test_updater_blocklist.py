@@ -28,6 +28,7 @@ def target(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "PACKAGE_BLOCKLISTS_DIR", tmp_path)
     path = tmp_path / "person_blocklist.txt"
     path.write_text(OLD, encoding="utf-8")
+    (tmp_path / updater.BASELINE_NAME).write_text(OLD, encoding="utf-8")
     monkeypatch.setattr(updater, "_fetch_via_gh_cli", lambda: None)
     return path
 
@@ -93,6 +94,7 @@ class TestGhCliDecodeErrors:
         monkeypatch.setattr(updater, "PACKAGE_BLOCKLISTS_DIR", tmp_path)
         path = tmp_path / "person_blocklist.txt"
         path.write_text(OLD, encoding="utf-8")
+        (tmp_path / updater.BASELINE_NAME).write_text(OLD, encoding="utf-8")
         monkeypatch.setattr(updater.subprocess, "run",
                             lambda *a, **k: self._run("%%%"))
         monkeypatch.setattr(updater.urllib.request, "urlopen",
@@ -208,6 +210,92 @@ class TestRefusalIsLoudAndOverridable:
         result = updater.update_blocklists(force=True)
         assert result and result.status == "updated"
         assert "f0 surname0" in target.read_text(encoding="utf-8")
+
+
+class TestBaselineMissing:
+    def _setup(self, tmp_path, monkeypatch, current=True):
+        monkeypatch.setattr(updater, "PACKAGE_BLOCKLISTS_DIR", tmp_path)
+        monkeypatch.setattr(updater, "_fetch_via_gh_cli", lambda: None)
+        if current:
+            (tmp_path / "person_blocklist.txt").write_text(OLD, encoding="utf-8")
+        return tmp_path / updater.BASELINE_NAME
+
+    def test_missing_baseline_refuses_and_never_writes_it(self, tmp_path, monkeypatch):
+        baseline = self._setup(tmp_path, monkeypatch)
+        serve_raw(monkeypatch, (OLD + _names("p", 1000)).encode())
+        result = updater.update_blocklists()
+        assert result.status == "refused"
+        assert "baseline missing" in result.reason
+        assert "person_blocklist.baseline.txt" in result.reason
+        assert not baseline.exists()
+        assert (tmp_path / "person_blocklist.txt").read_text(encoding="utf-8") == OLD
+
+    def test_missing_baseline_refused_even_for_small_clean_update(self, tmp_path, monkeypatch):
+        baseline = self._setup(tmp_path, monkeypatch)
+        serve_raw(monkeypatch, (OLD + "hobbies\n").encode())
+        assert updater.update_blocklists().status == "refused"
+        assert not baseline.exists()
+
+    def test_force_does_not_bypass_missing_baseline(self, tmp_path, monkeypatch):
+        baseline = self._setup(tmp_path, monkeypatch)
+        serve_raw(monkeypatch, (OLD + _names("p", 1000)).encode())
+        result = updater.update_blocklists(force=True)
+        assert result.status == "refused"
+        assert not baseline.exists()
+        assert (tmp_path / "person_blocklist.txt").read_text(encoding="utf-8") == OLD
+
+    def test_missing_baseline_and_missing_current_refused(self, tmp_path, monkeypatch):
+        self._setup(tmp_path, monkeypatch, current=False)
+        serve_raw(monkeypatch, OLD.encode())
+        assert updater.update_blocklists().status == "refused"
+        assert not (tmp_path / "person_blocklist.txt").exists()
+
+
+class TestStatuses:
+    def test_updated(self, target, monkeypatch):
+        serve_raw(monkeypatch, (OLD + "hobbies\n").encode())
+        r = updater.update_blocklists()
+        assert r.status == "updated" and r and r.reason
+
+    def test_unchanged(self, target, monkeypatch):
+        serve_raw(monkeypatch, OLD.encode())
+        r = updater.update_blocklists()
+        assert r.status == "unchanged" and not r and r.reason
+
+    def test_refused_over_cap(self, target, monkeypatch):
+        serve_raw(monkeypatch, (OLD + _names("c", updater.MAX_NEW_ENTRIES + 1)).encode())
+        r = updater.update_blocklists()
+        assert r.status == "refused" and not r and "cap" in r.reason
+
+    def test_failed_download(self, target, monkeypatch):
+        monkeypatch.setattr(updater.urllib.request, "urlopen",
+                            MagicMock(side_effect=OSError("down")))
+        r = updater.update_blocklists()
+        assert r.status == "failed" and r.reason
+
+    def test_failed_no_valid_entries(self, target, monkeypatch):
+        serve_raw(monkeypatch, b"# nothing\n")
+        assert updater.update_blocklists().status == "failed"
+
+    def test_force_skips_only_the_cap_not_sanitation(self, target, monkeypatch):
+        payload = (OLD + _names("f", updater.MAX_NEW_ENTRIES + 5)
+                   + "bad\x00ctl\n" + "x" * 500 + "\n").encode() + b"bad\xffline\n"
+        serve_raw(monkeypatch, payload)
+        r = updater.update_blocklists(force=True)
+        assert r.status == "updated"
+        text = target.read_text(encoding="utf-8")
+        assert "f0 surname0" in text
+        assert "\x00" not in text and "x" * 500 not in text and "\ufffd" not in text
+
+    def test_force_does_not_bypass_size_limit(self, target, monkeypatch):
+        serve_raw(monkeypatch, b"word\n" * (updater.MAX_DOWNLOAD_BYTES // 5 + 10))
+        assert updater.update_blocklists(force=True).status == "failed"
+        assert target.read_text(encoding="utf-8") == OLD
+
+    def test_force_does_not_bypass_non_utf8_only_payload(self, target, monkeypatch):
+        serve_raw(monkeypatch, b"\xff\xfe\xfa\xfb")
+        assert updater.update_blocklists(force=True).status == "failed"
+        assert target.read_text(encoding="utf-8") == OLD
 
 
 class TestLoaderPermissionError:
