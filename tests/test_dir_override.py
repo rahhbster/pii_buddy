@@ -23,13 +23,18 @@ class TestEnsureDirsRespectsOverride:
         currently points at, not a stale value captured at import time."""
         import main
 
-        new_dirs = [tmp_path / "input", tmp_path / "output", tmp_path / "mappings"]
+        blocklists = tmp_path / "blocklists"
+        new_dirs = [tmp_path / "input", tmp_path / "output", tmp_path / "mappings", blocklists]
         monkeypatch.setattr(cfg, "ALL_DIRS", new_dirs)
+        # ensure_dirs() also seeds user_blocklist.txt under this path; patch it
+        # so the test never depends on (or writes to) the real default location.
+        monkeypatch.setattr(cfg, "USER_BLOCKLISTS_DIR", blocklists)
 
         main.ensure_dirs()
 
         for d in new_dirs:
             assert d.exists(), f"{d} was not created — ensure_dirs() used a stale ALL_DIRS"
+        assert (blocklists / "user_blocklist.txt").exists()
 
 
 class TestOnceWithDirOverride:
