@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,14 @@ MAX_LINE_LENGTH = 100
 # A remote list that un-redacts people is the threat: cap how many entries one
 # update may introduce so a poisoned list cannot suppress a whole roster.
 MAX_NEW_ENTRIES = 25
+BASELINE_NAME = "person_blocklist.baseline.txt"
+
+# Threat model: the cap limits blast radius, it is NOT provenance. It is
+# measured against the baseline list shipped with the package (not the current
+# file), so repeated small updates cannot ratchet past it and a first install
+# is bounded too. A remote that is already hostile can still inject up to
+# MAX_NEW_ENTRIES names per baseline; the real fix is signed releases or a
+# pinned hash of the list, which is an owner decision.
 
 RAW_URL = (
     f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_BLOCKLIST_PATH}"
@@ -35,6 +44,17 @@ API_URL = (
     f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_BLOCKLIST_PATH}"
     f"?ref={GITHUB_BRANCH}"
 )
+
+
+@dataclass(frozen=True)
+class UpdateResult:
+    """Outcome of update_blocklists(). Truthy only when the file was replaced,
+    so `if update_blocklists():` keeps its old meaning."""
+    status: str  # "updated" | "unchanged" | "refused" | "failed"
+    message: str = ""
+
+    def __bool__(self) -> bool:
+        return self.status == "updated"
 
 
 def _fetch_via_gh_cli() -> str | None:
@@ -76,8 +96,9 @@ def _fetch_via_raw_url() -> str | None:
 def _sanitize(text: str) -> list[str]:
     """Keep comments and plain printable entries; drop anything else."""
     kept = []
+    text = text.lstrip("\ufeff")
     for line in text.splitlines()[:MAX_LINES]:
-        line = line.strip()
+        line = line.replace("\xa0", " ").replace("\t", " ").strip()
         if not line or len(line) > MAX_LINE_LENGTH or not line.isprintable() or "\ufffd" in line:
             continue
         kept.append(line)
@@ -88,13 +109,16 @@ def _entries(lines) -> set[str]:
     return {l.lower() for l in lines if not l.startswith("#")}
 
 
-def _write_atomic(target: Path, content: str) -> None:
+def _write_atomic(target: Path, content: str, mode: int = 0o644) -> None:
+    """mkstemp creates 0600; set the mode explicitly so replacing a shared
+    package file does not make it owner-only. Pass 0o600 for private lists."""
     fd, tmp_name = tempfile.mkstemp(dir=str(target.parent), prefix=".blocklist_", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
+        os.chmod(tmp_name, mode)
         os.replace(tmp_name, target)
     except BaseException:
         try:
@@ -104,11 +128,23 @@ def _write_atomic(target: Path, content: str) -> None:
         raise
 
 
-def update_blocklists() -> bool:
+def _baseline_entries(target: Path) -> set[str]:
+    """Entries of the packaged baseline. If the baseline file is missing
+    (older install), snapshot the current list once and trust it from then on."""
+    baseline = PACKAGE_BLOCKLISTS_DIR / BASELINE_NAME
+    if not baseline.exists():
+        if not target.exists():
+            return set()
+        shutil.copy2(str(target), str(baseline))
+    return _entries(_sanitize(baseline.read_text(encoding="utf-8", errors="replace")))
+
+
+def update_blocklists(force: bool = False) -> UpdateResult:
     """
     Fetch the latest person_blocklist.txt from GitHub and replace the local copy.
     Uses gh CLI for private repos, falls back to raw URL for public repos.
-    Returns True if the blocklist was updated, False if already up to date.
+    Truthy result means the blocklist was updated. A result with status
+    "refused" means the cap was exceeded; force=True overrides it.
     """
     target = PACKAGE_BLOCKLISTS_DIR / "person_blocklist.txt"
 
@@ -123,31 +159,37 @@ def update_blocklists() -> bool:
         if remote_content:
             logger.info("  Downloaded via raw URL.")
         else:
-            logger.error("Failed to download blocklist. Check your internet connection.")
+            msg = "Failed to download blocklist. Check your internet connection."
+            logger.error(msg)
             logger.error("  If the repo is private, make sure `gh auth login` is set up.")
-            return False
+            return UpdateResult("failed", msg)
 
     remote_lines = _sanitize(remote_content)
     if not _entries(remote_lines):
-        logger.error("Downloaded blocklist has no valid entries; keeping the current one.")
-        return False
+        msg = "Downloaded blocklist has no valid entries; keeping the current one."
+        logger.error(msg)
+        return UpdateResult("failed", msg)
     remote_content = "\n".join(remote_lines) + "\n"
 
-    # Read current content
+    added = _entries(remote_lines) - _baseline_entries(target)
+    if len(added) > MAX_NEW_ENTRIES:
+        msg = (
+            f"refused: {len(added)} new entries exceeds cap of {MAX_NEW_ENTRIES} "
+            "over the packaged baseline; review the list upstream "
+            "(force=True overrides)."
+        )
+        if not force:
+            logger.error(msg)
+            return UpdateResult("refused", msg)
+        logger.warning(msg.replace("refused:", "forced past cap:", 1))
+
     current_content = ""
     if target.exists():
         current_content = target.read_text(encoding="utf-8", errors="replace")
-        added = _entries(remote_lines) - _entries(_sanitize(current_content))
-        if len(added) > MAX_NEW_ENTRIES:
-            logger.error(
-                f"Update would add {len(added)} entries (limit {MAX_NEW_ENTRIES}); "
-                "refusing and keeping the current blocklist."
-            )
-            return False
 
     if current_content.strip() == remote_content.strip():
         logger.info("Blocklist is already up to date.")
-        return False
+        return UpdateResult("unchanged", "Blocklist is already up to date.")
 
     # Count entries in each
     def count_entries(text):
@@ -164,7 +206,7 @@ def update_blocklists() -> bool:
         shutil.copy2(str(target), str(backup))
         logger.info(f"  Backed up previous version: {backup.name}")
 
-    _write_atomic(target, remote_content)
+    _write_atomic(target, remote_content, mode=0o644)
 
     diff = new_count - old_count
     if diff > 0:
@@ -174,4 +216,4 @@ def update_blocklists() -> bool:
     else:
         logger.info(f"  Updated: {new_count} entries (content changed)")
 
-    return True
+    return UpdateResult("updated", f"{old_count} -> {new_count} entries")
