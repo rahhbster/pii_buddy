@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass, field
 
@@ -34,18 +35,25 @@ PHONE_RE = re.compile(
     r"(?!\d)"
 )
 
-INTL_PHONE_RE = re.compile(
-    r"(?<![\w+])\+(?:"
+_INTL_BODY = (
+    r"(?<!\+)\+(?:"
     r"\d{1,3}[\s.-]?(?:\(0\)[\s.-]?)?\d{1,5}(?:[\s.-]\d{2,8}){1,5}"
     r"|\d{8,15}"
     r")(?!\d)"
 )
+# "(?![-/]\d)" stops the tail from eating the head of a following SSN or date
+# ("+33 1 42 68 53 00 123-45-6789"). The unnarrowed pattern is kept as a
+# fallback so a tail that is not really another item stays redacted.
+INTL_PHONE_RE = re.compile(_INTL_BODY + r"(?![-/]\d)")
+INTL_PHONE_WIDE_RE = re.compile(_INTL_BODY)
 
 _CARD_NUMBER = r"\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{1,7}|\d{4}[ -]?\d{6}[ -]?\d{4,5}"
 # The optional tail is a trailing 1-4 digit group ("4111 1111 1111 1111 123");
 # _check_card absorbs it when the number before it is a valid PAN.
+# The tail sits in a lookahead so a following card ("4111 1111 1111 1111 5500
+# 0000 0000 0004") is still found by the next match instead of being eaten.
 CARD_RE = re.compile(
-    rf"(?<![\d-])(?P<base>{_CARD_NUMBER})(?P<tail>[ -]\d{{1,4}})?(?![\d-]?\d)"
+    rf"(?<![\d-])(?P<base>{_CARD_NUMBER})(?=(?P<tail>[ -]\d{{1,4}})?(?![\d-]?\d))"
 )
 
 # Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
@@ -72,7 +80,7 @@ URL_RE = re.compile(
 # path. The negative lookahead keeps "docker-compose.com.yml"-style names out.
 _URL_TAIL = r"(?::\d{1,5})?(?:[/?#][^\s<>\"']*)?"
 BARE_URL_RE = re.compile(
-    r"(?<![\w.@/-])(?:[A-Za-z0-9-]+\.)+(?:"
+    r"(?<![\w.@-])(?:[A-Za-z0-9-]+\.)+(?:"
     rf"(?:com|org|net|edu|gov|info|biz|uk|co|us|ca|de|tech|xyz)\b(?!\.[A-Za-z0-9]){_URL_TAIL}"
     r"|(?:io|dev|app|ai|page|me|ly)\b(?::\d{1,5})?/[^\s<>\"']*"
     r")",
@@ -107,6 +115,7 @@ _NON_HANDLES = frozenset(
 _DECORATOR_NAMESPACES = frozenset(
     "pytest functools abc dataclasses typing contextlib unittest mock".split()
 )
+_LINE_LOOKBACK = 256
 _CODE_CONTEXT_RE = re.compile(
     r"[ \t]*(?:\(|$)"
     r"|[ \t]+(?:def|class|public|private|protected|function|static|final|interface)\b",
@@ -196,16 +205,32 @@ def _pan_ok(raw: str) -> bool:
 def _check_card(m: re.Match, text: str):
     # A valid PAN swallows a short trailing group so no digits are left visible.
     if _pan_ok(m.group("base")):
-        return m.span()
-    if m.group("tail") and _pan_ok(m.group()):
-        return m.span()
+        return m.start(), (m.end("tail") if m.group("tail") else m.end())
+    if m.group("tail") and _pan_ok(m.group() + m.group("tail")):
+        return m.start(), m.end("tail")
     return None
+
+
+_INTL_SEP_RE = re.compile(r"[\s.-]")
 
 
 def _check_intl_phone(m: re.Match, text: str):
-    if 8 <= len(re.sub(r"\D", "", m.group())) <= 15:
+    raw = m.group()
+    if 8 <= len(re.sub(r"\D", "", raw)) <= 15:
         return m.span()
-    return None
+    # Too many digits: the tail ran into the next number. Cut at the longest
+    # group boundary that is still a phone number instead of dropping it.
+    fallback = None
+    for sep in reversed(list(_INTL_SEP_RE.finditer(raw))):
+        head = raw[:sep.start()]
+        n = len(re.sub(r"\D", "", head))
+        if n < 8 or n > 15 or not head[-1].isdigit():
+            continue
+        end = m.start() + sep.start()
+        if not re.match(r"[-/]\d", text[end:end + 2]):
+            return m.start(), end
+        fallback = fallback or (m.start(), end)
+    return fallback
 
 
 def _check_zip(m: re.Match, text: str):
@@ -240,8 +265,14 @@ def _check_handle(m: re.Match, text: str):
     if name.casefold() in _NON_HANDLES or (
         name.split(".")[0].casefold() in _DECORATOR_NAMESPACES
     ):
-        line_start = text.rfind("\n", 0, start) + 1
-        if not text[line_start:start].strip() and _CODE_CONTEXT_RE.match(text, end):
+        # Bounded lookback: an unbounded rfind is quadratic on one huge line.
+        # A line start further back than the window is read as prose (redact).
+        lo = max(0, start - _LINE_LOOKBACK)
+        nl = text.rfind("\n", lo, start)
+        line_start = nl + 1 if nl >= 0 else (0 if lo == 0 else None)
+        if (line_start is not None
+                and not text[line_start:start].strip()
+                and _CODE_CONTEXT_RE.match(text, end)):
             return None
     return (start, end)
 
@@ -454,6 +485,136 @@ def _detect_doc_type(text: str) -> str:
     return "general"
 
 
+_OVERLAPPING = frozenset({CARD_RE, DOB_RE})
+
+
+def _iter_matches(pattern, text: str, overlapping: bool):
+    """finditer; with ``overlapping`` the scan resumes one character after each
+    match start, so a match cannot swallow a real one that starts inside it
+    ("415.555.0132 5500 0000 0000 0004" must still yield the card, and
+    "10.0.0.1/12/25/1990" the date). The resolver handles the overlaps."""
+    if not overlapping:
+        yield from pattern.finditer(text)
+        return
+    pos = 0
+    while True:
+        m = pattern.search(text, pos)
+        if m is None:
+            return
+        yield m
+        pos = m.start() + 1
+
+
+def _regex_entities(text: str) -> list[PIIEntity]:
+    entities = []
+    for pattern, label in REGEX_PATTERNS:
+        check = _SPAN_CHECKS.get(pattern)
+        for match in _iter_matches(pattern, text, pattern in _OVERLAPPING):
+            span = check(match, text) if check else match.span()
+            if span is None:
+                continue
+            entities.append(PIIEntity(
+                text=text[span[0]:span[1]],
+                label=label,
+                start=span[0],
+                end=span[1],
+                confidence=1.0,
+            ))
+    return entities
+
+
+# Overlap priority, highest first. Longest span only breaks a tie within a
+# label. A loser is never dropped: its un-overlapped remainder is kept.
+_PRIORITY = {
+    label: rank for rank, label in enumerate(
+        "EMAIL URL CARD SSN PHONE IP HANDLE DOB ID_NUMBER ADDRESS PERSON".split()
+    )
+}
+_LABEL_PATTERNS: dict[str, list] = {}
+for _pat, _lab in REGEX_PATTERNS:
+    _LABEL_PATTERNS.setdefault(_lab, []).append(_pat)
+
+
+def _remainder_entities(ent: PIIEntity, pieces, text: str) -> list[PIIEntity]:
+    out = []
+    for s, e in pieces:
+        while s < e and text[s].isspace():
+            s += 1
+        while e > s and text[e - 1].isspace():
+            e -= 1
+        if s >= e:
+            continue
+        piece = text[s:e]
+        plausible = any(p.fullmatch(piece) for p in _LABEL_PATTERNS.get(ent.label, ()))
+        out.append(PIIEntity(
+            text=piece,
+            label=ent.label,
+            start=s,
+            end=e,
+            confidence=ent.confidence if plausible else min(ent.confidence, 0.5),
+        ))
+    return out
+
+
+class _SpanSet:
+    """Disjoint intervals kept sorted; bisect keeps lookups near-linear."""
+
+    def __init__(self, spans=()):
+        self.starts: list[int] = []
+        self.ends: list[int] = []
+        for s, e in spans:
+            self.add(s, e)
+
+    def add(self, s: int, e: int) -> None:
+        i = bisect.bisect_left(self.starts, s)
+        self.starts.insert(i, s)
+        self.ends.insert(i, e)
+
+    def free(self, s: int, e: int) -> list[tuple[int, int]]:
+        """Pieces of [s, e) not covered by any interval."""
+        i = max(0, bisect.bisect_right(self.starts, s) - 1)
+        pieces, pos = [], s
+        while i < len(self.starts) and self.starts[i] < e:
+            if self.ends[i] > pos:
+                if self.starts[i] > pos:
+                    pieces.append((pos, self.starts[i]))
+                pos = max(pos, self.ends[i])
+            i += 1
+        if pos < e:
+            pieces.append((pos, e))
+        return pieces
+
+
+def _resolve_overlaps(entities: list[PIIEntity], text: str) -> list[PIIEntity]:
+    # An address inside a URL ("site.com?email=a@b.c") is part of that link:
+    # the URL stays whole rather than being cut around it.
+    urls = [(e.start, e.end) for e in entities if e.label == "URL"]
+    entities = [
+        e for e in entities
+        if not (e.label == "EMAIL"
+                and any(s <= e.start and e.end <= t and (s, t) != (e.start, e.end)
+                        for s, t in urls))
+    ]
+    ordered = sorted(
+        entities,
+        key=lambda e: (_PRIORITY.get(e.label, len(_PRIORITY)), -(e.end - e.start),
+                       e.start, -e.confidence),
+    )
+    kept: list[PIIEntity] = []
+    taken = _SpanSet()
+    for ent in ordered:
+        pieces = taken.free(ent.start, ent.end)
+        if pieces == [(ent.start, ent.end)]:
+            kept.append(ent)
+            taken.add(ent.start, ent.end)
+            continue
+        for rem in _remainder_entities(ent, pieces, text):
+            kept.append(rem)
+            taken.add(rem.start, rem.end)
+    kept.sort(key=lambda e: (e.start, e.end))
+    return kept
+
+
 def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
     """
     Detect PII in text using regex + spaCy NER + validation.
@@ -468,20 +629,7 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
     # --- Pass 1: Detection ---
 
     # 1a. Regex (structured PII — high confidence)
-    regex_entities = []
-    for pattern, label in REGEX_PATTERNS:
-        check = _SPAN_CHECKS.get(pattern)
-        for match in pattern.finditer(text):
-            span = check(match, text) if check else match.span()
-            if span is None:
-                continue
-            regex_entities.append(PIIEntity(
-                text=text[span[0]:span[1]],
-                label=label,
-                start=span[0],
-                end=span[1],
-                confidence=1.0,
-            ))
+    regex_entities = _regex_entities(text)
 
     regex_spans = [(ent.start, ent.end) for ent in regex_entities]
 
@@ -545,12 +693,19 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
         if not (e.label == "HANDLE"
                 and any(e.start < ee and s < e.end for s, ee in email_spans))
     ]
-    validated.sort(key=lambda e: (e.start, -e.confidence, -(e.end - e.start)))
-    deduped = []
-    last_end = -1
-    for ent in validated:
-        if ent.start >= last_end:
-            deduped.append(ent)
-            last_end = ent.end
+    deduped = _resolve_overlaps(validated, text)
+
+    # The narrowed international-phone pattern is only a better boundary; any
+    # characters the old wider match covered that nothing else did stay redacted.
+    taken = _SpanSet((e.start, e.end) for e in deduped)
+    extra = []
+    for m in INTL_PHONE_WIDE_RE.finditer(text):
+        if _check_intl_phone(m, text) is None:
+            continue
+        wide = PIIEntity(text=m.group(), label="PHONE", start=m.start(), end=m.end())
+        extra += _remainder_entities(
+            wide, taken.free(m.start(), m.end()), text
+        )
+    deduped = sorted(deduped + extra, key=lambda e: (e.start, e.end))
 
     return deduped
