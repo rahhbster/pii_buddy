@@ -206,7 +206,7 @@ def update_blocklists(force: bool = False) -> UpdateResult:
     if target.exists():
         current_content = target.read_text(encoding="utf-8", errors="replace")
 
-    if current_content.strip() == remote_content.strip():
+    if _sanitize(current_content) == remote_lines:
         logger.info("Blocklist is already up to date.")
         return UpdateResult("unchanged", "Blocklist is already up to date.")
 
