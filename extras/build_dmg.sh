@@ -17,6 +17,11 @@
 # Requirements:
 #   macOS with hdiutil, iconutil, sips (all standard)
 #
+# Environment:
+#   PII_BUDDY_ALLOW_UNTRACKED_PY=1  build even when untracked .py files exist
+#                                   under pii_buddy/ (they are NOT bundled, and
+#                                   tracked code importing them will break).
+#
 
 set -euo pipefail
 
@@ -107,6 +112,23 @@ if [ -n "$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=no)" ]; th
     echo "warning: uncommitted changes to tracked files are NOT in the bundle (building HEAD)." >&2
 fi
 
+# Untracked, non-ignored files are not in `git archive` either. A new .py in
+# the package would be imported by tracked code and crash the shipped app.
+UNTRACKED="$(git -C "$PROJECT_DIR" status --porcelain --untracked-files=all | sed -n 's/^?? //p')"
+if [ -n "$UNTRACKED" ]; then
+    echo ""
+    echo "warning: untracked files are NOT in the bundle (git add + commit them to ship):" >&2
+    echo "$UNTRACKED" | sed 's/^/    /' >&2
+    UNTRACKED_PKG="$(echo "$UNTRACKED" | grep -E '^pii_buddy/.*\.py$' || true)"
+    if [ -n "$UNTRACKED_PKG" ] && [ "${PII_BUDDY_ALLOW_UNTRACKED_PY:-}" != "1" ]; then
+        echo "FAILED"
+        echo "error: untracked Python files under pii_buddy/ would be missing from the bundle:" >&2
+        echo "$UNTRACKED_PKG" | sed 's/^/    /' >&2
+        echo "Commit them, or set PII_BUDDY_ALLOW_UNTRACKED_PY=1 to build anyway." >&2
+        exit 1
+    fi
+fi
+
 # Tracked files that still must not ship. The privacy-sensitive paths are
 # listed even though they should never be tracked, as a second line of defence.
 git -C "$PROJECT_DIR" archive --format=tar HEAD -- . \
@@ -183,6 +205,18 @@ APPLESCRIPT
         exit 1
     fi
     # Swap with rollback: keep the old install until the new one is in place.
+    # A leftover .old with no installed app is the only surviving copy from a
+    # failed earlier install; put it back before anything is deleted.
+    if [ -e "${DEST}.old" ] && [ ! -e "$DEST" ]; then
+        if ! mv "${DEST}.old" "$DEST"; then
+            osascript - "${DEST}.old" "$DEST" <<'APPLESCRIPT' >/dev/null 2>&1
+on run argv
+    display dialog "PII Buddy found an interrupted install and could not restore it. Your previous installation is at:" & return & (item 1 of argv) & return & return & "Move it to " & (item 2 of argv) & " manually, then try again." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution
+end run
+APPLESCRIPT
+            exit 1
+        fi
+    fi
     rm -rf "${DEST}.old"
     if [ -e "$DEST" ] && ! mv "$DEST" "${DEST}.old"; then
         rm -rf "$STAGED"
@@ -190,12 +224,21 @@ APPLESCRIPT
         exit 1
     fi
     if ! mv "$STAGED" "$DEST"; then
-        # Restore the previous install (if there was one) and do not launch.
-        if [ -e "${DEST}.old" ]; then
-            mv "${DEST}.old" "$DEST"
+        if [ ! -e "${DEST}.old" ]; then
+            # Fresh install, nothing to restore.
+            rm -rf "$STAGED"
+            osascript -e 'display dialog "PII Buddy could not be installed." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        elif mv "${DEST}.old" "$DEST"; then
+            rm -rf "$STAGED"
+            osascript -e 'display dialog "PII Buddy could not be installed. Your previous installation was restored." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+        else
+            # Both moves failed: keep every copy and say where they are.
+            osascript - "${DEST}.old" "$STAGED" "$DEST" <<'APPLESCRIPT' >/dev/null 2>&1
+on run argv
+    display dialog "PII Buddy could not be installed, and your previous installation could not be restored automatically. Nothing was deleted." & return & return & "Previous installation: " & (item 1 of argv) & return & "New copy: " & (item 2 of argv) & return & return & "Move one of them to " & (item 3 of argv) & " to finish." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution
+end run
+APPLESCRIPT
         fi
-        rm -rf "$STAGED"
-        osascript -e 'display dialog "PII Buddy could not be installed. Your previous installation was restored." with title "PII Buddy - Install" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
         exit 1
     fi
     rm -rf "${DEST}.old"
