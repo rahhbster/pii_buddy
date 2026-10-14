@@ -168,29 +168,67 @@ class TestGracefulDegradation:
 # -----------------------------------------------------------------------
 # Upsell messaging
 # -----------------------------------------------------------------------
+@pytest.fixture
+def run_paste(tmp_path, monkeypatch, caplog, default_settings):
+    """Drive `main.py --paste` end to end with fake passes and capture logs.
+
+    The upsell lives in main()'s paste branch (watcher.process_file has no
+    upsell), so this goes through main() with sys.argv and stdin faked.
+    Returns a callable(extra_tags, argv_extra) -> caplog text.
+    """
+    import io
+    import sys
+
+    from pii_buddy import config as cfg
+
+    for attr in ("BASE_DIR", "INPUT_DIR", "OUTPUT_DIR", "MAPPINGS_DIR",
+                 "ORIGINALS_DIR", "LOGS_DIR", "USER_BLOCKLISTS_DIR",
+                 "FEEDBACK_DIR", "ALL_DIRS"):
+        monkeypatch.setattr(cfg, attr, getattr(cfg, attr))
+    monkeypatch.setattr("pii_buddy.detector.detect_pii", lambda text, *a, **k: [])
+    monkeypatch.setattr("sys.stdin", io.StringIO("Meeting notes, nothing sensitive."))
+
+    def run(extra_tags, argv_extra=()):
+        def fake_audit(text, mapping, *args, **kwargs):
+            tags = dict(mapping.get("tags", {}))
+            for i in range(extra_tags):
+                tags[f"<<AUDIT_{i}>>"] = "x"
+            return text, {**mapping, "tags": tags}
+
+        def passthrough(text, mapping, *args, **kwargs):
+            return text, mapping
+
+        monkeypatch.setattr("pii_buddy.audit.audit_redacted", fake_audit)
+        fake = MagicMock()
+        fake.verify_and_patch = passthrough
+        monkeypatch.setitem(sys.modules, "pii_buddy.verifier", fake)
+
+        import main
+        argv = ["main.py", "--paste", "--dir", str(tmp_path / "base"), *argv_extra]
+        with patch.object(sys, "argv", argv), \
+                caplog.at_level(logging.INFO, logger="pii_buddy"):
+            main.main()
+        return caplog.text
+
+    return run
+
+
 class TestUpsellMessaging:
-    def test_upsell_when_audit_finds_pii_and_verify_disabled(
-        self, sample_redacted_text, sample_mapping, caplog
-    ):
-        """When audit finds extra PII and verify is off, show upsell message."""
-        from pii_buddy.audit import audit_redacted
+    def test_upsell_when_audit_finds_pii_and_verify_disabled(self, run_paste):
+        """Audit added 2 tags and verify is off: user is told about Verify."""
+        text = run_paste(extra_tags=2)
+        assert "Audit found 2 additional items" in text
+        assert "piibuddy.com" in text
 
-        with caplog.at_level(logging.INFO, logger="pii_buddy"):
-            text, mapping = audit_redacted(sample_redacted_text, sample_mapping)
+    def test_no_upsell_when_verify_enabled(self, run_paste):
+        """Verify already on (key set): no upsell even if audit found PII."""
+        text = run_paste(extra_tags=2, argv_extra=("--verify", "--verify-key", "paid-key"))
+        assert "additional items" not in text
 
-        # The audit should have found additional items
-        pre_count = len(sample_mapping["tags"])
-        post_count = len(mapping["tags"])
-        extra = post_count - pre_count
-
-        # If extra PII was found, the caller (main.py/watcher.py) should log upsell
-        assert extra > 0, "Audit should find additional PII in sample text"
-
-    def test_no_upsell_when_verify_enabled(self, default_settings):
-        """No upsell message when cloud verify is already enabled."""
-        default_settings.verify_enabled = True
-        default_settings.verify_api_key = "paid-key"
-        assert default_settings.verify_enabled and default_settings.verify_api_key
+    def test_no_upsell_when_audit_finds_nothing(self, run_paste):
+        """Control: nothing extra found, verify off: still no upsell."""
+        text = run_paste(extra_tags=0)
+        assert "additional items" not in text
 
 
 # -----------------------------------------------------------------------
