@@ -3,6 +3,7 @@
 Everything runs against tmp paths (see conftest.py's hermetic fixture).
 """
 
+import errno
 import fcntl
 import logging
 import os
@@ -122,23 +123,24 @@ class TestExplicitToggleWrite:
 
         monkeypatch.setattr(os, "replace", boom)
         with pytest.raises(OSError):
-            menubar._set_login_item(True)
+            menubar._set_login_item(True, confirm_replace=lambda: True)
         assert agent.read_bytes() == before
         assert sorted(p.name for p in agent.parent.iterdir()) == [agent.name]
 
     def test_no_bak_file_in_launchagents(self, agent):
         _write(agent, {"Label": LABEL, "ProgramArguments": ["/old/python"]})
-        menubar._set_login_item(True)
+        menubar._set_login_item(True, confirm_replace=lambda: True)
         assert sorted(p.name for p in agent.parent.iterdir()) == [agent.name]
 
-    def test_non_explicit_write_refuses_differing_plist_with_same_label(self, agent):
+    def test_write_without_permission_refuses_differing_plist(self, agent):
         _write(agent, {"Label": LABEL, "ProgramArguments": ["/old/python", "-m", "x"]})
         before = agent.read_bytes()
-        assert menubar._write_launchagent_plist(explicit=False) is False
+        with pytest.raises(menubar.LoginItemRefused):
+            menubar._write_launchagent_plist(allow_replace=False)
         assert agent.read_bytes() == before
 
-    def test_non_explicit_write_creates_when_absent(self, agent):
-        assert menubar._write_launchagent_plist(explicit=False) is True
+    def test_write_creates_when_absent(self, agent):
+        assert menubar._write_launchagent_plist(allow_replace=False) is True
         assert plistlib.loads(agent.read_bytes())["Label"] == LABEL
 
     def test_explicit_toggle_preserves_hand_set_keys(self, agent):
@@ -149,17 +151,116 @@ class TestExplicitToggleWrite:
             "ThrottleInterval": 30,
             "EnvironmentVariables": {"PII_BUDDY_DIR": "/mine"},
         })
-        menubar._set_login_item(True)
+        menubar._set_login_item(True, confirm_replace=lambda: True)
         data = plistlib.loads(agent.read_bytes())
         assert data["ThrottleInterval"] == 30
         assert data["EnvironmentVariables"] == {"PII_BUDDY_DIR": "/mine"}
         assert data["ProgramArguments"][0] == sys.executable
         assert "StandardOutPath" not in data
 
-    def test_foreign_label_plist_is_not_merged(self, agent):
-        _write(agent, {"Label": "com.other", "ThrottleInterval": 5})
-        menubar._set_login_item(True)
-        assert "ThrottleInterval" not in plistlib.loads(agent.read_bytes())
+
+class TestLoginItemReportsHonestly:
+    DIFFERENT = {"Label": LABEL, "ProgramArguments": ["/old/python", "-m", "x"]}
+
+    def _same(self):
+        return menubar._build_launchagent_plist()
+
+    def test_differing_args_without_confirm_is_refused_and_unchanged(
+        self, agent, caplog
+    ):
+        _write(agent, self.DIFFERENT)
+        before = agent.read_bytes()
+        with caplog.at_level(logging.INFO, logger="pii_buddy"):
+            with pytest.raises(menubar.LoginItemRefused):
+                menubar._set_login_item(True)
+        assert agent.read_bytes() == before
+        assert "Login item created" not in caplog.text
+        assert sorted(p.name for p in agent.parent.iterdir()) == [agent.name]
+
+    def test_differing_args_declined_is_refused_and_unchanged(self, agent):
+        _write(agent, self.DIFFERENT)
+        before = agent.read_bytes()
+        asked = []
+        with pytest.raises(menubar.LoginItemRefused):
+            menubar._set_login_item(
+                True, confirm_replace=lambda: asked.append(1) or False
+            )
+        assert asked == [1]
+        assert agent.read_bytes() == before
+
+    def test_differing_args_confirmed_replaces(self, agent):
+        _write(agent, self.DIFFERENT)
+        asked = []
+        assert menubar._set_login_item(
+            True, confirm_replace=lambda: asked.append(1) or True
+        ) is True
+        assert asked == [1]
+        data = plistlib.loads(agent.read_bytes())
+        assert data["ProgramArguments"] == self._same()["ProgramArguments"]
+
+    def test_same_args_does_not_ask(self, agent):
+        _write(agent, self._same())
+        assert menubar._set_login_item(
+            True, confirm_replace=lambda: pytest.fail("asked")
+        ) is True
+
+    @pytest.mark.parametrize("old", [
+        {"Label": "com.other", "ProgramArguments": ["/x"], "ThrottleInterval": 5},
+        {"ProgramArguments": ["/x"]},
+    ])
+    def test_different_label_is_never_replaced(self, agent, old):
+        _write(agent, old)
+        before = agent.read_bytes()
+        with pytest.raises(menubar.LoginItemRefused):
+            menubar._set_login_item(True, confirm_replace=lambda: True)
+        assert agent.read_bytes() == before
+
+    def test_unparseable_plist_is_never_replaced(self, agent):
+        agent.parent.mkdir(parents=True)
+        agent.write_bytes(b"not a plist")
+        with pytest.raises(menubar.LoginItemRefused):
+            menubar._set_login_item(True, confirm_replace=lambda: True)
+        assert agent.read_bytes() == b"not a plist"
+
+    def _bar(self, monkeypatch, answer):
+        bar = menubar.PIIBuddyMenuBar.__new__(menubar.PIIBuddyMenuBar)
+        bar.notifications = []
+        bar._notify = bar.notifications.append
+        bar._prefs = {"start_at_login": False}
+        bar._rumps = SimpleNamespace(alert=lambda **kw: answer)
+        monkeypatch.setattr(menubar, "_save_prefs", lambda prefs: None)
+        return bar
+
+    def test_toggle_declined_keeps_state_off_and_tells_user(
+        self, agent, monkeypatch
+    ):
+        _write(agent, self.DIFFERENT)
+        before = agent.read_bytes()
+        bar = self._bar(monkeypatch, 0)
+        sender = SimpleNamespace(state=False)
+        bar._on_toggle_login(sender)
+        assert sender.state is False
+        assert bar._prefs["start_at_login"] is False
+        assert bar.notifications
+        assert agent.read_bytes() == before
+
+    def test_toggle_confirmed_replaces_and_turns_on(self, agent, monkeypatch):
+        _write(agent, self.DIFFERENT)
+        bar = self._bar(monkeypatch, 1)
+        sender = SimpleNamespace(state=False)
+        bar._on_toggle_login(sender)
+        assert sender.state is True
+        assert plistlib.loads(agent.read_bytes())["ProgramArguments"][0] == sys.executable
+
+    def test_toggle_foreign_label_refused_without_asking(self, agent, monkeypatch):
+        _write(agent, {"Label": "com.other", "ProgramArguments": ["/x"]})
+        before = agent.read_bytes()
+        bar = self._bar(monkeypatch, 1)
+        sender = SimpleNamespace(state=False)
+        bar._on_toggle_login(sender)
+        assert sender.state is False
+        assert bar.notifications
+        assert agent.read_bytes() == before
 
 
 class TestLockDirectories:
@@ -183,6 +284,21 @@ class TestLockDirectories:
             menubar._lock_file.close()
             for f in menubar._extra_lock_files:
                 f.close()
+
+    def test_directory_a_winner_made_is_not_ours_to_remove(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "race" / "menubar.lock"
+        real = os.mkdir
+
+        def racing(p, *a, **k):
+            real(p, *a, **k)
+            raise FileExistsError(errno.EEXIST, "made by the winner")
+
+        monkeypatch.setattr(os, "mkdir", racing)
+        created = []
+        menubar._try_lock(path, created)
+        assert path.parent not in created
 
     def test_losing_instance_creates_nothing_new(self, paths):
         a, b = paths

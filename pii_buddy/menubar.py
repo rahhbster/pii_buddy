@@ -159,9 +159,16 @@ def _try_lock(path: Path, created: list):
     losing instance can remove what it made.
     """
     try:
-        missing = [p for p in (path.parent, *path.parent.parents) if not p.exists()]
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        created.extend(missing)
+        # Only directories whose mkdir succeeds here are ours to remove; one
+        # a racing winner made first must survive our cleanup.
+        for d in reversed([path.parent, *path.parent.parents]):
+            if d.exists():
+                continue
+            try:
+                os.mkdir(d, 0o700)
+            except FileExistsError:
+                continue
+            created.append(d)
         # O_APPEND so a losing instance doesn't truncate the holder's PID.
         flags = os.O_WRONLY | os.O_APPEND
         try:
@@ -403,13 +410,29 @@ def _warn_if_stale_launchagent() -> bool:
     return stale
 
 
-def _write_launchagent_plist(explicit: bool) -> bool:
-    """Atomically write the login-item plist; False when it refused.
+class LoginItemRefused(Exception):
+    """The login-item plist was left alone; ``str(exc)`` is user-facing."""
 
-    Without ``explicit`` (the user's own toggle) an existing plist with our
-    Label but different ProgramArguments is never replaced.  An explicit
-    write keeps unknown keys (EnvironmentVariables, ThrottleInterval, ...)
-    from a plist carrying our Label.
+
+_LOGIN_FOREIGN_MESSAGE = (
+    "Another login item already uses PII Buddy's file in LaunchAgents, so "
+    "it was left alone. Add PII Buddy under System Settings > General > "
+    "Login Items instead."
+)
+
+_LOGIN_DIFFERS_MESSAGE = (
+    "A different PII Buddy login item already exists and was left as it is."
+)
+
+
+def _write_launchagent_plist(allow_replace: bool) -> bool:
+    """Atomically write the login-item plist; True once it is on disk.
+
+    Never returns False: when the existing file is not ours to replace it
+    raises ``LoginItemRefused`` and touches nothing.  A plist whose Label is
+    not ours (or that can't be parsed) is never replaced.  One with our Label
+    but different ProgramArguments is replaced only with ``allow_replace``;
+    unknown keys (EnvironmentVariables, ThrottleInterval, ...) are kept.
     """
     new = _build_launchagent_plist()
     if _LAUNCHAGENT_PATH.exists():
@@ -417,16 +440,19 @@ def _write_launchagent_plist(explicit: bool) -> bool:
             old = plistlib.loads(_LAUNCHAGENT_PATH.read_bytes())
         except Exception:
             old = {}
-        if old.get("Label") == _LAUNCHAGENT_LABEL:
-            if not explicit and old.get("ProgramArguments") != new["ProgramArguments"]:
+        if not isinstance(old, dict) or old.get("Label") != _LAUNCHAGENT_LABEL:
+            logger.warning("Login item file is not ours; not overwriting it.")
+            raise LoginItemRefused(_LOGIN_FOREIGN_MESSAGE)
+        if old.get("ProgramArguments") != new["ProgramArguments"]:
+            if not allow_replace:
                 logger.warning("Login item differs; not overwriting it.")
-                return False
-            kept = {
-                k: v for k, v in old.items()
-                if k not in new
-                and k not in ("StandardOutPath", "StandardErrorPath", "WorkingDirectory")
-            }
-            new = {**kept, **new}
+                raise LoginItemRefused(_LOGIN_DIFFERS_MESSAGE)
+        kept = {
+            k: v for k, v in old.items()
+            if k not in new
+            and k not in ("StandardOutPath", "StandardErrorPath", "WorkingDirectory")
+        }
+        new = {**kept, **new}
     _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(
         dir=_LAUNCHAGENT_DIR, prefix=f".{_LAUNCHAGENT_PATH.name}.", suffix=".tmp"
@@ -445,10 +471,14 @@ def _write_launchagent_plist(explicit: bool) -> bool:
     return True
 
 
-def _set_login_item(enabled: bool) -> bool:
+def _set_login_item(enabled: bool, confirm_replace=None) -> bool:
     """Create or remove a LaunchAgent plist for auto-start at login.
 
-    Returns False when enabling is not possible (MAS sandbox).
+    Returns False when enabling is not possible (MAS sandbox).  Raises
+    ``LoginItemRefused`` when an existing plist is not ours to replace, or
+    is ours but differs and ``confirm_replace`` (a no-argument callable
+    asking the user) is absent or answers False.  Never reports success
+    for a file it did not write.
     """
     if enabled:
         if PII_BUDDY_MAS_BUILD:
@@ -456,7 +486,17 @@ def _set_login_item(enabled: bool) -> bool:
             # read by launchd; honouring the toggle would be a lie.
             logger.warning("Start at Login is unavailable in the sandboxed build.")
             return False
-        _write_launchagent_plist(explicit=True)
+        allow = False
+        if _LAUNCHAGENT_PATH.exists() and confirm_replace is not None:
+            try:
+                differs = (
+                    plistlib.loads(_LAUNCHAGENT_PATH.read_bytes()).get("ProgramArguments")
+                    != _build_launchagent_plist()["ProgramArguments"]
+                )
+            except Exception:
+                differs = False  # unparseable/foreign: the writer refuses it
+            allow = bool(confirm_replace()) if differs else False
+        _write_launchagent_plist(allow_replace=allow)
         logger.info(f"Login item created: {_LAUNCHAGENT_PATH}")
         return True
     else:
@@ -643,7 +683,9 @@ class PIIBuddyMenuBar:
             clicked_yes = response == 1
         if clicked_yes:
             try:
-                enabled = _set_login_item(True)
+                enabled = _set_login_item(True, self._confirm_replace_login_item)
+            except LoginItemRefused as e:
+                self._notify(str(e))
             except OSError as e:
                 logger.error(f"Login item failed: {type(e).__name__}")
                 self._notify(_LOGIN_FAILED_MESSAGE)
@@ -768,10 +810,25 @@ class PIIBuddyMenuBar:
         _save_prefs(self._prefs)
         _set_dock_visible(new_state)
 
+    def _confirm_replace_login_item(self) -> bool:
+        response = self._rumps.alert(
+            title="Replace existing login item?",
+            message=(
+                "A different PII Buddy login item is already installed. "
+                "Replace it with this copy?"
+            ),
+            ok="Replace",
+            cancel="Keep existing",
+        )
+        return response == 1
+
     def _on_toggle_login(self, sender):
         new_state = not sender.state
         try:
-            changed = _set_login_item(new_state)
+            changed = _set_login_item(new_state, self._confirm_replace_login_item)
+        except LoginItemRefused as e:
+            self._notify(str(e))
+            return
         except OSError as e:
             logger.error(f"Login item failed: {type(e).__name__}")
             self._notify(_LOGIN_FAILED_MESSAGE)
@@ -871,16 +928,23 @@ class PIIBuddyMenuBar:
 
             # Mapping first: if it can't be saved the clipboard still holds
             # the original, which is otherwise unrecoverable.
-            MAPPINGS_DIR.mkdir(parents=True, exist_ok=True)
+            MAPPINGS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
             mapping["metadata"] = {
                 "source": "menubar",
                 "processed_at": datetime.now().isoformat(),
                 "entities_found": len(entities),
             }
             mapping_path = _claim_mapping_path(MAPPINGS_DIR, datetime.now())
-            _write_private_text(
-                mapping_path, json.dumps(mapping, indent=2, ensure_ascii=False)
-            )
+            try:
+                _write_private_text(
+                    mapping_path, json.dumps(mapping, indent=2, ensure_ascii=False)
+                )
+            except BaseException:
+                try:
+                    mapping_path.unlink()
+                except OSError:
+                    pass
+                raise
             if not self._copy_back(redacted_text):
                 # The clipboard still holds the original, so the mapping is
                 # useless and would sit on disk holding the PII.

@@ -193,6 +193,24 @@ class TestClipboardOrdering:
 
         assert pipeline == []
 
+    def test_failed_mapping_write_leaves_no_empty_claimed_file(
+        self, bar, pipeline, monkeypatch, tmp_path
+    ):
+        def boom(path, text):
+            raise OSError(errno.ENOSPC, "no space")
+
+        monkeypatch.setattr(menubar, "_write_private_text", boom)
+
+        bar._do_remove_pii(None)
+
+        assert pipeline == []
+        assert list((tmp_path / "mappings").glob("*.map.json")) == []
+
+    def test_new_mappings_dir_is_owner_only(self, bar, pipeline, tmp_path):
+        bar._do_remove_pii(None)
+
+        assert stat.S_IMODE((tmp_path / "mappings").stat().st_mode) == 0o700
+
     def test_success_writes_mapping_then_clipboard(self, bar, pipeline):
         bar._do_remove_pii(None)
 
