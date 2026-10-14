@@ -67,6 +67,23 @@ def _apply_tag(clean_name: str, settings: Settings) -> str:
     return f"{clean_name}_redacted"
 
 
+class EmptyOutputError(Exception):
+    """The writer produced an empty file; the input must not be discarded."""
+
+
+_OWN_OUTPUT_RE = re.compile(r"^PII_FREE_|\.\d{8}T\d{6}(-\d+)?\.[^.]+$")
+# Outputs this process just wrote into the watched folder; their own
+# `created` events must not be mistaken for new input.
+_just_written: set = set()
+
+
+def _is_own_output(filepath: Path) -> bool:
+    if filepath in _just_written:
+        _just_written.discard(filepath)
+        return True
+    return bool(_OWN_OUTPUT_RE.search(filepath.name))
+
+
 def _safe_to_unlink_input(filepath: Path, output_path: Path) -> bool:
     if output_path == filepath or not filepath.exists():
         return False
@@ -173,6 +190,19 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
                 filepath.suffix,
                 overwrite_existing=True,
             )
+            try:
+                empty = output_path.stat().st_size == 0
+            except OSError:
+                empty = True
+            if empty:
+                # Keep the PII-bearing input; the backup already holds it.
+                if output_path == filepath:
+                    shutil.copyfile(str(backup_dest), str(filepath))
+                else:
+                    output_path.unlink(missing_ok=True)
+                raise EmptyOutputError("writer produced an empty output file")
+            if output_path != filepath:
+                _just_written.add(output_path)
             logger.info(f"  Overwritten: {output_path.name}")
 
             # A .doc is rewritten as .docx, which leaves the PII-bearing
@@ -235,7 +265,8 @@ def process_file(filepath: Path, settings: Settings = None) -> bool:
                     mapping_path.unlink()
             except OSError:
                 pass
-        logger.error(f"  Error processing {filepath.name}: {e}", exc_info=True)
+        # Type only: exception text and tracebacks can echo document content.
+        logger.error(f"  Error processing {filepath.name}: {type(e).__name__}")
         return False
 
 
@@ -275,6 +306,8 @@ class NewFileHandler(FileSystemEventHandler):
         filepath = Path(event.src_path)
         if filepath.suffix.lower() not in SUPPORTED_EXTENSIONS:
             return
+        if _is_own_output(filepath):
+            return
         # Small delay to let file finish writing
         time.sleep(1)
         process_file(filepath, self.settings)
@@ -285,6 +318,8 @@ class NewFileHandler(FileSystemEventHandler):
             return
         filepath = Path(event.dest_path)
         if filepath.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            return
+        if _is_own_output(filepath):
             return
         time.sleep(1)
         process_file(filepath, self.settings)

@@ -1,3 +1,4 @@
+import logging
 import os
 import stat
 from datetime import datetime
@@ -50,6 +51,9 @@ TAG_TEMPLATES = {
 }
 
 
+_warned_dirs: set = set()
+
+
 def ensure_private_dir(path: Path) -> None:
     """Create a directory readable only by the owner.
 
@@ -63,15 +67,22 @@ def ensure_private_dir(path: Path) -> None:
         pass
     if path.is_symlink():
         return  # never chmod through a link to somewhere else
-    current = stat.S_IMODE(path.stat().st_mode)
-    # An owner lacking r or x has locked themselves out; restore rwx. An
-    # owner who has r and x (e.g. a deliberate 0o500) is left as-is.
-    owner = current & 0o700
-    if owner & 0o500 != 0o500:
-        owner = 0o700
-    wanted = owner
-    if current != wanted:
-        os.chmod(path, wanted)
+    try:
+        current = stat.S_IMODE(path.stat().st_mode)
+        # An owner lacking r or x has locked themselves out; restore rwx. An
+        # owner who has r and x (e.g. a deliberate 0o500) is left as-is.
+        owner = current & 0o700
+        if owner & 0o500 != 0o500:
+            owner = 0o700
+        if current != owner:
+            os.chmod(path, owner)
+    except OSError as e:
+        # e.g. a directory owned by another user: keep working, tell once.
+        if path not in _warned_dirs:
+            _warned_dirs.add(path)
+            logging.getLogger("pii_buddy").warning(
+                f"Could not tighten permissions on {path} ({type(e).__name__})"
+            )
 
 
 def write_private_text(path: Path, text: str) -> None:
