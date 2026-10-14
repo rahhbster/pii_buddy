@@ -1,7 +1,6 @@
 """Replace detected PII with reversible tags and produce a mapping file."""
 
 import re
-from bisect import bisect_right
 
 
 def _make_initials(name: str) -> str:
@@ -49,10 +48,6 @@ def _group_names(person_entities: list) -> dict[str, str]:
     return canonical
 
 
-_LETTER = "A-Za-z\u00c0-\u024f"
-_CJK_RE = re.compile(
-    "[\u2e80-\u9fff\u3400-\u4dbf\uf900-\ufaff\uac00-\ud7af\u3040-\u30ff]"
-)
 _TAG_SHAPED_RE = re.compile(r"(?=(<<[A-Za-z0-9_]+_\d+>>|<NAME [^>]+>))")
 
 
@@ -76,27 +71,6 @@ class _TagAllocator:
                 self._next[key] = n
                 self._used.add(tag)
                 return tag
-
-
-def _name_pattern(surfaces, left_boundary=True) -> "re.Pattern":
-    """Whole-name matcher: letter-only boundaries, CJK surfaces unanchored.
-
-    Underscores, digits and CJK glued to a name still match; a trailing plural
-    or possessive is tolerated and left in place after the tag.
-    left_boundary=False drops the left anchor (used for CamelCase continuations).
-    """
-    left = rf"(?<![{_LETTER}])" if left_boundary else ""
-    alts = []
-    for s in sorted(surfaces, key=len, reverse=True):
-        esc = re.escape(s)
-        if _CJK_RE.search(s):
-            alts.append(esc)
-        else:
-            alts.append(
-                rf"{left}{esc}(?:(?=(?:'s|\u2019s|s)?(?![{_LETTER}]))"
-                r"|(?<=(?-i:[a-z]))(?=(?-i:[A-Z])))"
-            )
-    return re.compile("|".join(alts), re.IGNORECASE)
 
 
 def redact(text: str, entities: list) -> tuple[str, dict]:
@@ -145,51 +119,49 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
         value_to_tag[ent.text] = tag
 
     # --- Plan every replacement against the ORIGINAL text, then apply once ---
-    # Detected entities win; spans are never rewritten by the name pass, and
-    # inserted tags are never re-scanned.
+    # `claimed` marks characters already assigned to a tag, so nothing can match
+    # inside an inserted tag or inside another entity's span.
+    claimed = bytearray(len(text))
     spans = []
-    last_end = 0
+
+    def claim(start, end, tag, partial_ok):
+        if claimed.find(1, start, end) == -1:
+            claimed[start:end] = b"\x01" * (end - start)
+            spans.append((start, end, tag))
+            return
+        if not partial_ok:
+            return
+        # Overlapping detected entities: tag only the part not yet covered.
+        i = start
+        while i < end:
+            if claimed[i]:
+                i += 1
+                continue
+            j = i
+            while j < end and not claimed[j]:
+                j += 1
+            claimed[i:j] = b"\x01" * (j - i)
+            spans.append((i, j, tag))
+            i = j
+
     for ent in sorted(entities, key=lambda e: (e.start, e.start - e.end)):
-        if ent.start < last_end:
+        start, end = max(ent.start, 0), min(ent.end, len(text))
+        if end <= start:
             continue
         if ent.label == "PERSON":
             tag = surface_to_tag.get(ent.text, f"<NAME {_make_initials(ent.text)}>")
         else:
             tag = value_to_tag.get(ent.text, f"<<{ent.label}>>")
-        spans.append((ent.start, ent.end, tag))
-        last_end = ent.end
+        claim(start, end, tag, True)
 
-    # --- Also catch whole-word name references that spaCy missed ---
-    # Longest surface first so "Steve Johnson" wins over "Steve".
-    if surface_to_tag:
-        lowered = {}
-        for surface in sorted(surface_to_tag, key=len, reverse=True):
-            lowered.setdefault(surface.lower(), surface_to_tag[surface])
-        name_re = _name_pattern(surface_to_tag)
-        glued_re = _name_pattern(surface_to_tag, left_boundary=False)
-        entity_starts = [s[0] for s in spans]
-        entity_spans = list(spans)
-        for m in name_re.finditer(text):
-            i = bisect_right(entity_starts, m.start()) - 1
-            if i >= 0 and entity_spans[i][1] > m.start():
-                continue
-            if i + 1 < len(entity_spans) and entity_spans[i + 1][0] < m.end():
-                continue
-            spans.append((m.start(), m.end(), lowered[m.group().lower()]))
-            # "AnnTestperson": a name glued to the next by a lower->Upper hump.
-            end = m.end()
-            while end < len(text) and text[end].isupper() and text[end - 1].islower():
-                g = glued_re.match(text, end)
-                if not g:
-                    break
-                if end < len(text) and entity_spans:
-                    j = bisect_right(entity_starts, end) - 1
-                    if j >= 0 and entity_spans[j][1] > end:
-                        break
-                    if j + 1 < len(entity_spans) and entity_spans[j + 1][0] < g.end():
-                        break
-                spans.append((g.start(), g.end(), lowered[g.group().lower()]))
-                end = g.end()
+    # --- Also catch name references that spaCy missed ---
+    # Case-insensitive substring match, longest surface first so
+    # "Steve Johnson" wins over "Steve". One pattern per surface keeps the
+    # match -> tag mapping exact (no .lower() round trip).
+    for surface in sorted(surface_to_tag, key=len, reverse=True):
+        tag = surface_to_tag[surface]
+        for m in re.finditer(re.escape(surface), text, re.IGNORECASE):
+            claim(m.start(), m.end(), tag, False)
 
     pieces = []
     pos = 0
