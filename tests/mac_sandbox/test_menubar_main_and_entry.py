@@ -18,6 +18,7 @@ def main_env(tmp_path, monkeypatch):
     monkeypatch.setattr(menubar, "_LOG_PATH", tmp_path / "logs" / "menubar.log")
     monkeypatch.setattr(logging, "basicConfig", lambda **kw: None)
     monkeypatch.setattr(menubar, "_exit_if_already_running", lambda: None)
+    monkeypatch.setattr(menubar, "_refresh_stale_launchagent", lambda: False)
     monkeypatch.setattr(
         menubar, "PIIBuddyMenuBar", lambda: SimpleNamespace(run=lambda: None)
     )

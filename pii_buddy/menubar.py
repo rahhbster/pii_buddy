@@ -70,7 +70,14 @@ class WatchFolderMenuController:
 # --- Single-instance guard ---
 
 _LOCK_FILE_PATH = BASE_DIR / "menubar.lock"
+# Fixed per-user path (the container's home in the MAS build) so instances
+# started with different PII_BUDDY_DIR values still exclude each other.
+_USER_LOCK_FILE_PATH = (
+    Path(os.path.expanduser("~/Library/Application Support/PII Buddy"))
+    / "menubar.lock"
+)
 _lock_file = None  # keep reference alive to hold the lock
+_extra_lock_files = []
 
 _LOG_PATH = LOGS_DIR / "menubar.log"
 
@@ -123,12 +130,50 @@ def _log_failure(message: str, exc: BaseException):
     logger.error(f"{message}: {type(exc).__name__}\n{frames}")
 
 
+def _try_lock(path: Path):
+    """Take an exclusive flock on ``path``.
+
+    Returns ``(state, file)``: "acquired" with the open file, "held" when
+    another process owns it, "unavailable" when it can't be used.
+    """
+    # Append mode so a losing instance doesn't truncate the holder's PID.
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(path, "a")
+    except OSError as e:
+        logger.error(f"Single-instance lock unavailable: {type(e).__name__}")
+        print(
+            f"PII Buddy could not create its lock file ({e}); "
+            "continuing without the file-lock guard.",
+            file=sys.stderr,
+        )
+        return "unavailable", None
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        lock_file.close()
+        if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+            return "held", None
+        logger.error(f"Single-instance lock failed: {type(e).__name__}")
+        print(
+            f"PII Buddy could not take its lock ({e}); "
+            "continuing without the file-lock guard.",
+            file=sys.stderr,
+        )
+        return "unavailable", None
+    lock_file.truncate(0)
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    return "acquired", lock_file
+
+
 def _exit_if_already_running():
     """Prevent multiple instances using two independent checks.
 
-    Option A — file lock (works everywhere, survives crashes):
-      An exclusive flock on a temp file.  The OS releases it automatically
-      when the process exits for any reason.
+    Option A — file locks (work everywhere, survive crashes):
+      Exclusive flocks on a lock under BASE_DIR and on one at a fixed
+      per-user path, so launches with different PII_BUDDY_DIR values still
+      collide.  The OS releases them when the process exits.
 
     Option B — NSRunningApplication (native macOS, bundle-aware):
       Counts running processes that share our bundle identifier.
@@ -137,42 +182,28 @@ def _exit_if_already_running():
     """
     global _lock_file
 
-    # --- Option A: file lock ---
-    # Append mode so a losing instance doesn't truncate the holder's PID.
-    try:
-        _LOCK_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = open(_LOCK_FILE_PATH, "a")
-    except OSError as e:
-        logger.error(f"Single-instance lock unavailable: {type(e).__name__}")
-        print(
-            f"PII Buddy could not create its lock file ({e}); "
-            "continuing without the file-lock guard.",
-            file=sys.stderr,
-        )
-        lock_file = None
+    # --- Option A: file locks (BASE_DIR one, then the fixed per-user one) ---
+    paths = [_LOCK_FILE_PATH]
+    if _USER_LOCK_FILE_PATH != _LOCK_FILE_PATH:
+        paths.append(_USER_LOCK_FILE_PATH)
 
-    if lock_file is not None:
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as e:
-            lock_file.close()
-            if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
-                print("PII Buddy is already running (lock held).", file=sys.stderr)
-                sys.exit(0)
-            logger.error(f"Single-instance lock failed: {type(e).__name__}")
-            print(
-                f"PII Buddy could not take its lock ({e}); "
-                "continuing without the file-lock guard.",
-                file=sys.stderr,
-            )
-        else:
-            _lock_file = lock_file
-            lock_file.truncate(0)
-            lock_file.write(str(os.getpid()))
-            lock_file.flush()
-            # We own the lock, so no other instance can: a count > 1 here
-            # is a racing launch that also sees us, and both would exit.
-            return
+    acquired = []
+    for path in paths:
+        state, lock_file = _try_lock(path)
+        if state == "held":
+            for f in acquired:
+                f.close()
+            print("PII Buddy is already running (lock held).", file=sys.stderr)
+            sys.exit(0)
+        if state == "acquired":
+            acquired.append(lock_file)
+
+    if acquired:
+        _lock_file = acquired[0]
+        _extra_lock_files[:] = acquired[1:]
+        # We own a lock, so no other instance can: a bundle count > 1 here
+        # is a racing launch that also sees us, and both would exit.
+        return
 
     # --- Option B: NSRunningApplication check (lock unavailable only) ---
     try:
@@ -261,6 +292,57 @@ def _save_prefs(prefs: dict):
 
 # --- LaunchAgent for login item ---
 
+_STALE_LOG_PATH = "/tmp/pii_buddy_menubar.log"
+
+
+def _build_launchagent_plist() -> dict:
+    if getattr(sys, "frozen", False):
+        # py2app bundle: sys.executable is the app's own launcher and
+        # "-m pii_buddy.menubar" is meaningless to it.
+        program_args = [sys.executable]
+        extra = {}
+    else:
+        program_args = [sys.executable, "-m", "pii_buddy.menubar"]
+        extra = {"WorkingDirectory": str(Path(__file__).parent.parent)}
+    # No StandardOut/ErrorPath: main() logs to a rotating file itself,
+    # and pointing launchd at the same file duplicates every line.
+    return {
+        "Label": _LAUNCHAGENT_LABEL,
+        "ProgramArguments": program_args,
+        **extra,
+        "RunAtLoad": True,
+        "KeepAlive": False,
+    }
+
+
+def _refresh_stale_launchagent() -> bool:
+    """Rewrite a LaunchAgent plist left by an older build.
+
+    Stale means it still logs to the /tmp path or points at an interpreter
+    that no longer exists.  Returns True when the plist was rewritten.
+    """
+    if PII_BUDDY_MAS_BUILD or not _LAUNCHAGENT_PATH.exists():
+        return False
+    try:
+        old = plistlib.loads(_LAUNCHAGENT_PATH.read_bytes())
+        args = old.get("ProgramArguments") or []
+        stale = (
+            _STALE_LOG_PATH in (
+                old.get("StandardOutPath"), old.get("StandardErrorPath")
+            )
+            or not args
+            or not os.path.exists(args[0])
+        )
+        if not stale:
+            return False
+        _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(_build_launchagent_plist()))
+        logger.info("Login item plist refreshed.")
+        return True
+    except Exception as e:
+        logger.warning(f"Could not refresh login item: {type(e).__name__}")
+        return False
+
+
 def _set_login_item(enabled: bool) -> bool:
     """Create or remove a LaunchAgent plist for auto-start at login.
 
@@ -272,25 +354,8 @@ def _set_login_item(enabled: bool) -> bool:
             # read by launchd; honouring the toggle would be a lie.
             logger.warning("Start at Login is unavailable in the sandboxed build.")
             return False
-        if getattr(sys, "frozen", False):
-            # py2app bundle: sys.executable is the app's own launcher and
-            # "-m pii_buddy.menubar" is meaningless to it.
-            program_args = [sys.executable]
-            extra = {}
-        else:
-            program_args = [sys.executable, "-m", "pii_buddy.menubar"]
-            extra = {"WorkingDirectory": str(Path(__file__).parent.parent)}
-        # No StandardOut/ErrorPath: main() logs to a rotating file itself,
-        # and pointing launchd at the same file duplicates every line.
-        plist = {
-            "Label": _LAUNCHAGENT_LABEL,
-            "ProgramArguments": program_args,
-            **extra,
-            "RunAtLoad": True,
-            "KeepAlive": False,
-        }
         _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
-        _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(plist))
+        _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(_build_launchagent_plist()))
         logger.info(f"Login item created: {_LAUNCHAGENT_PATH}")
         return True
     else:
@@ -717,6 +782,12 @@ class PIIBuddyMenuBar:
                 mapping_path, json.dumps(mapping, indent=2, ensure_ascii=False)
             )
             if not self._copy_back(redacted_text):
+                # The clipboard still holds the original, so the mapping is
+                # useless and would sit on disk holding the PII.
+                try:
+                    mapping_path.unlink()
+                except OSError:
+                    pass
                 return
             self._last_mapping_path = mapping_path
             self._last_entities_found = len(entities)
@@ -800,6 +871,7 @@ def main():
     except OSError as e:
         print(f"PII Buddy could not open its log file: {e}", file=sys.stderr)
     _exit_if_already_running()
+    _refresh_stale_launchagent()
     app = PIIBuddyMenuBar()
     app.run()
 

@@ -35,6 +35,11 @@ def no_appkit(monkeypatch):
 def lock_path(tmp_path, monkeypatch):
     path = tmp_path / "app" / "menubar.lock"
     monkeypatch.setattr(menubar, "_LOCK_FILE_PATH", path)
+    monkeypatch.setattr(
+        menubar, "_USER_LOCK_FILE_PATH", tmp_path / "user" / "menubar.lock",
+        raising=False,
+    )
+    monkeypatch.setattr(menubar, "_extra_lock_files", [], raising=False)
     monkeypatch.setattr(menubar, "_lock_file", None)
     return path
 
@@ -71,6 +76,29 @@ class TestSingleInstanceLock:
         assert lock_path.exists()
         menubar._lock_file.close()
 
+    def test_different_base_dirs_cannot_both_run(self, lock_path, tmp_path, monkeypatch):
+        menubar._exit_if_already_running()
+        first = menubar._lock_file
+        other = tmp_path / "other" / "menubar.lock"
+        monkeypatch.setattr(menubar, "_LOCK_FILE_PATH", other)
+        monkeypatch.setattr(menubar, "_lock_file", None)
+        try:
+            with pytest.raises(SystemExit) as exc:
+                menubar._exit_if_already_running()
+        finally:
+            first.close()
+            for f in menubar._extra_lock_files:
+                f.close()
+        assert exc.value.code == 0
+        assert menubar._lock_file is None
+
+    def test_user_lock_path_is_fixed_and_independent_of_base_dir(self):
+        import os
+        assert str(menubar._USER_LOCK_FILE_PATH) == os.path.join(
+            os.path.expanduser("~/Library/Application Support/PII Buddy"),
+            "menubar.lock",
+        )
+
     def test_default_lock_path_is_inside_configured_base_dir(self):
         assert menubar._LOCK_FILE_PATH == menubar.BASE_DIR / "menubar.lock"
 
@@ -101,7 +129,7 @@ class TestSingleInstanceLock:
         real_open = open
 
         def deny(path, *a, **k):
-            if str(path) == str(lock_path):
+            if str(path) in (str(lock_path), str(menubar._USER_LOCK_FILE_PATH)):
                 raise PermissionError(errno.EPERM, "denied")
             return real_open(path, *a, **k)
 
@@ -212,6 +240,19 @@ class TestClipboardOrdering:
         assert "jane.doe" not in caplog.text
         assert bar._last_mapping_path is None
         assert bar._processing is False
+
+    def test_pbcopy_failure_removes_orphan_mapping(
+        self, bar, pipeline, monkeypatch, tmp_path
+    ):
+        def failing_run(cmd, **kwargs):
+            raise subprocess.CalledProcessError(1, cmd)
+
+        monkeypatch.setattr(PIIBuddyMenuBar, "_write_clipboard", _REAL_WRITE_CLIPBOARD)
+        monkeypatch.setattr(menubar.subprocess, "run", failing_run)
+
+        bar._do_remove_pii(None)
+
+        assert list((tmp_path / "mappings").glob("clipboard_*.map.json")) == []
 
     def test_write_clipboard_uses_check_true(self, monkeypatch):
         seen = {}
@@ -438,3 +479,103 @@ class TestLoginItem:
         assert sender.state is False
         assert bar._prefs["start_at_login"] is False
         assert bar.notifications
+
+
+class TestStaleLaunchAgent:
+    def _write(self, agent, d):
+        agent.parent.mkdir(parents=True, exist_ok=True)
+        agent.write_bytes(plistlib.dumps(d))
+
+    def test_tmp_log_path_plist_is_rewritten(self, agent, monkeypatch):
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        self._write(agent, {
+            "Label": "dev.piibuddy.menubar",
+            "ProgramArguments": [sys.executable, "-m", "pii_buddy.menubar"],
+            "StandardOutPath": "/tmp/pii_buddy_menubar.log",
+            "StandardErrorPath": "/tmp/pii_buddy_menubar.log",
+        })
+
+        assert menubar._refresh_stale_launchagent() is True
+
+        data = plistlib.loads(agent.read_bytes())
+        assert "StandardOutPath" not in data
+        assert "/tmp/pii_buddy_menubar.log" not in str(data)
+
+    def test_unreachable_interpreter_is_rewritten(self, agent, monkeypatch):
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        self._write(agent, {
+            "Label": "dev.piibuddy.menubar",
+            "ProgramArguments": ["/nonexistent/venv/bin/python", "-m", "x"],
+        })
+
+        assert menubar._refresh_stale_launchagent() is True
+        args = plistlib.loads(agent.read_bytes())["ProgramArguments"]
+        assert args[0] == sys.executable
+
+    def test_current_plist_is_left_alone(self, agent, monkeypatch):
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        menubar._set_login_item(True)
+        before = agent.read_bytes()
+
+        assert menubar._refresh_stale_launchagent() is False
+        assert agent.read_bytes() == before
+
+    def test_missing_plist_is_not_created(self, agent):
+        assert menubar._refresh_stale_launchagent() is False
+        assert not agent.exists()
+
+    def test_mas_build_never_rewrites(self, agent, monkeypatch):
+        self._write(agent, {"ProgramArguments": ["/nonexistent/python"]})
+        monkeypatch.setattr(menubar, "PII_BUDDY_MAS_BUILD", True)
+        before = agent.read_bytes()
+
+        assert menubar._refresh_stale_launchagent() is False
+        assert agent.read_bytes() == before
+
+    def test_main_refreshes_after_taking_lock(self, monkeypatch):
+        order = []
+        monkeypatch.setattr(
+            menubar, "_exit_if_already_running", lambda: order.append("lock")
+        )
+        monkeypatch.setattr(
+            menubar, "_refresh_stale_launchagent", lambda: order.append("refresh")
+        )
+        monkeypatch.setattr(menubar, "_make_log_handler", lambda: logging.NullHandler())
+        monkeypatch.setattr(
+            menubar, "PIIBuddyMenuBar",
+            lambda: SimpleNamespace(run=lambda: order.append("run")),
+        )
+
+        menubar.main()
+
+        assert order == ["lock", "refresh", "run"]
+
+
+class TestPlistProgramArguments:
+    def test_unfrozen_plist_is_pinned(self, agent, monkeypatch):
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        monkeypatch.setattr(sys, "executable", "/opt/py/bin/python3")
+
+        menubar._set_login_item(True)
+
+        assert plistlib.loads(agent.read_bytes()) == {
+            "Label": "dev.piibuddy.menubar",
+            "ProgramArguments": ["/opt/py/bin/python3", "-m", "pii_buddy.menubar"],
+            "WorkingDirectory": str(Path(menubar.__file__).parent.parent),
+            "RunAtLoad": True,
+            "KeepAlive": False,
+        }
+
+    def test_frozen_plist_is_pinned(self, agent, monkeypatch):
+        exe = "/Applications/PII Buddy.app/Contents/MacOS/PII Buddy"
+        monkeypatch.setattr(sys, "executable", exe)
+        monkeypatch.setattr(sys, "frozen", "macosx_app", raising=False)
+
+        menubar._set_login_item(True)
+
+        assert plistlib.loads(agent.read_bytes()) == {
+            "Label": "dev.piibuddy.menubar",
+            "ProgramArguments": [exe],
+            "RunAtLoad": True,
+            "KeepAlive": False,
+        }
