@@ -156,7 +156,7 @@ class TestExplicitToggleWrite:
         assert data["ThrottleInterval"] == 30
         assert data["EnvironmentVariables"] == {"PII_BUDDY_DIR": "/mine"}
         assert data["ProgramArguments"][0] == sys.executable
-        assert data["StandardOutPath"] == "/tmp/pii_buddy_menubar.log"
+        assert "StandardOutPath" not in data
 
 
 class TestLoginItemReportsHonestly:
@@ -207,8 +207,8 @@ class TestLoginItemReportsHonestly:
     def _rich(self):
         d = dict(self._same())
         d.update({
-            "StandardOutPath": "/mine/out.log",
-            "StandardErrorPath": "/mine/err.log",
+            "StandardOutPath": str(menubar.LOGS_DIR / "out.log"),
+            "StandardErrorPath": str(menubar.LOGS_DIR / "err.log"),
             "ThrottleInterval": 30,
             "EnvironmentVariables": {"PII_BUDDY_DIR": "/mine"},
             "KeepAlive": True,
@@ -247,6 +247,9 @@ class TestLoginItemReportsHonestly:
         for k in ("StandardOutPath", "StandardErrorPath", "ThrottleInterval",
                   "EnvironmentVariables", "KeepAlive"):
             assert data[k] == old[k]
+
+    def test_state_off_toggle_is_unaffected(self, agent):
+        assert menubar._set_login_item(False) is True
 
     @pytest.mark.parametrize("old", [
         {"Label": "com.other", "ProgramArguments": ["/x"], "ThrottleInterval": 5},
@@ -307,6 +310,96 @@ class TestLoginItemReportsHonestly:
         assert agent.read_bytes() == before
 
 
+class TestStaleLogPathsAreDropped:
+    STALE = "/tmp/pii_buddy_menubar.log"
+    KEEP = {
+        "ThrottleInterval": 30,
+        "EnvironmentVariables": {"PII_BUDDY_DIR": "/mine"},
+        "KeepAlive": False,
+    }
+
+    def _old(self, **extra):
+        return {"Label": LABEL, "ProgramArguments": ["/old/python", "-m", "x"],
+                "RunAtLoad": True, **self.KEEP, **extra}
+
+    def _same(self, **extra):
+        return {**menubar._build_launchagent_plist(), **self.KEEP, **extra}
+
+    @pytest.mark.parametrize("path", [
+        "/tmp/pii_buddy_menubar.log", "/mine/out.log", "/private/tmp/x.log",
+    ])
+    def test_replace_drops_stale_and_outside_logs_keeps_rest(self, agent, path):
+        _write(agent, self._old(StandardOutPath=path, StandardErrorPath=path))
+        menubar._write_launchagent_plist(allow_replace=True)
+        data = plistlib.loads(agent.read_bytes())
+        assert "StandardOutPath" not in data
+        assert "StandardErrorPath" not in data
+        for k, v in self.KEEP.items():
+            assert data[k] == v
+        assert data["ProgramArguments"][0] == sys.executable
+
+    def test_replace_keeps_log_inside_logs_dir(self, agent):
+        inside = str(menubar.LOGS_DIR / "mine.log")
+        _write(agent, self._old(StandardOutPath=inside))
+        menubar._write_launchagent_plist(allow_replace=True)
+        assert plistlib.loads(agent.read_bytes())["StandardOutPath"] == inside
+
+    def test_symlink_escape_from_logs_dir_is_dropped(
+        self, agent, tmp_path, monkeypatch
+    ):
+        logs = tmp_path / "logs"
+        logs.mkdir()
+        monkeypatch.setattr(menubar, "LOGS_DIR", logs)
+        link = logs / "escape"
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        link.symlink_to(outside)
+        _write(agent, self._old(StandardOutPath=str(link / "a.log")))
+        menubar._write_launchagent_plist(allow_replace=True)
+        assert "StandardOutPath" not in plistlib.loads(agent.read_bytes())
+
+    def test_same_args_with_stale_logs_is_cleaned_without_prompt(
+        self, agent, caplog
+    ):
+        _write(agent, self._same(
+            StandardOutPath=self.STALE, StandardErrorPath=self.STALE
+        ))
+        with caplog.at_level(logging.INFO, logger="pii_buddy"):
+            assert menubar._set_login_item(
+                True, confirm_replace=lambda: pytest.fail("asked")
+            ) is True
+        data = plistlib.loads(agent.read_bytes())
+        assert "StandardOutPath" not in data
+        assert "StandardErrorPath" not in data
+        for k, v in self.KEEP.items():
+            assert data[k] == v
+        assert data["ProgramArguments"] == menubar._build_launchagent_plist()[
+            "ProgramArguments"
+        ]
+        assert sorted(p.name for p in agent.parent.iterdir()) == [agent.name]
+        assert "unchanged" not in caplog.text
+
+    def test_cleaned_plist_no_longer_warns(self, agent):
+        _write(agent, self._same(StandardOutPath=self.STALE))
+        assert menubar._warn_if_stale_launchagent() is True
+        menubar._set_login_item(True)
+        assert menubar._warn_if_stale_launchagent() is False
+
+    def test_clean_identical_plist_is_noop_and_logs_unchanged(
+        self, agent, monkeypatch, caplog
+    ):
+        _write(agent, self._same())
+        before = agent.read_bytes()
+        monkeypatch.setattr(
+            os, "replace", lambda *a: pytest.fail("rewrote an identical item")
+        )
+        with caplog.at_level(logging.INFO, logger="pii_buddy"):
+            assert menubar._set_login_item(True) is True
+        assert agent.read_bytes() == before
+        assert "unchanged" in caplog.text
+        assert "Login item created" not in caplog.text
+
+
 class TestLockDirectories:
     @pytest.fixture
     def paths(self, tmp_path, monkeypatch):
@@ -356,6 +449,32 @@ class TestLockDirectories:
             holder.close()
         assert not a.exists() or a.read_bytes() == b""
         assert list(a.parent.iterdir()) in ([], [a])
+
+    def test_lock_messages_do_not_print_the_path(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        secret = tmp_path / "secret-dir-name" / "menubar.lock"
+        monkeypatch.setattr(os, "open", lambda *a, **k: (_ for _ in ()).throw(
+            PermissionError(errno.EACCES, "denied", str(secret))
+        ))
+        assert menubar._try_lock(secret, [])[0] == "unavailable"
+        err = capsys.readouterr().err
+        assert "secret-dir-name" not in err
+        assert "PermissionError" in err
+
+    def test_flock_failure_message_does_not_print_the_path(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        secret = tmp_path / "secret-dir-name" / "menubar.lock"
+
+        def boom(f, op):
+            raise OSError(errno.EIO, "io", str(secret))
+
+        monkeypatch.setattr(fcntl, "flock", boom)
+        assert menubar._try_lock(secret, [])[0] == "unavailable"
+        err = capsys.readouterr().err
+        assert "secret-dir-name" not in err
+        assert "OSError" in err
 
     def test_lock_file_is_never_unlinked(self, tmp_path, monkeypatch):
         path = tmp_path / "x" / "menubar.lock"

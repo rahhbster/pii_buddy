@@ -180,7 +180,7 @@ def _try_lock(path: Path, created: list):
     except OSError as e:
         logger.error(f"Single-instance lock unavailable: {type(e).__name__}")
         print(
-            f"PII Buddy could not create its lock file ({e}); "
+            f"PII Buddy could not create its lock file ({type(e).__name__}); "
             "continuing without the file-lock guard.",
             file=sys.stderr,
         )
@@ -193,7 +193,7 @@ def _try_lock(path: Path, created: list):
             return "held", None
         logger.error(f"Single-instance lock failed: {type(e).__name__}")
         print(
-            f"PII Buddy could not take its lock ({e}); "
+            f"PII Buddy could not take its lock ({type(e).__name__}); "
             "continuing without the file-lock guard.",
             file=sys.stderr,
         )
@@ -365,6 +365,20 @@ def _save_prefs(prefs: dict):
 # --- LaunchAgent for login item ---
 
 _STALE_LOG_PATH = "/tmp/pii_buddy_menubar.log"
+_LOG_KEYS = ("StandardOutPath", "StandardErrorPath")
+
+
+def _is_stale_log_path(value) -> bool:
+    """True for a launchd log path that is the old /tmp file or outside LOGS_DIR."""
+    if value is None:
+        return False
+    if not isinstance(value, str) or value == _STALE_LOG_PATH:
+        return True
+    try:
+        root = os.path.realpath(LOGS_DIR)
+        return os.path.commonpath([root, os.path.realpath(value)]) != root
+    except ValueError:
+        return True
 
 
 def _build_launchagent_plist() -> dict:
@@ -399,9 +413,7 @@ def _warn_if_stale_launchagent() -> bool:
         old = plistlib.loads(_LAUNCHAGENT_PATH.read_bytes())
         args = old.get("ProgramArguments") or []
         stale = (
-            _STALE_LOG_PATH in (
-                old.get("StandardOutPath"), old.get("StandardErrorPath")
-            )
+            any(_is_stale_log_path(old.get(k)) for k in _LOG_KEYS)
             or not args
             or not os.path.exists(args[0])
         )
@@ -439,8 +451,17 @@ def _write_launchagent_plist(allow_replace: bool) -> bool:
     but different ProgramArguments is replaced only with ``allow_replace``,
     and then only ProgramArguments/WorkingDirectory/RunAtLoad change; every
     other key (log paths, EnvironmentVariables, ThrottleInterval, ...) stays.
-    An identical Label and ProgramArguments is left untouched.
+    StandardOutPath/StandardErrorPath are dropped when they point at the old
+    /tmp log or outside LOGS_DIR, since that file is world-readable.  An
+    identical Label and ProgramArguments is left untouched, except that such
+    log keys alone are removed (no confirmation: it only hardens the file).
     """
+    _apply_launchagent_plist(allow_replace)
+    return True
+
+
+def _apply_launchagent_plist(allow_replace: bool) -> bool:
+    """Do the work of ``_write_launchagent_plist``; True if the file changed."""
     new = _build_launchagent_plist()
     if _LAUNCHAGENT_PATH.exists():
         try:
@@ -454,13 +475,18 @@ def _write_launchagent_plist(allow_replace: bool) -> bool:
             if not allow_replace:
                 logger.warning("Login item differs; not overwriting it.")
                 raise LoginItemRefused(_LOGIN_DIFFERS_MESSAGE)
+            merged = dict(old)
+            merged.pop("WorkingDirectory", None)
+            for k in ("ProgramArguments", "WorkingDirectory", "RunAtLoad"):
+                if k in new:
+                    merged[k] = new[k]
+        elif any(_is_stale_log_path(old.get(k)) for k in _LOG_KEYS):
+            merged = dict(old)
         else:
-            return True
-        merged = dict(old)
-        merged.pop("WorkingDirectory", None)
-        for k in ("ProgramArguments", "WorkingDirectory", "RunAtLoad"):
-            if k in new:
-                merged[k] = new[k]
+            return False
+        for k in _LOG_KEYS:
+            if _is_stale_log_path(merged.get(k)):
+                merged.pop(k, None)
         new = merged
     _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(
@@ -505,8 +531,10 @@ def _set_login_item(enabled: bool, confirm_replace=None) -> bool:
             except Exception:
                 differs = False  # unparseable/foreign: the writer refuses it
             allow = bool(confirm_replace()) if differs else False
-        _write_launchagent_plist(allow_replace=allow)
-        logger.info(f"Login item created: {_LAUNCHAGENT_PATH}")
+        if _apply_launchagent_plist(allow_replace=allow):
+            logger.info(f"Login item written: {_LAUNCHAGENT_PATH}")
+        else:
+            logger.info("Login item unchanged.")
         return True
     else:
         if _LAUNCHAGENT_PATH.exists():

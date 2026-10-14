@@ -41,7 +41,7 @@ def _protected_prefixes():
 
 
 _PROTECTED = _protected_prefixes()
-_BANNED_COMMANDS = {"pbcopy", "pbpaste", "launchctl"}
+_BANNED_COMMANDS = {"pbcopy", "pbpaste", "launchctl", "osascript", "gh"}
 
 _orig_home = Path.home
 _orig_expanduser = os.path.expanduser

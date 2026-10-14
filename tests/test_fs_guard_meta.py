@@ -72,6 +72,9 @@ cases = {
     "os.spawnv": lambda: os.spawnv(os.P_WAIT, "pbcopy", ["pbcopy"]),
     "os.spawnvp": lambda: os.spawnvp(os.P_WAIT, "launchctl", ["launchctl"]),
     "os.spawnl": lambda: os.spawnl(os.P_WAIT, "pbpaste", "pbpaste"),
+    "subprocess.run(osascript)": lambda: subprocess.run(["osascript", "-e", "1"]),
+    "subprocess.run(gh)": lambda: subprocess.run(["gh", "pr", "list"]),
+    "os.system(gh)": lambda: os.system("gh auth status"),
 }
 # Linux-only; absent on macOS, so only exercised where they exist.
 if hasattr(os, "setxattr"):
@@ -97,6 +100,7 @@ EXPECTED = [
     "subprocess.Popen", "subprocess.check_output", "subprocess.check_call",
     "subprocess.call", "os.system", "os.popen", "os.execv", "os.execvp",
     "os.execl", "os.spawnv", "os.spawnvp", "os.spawnl",
+    "subprocess.run(osascript)", "subprocess.run(gh)", "os.system(gh)",
 ]
 
 
@@ -108,7 +112,7 @@ def result():
         env = {
             "HOME": str(fake_home),
             "PII_BUDDY_DIR": str(Path(td) / "base" / "PII_Buddy"),
-            # No pbcopy/pbpaste/launchctl on PATH: if a guard ever fails, the
+            # No pbcopy/pbpaste/launchctl/osascript/gh on PATH: if a guard ever fails, the
             # call dies with FileNotFoundError instead of touching the clipboard.
             "PATH": str(Path(td) / "emptybin"),
             "PYTHONPATH": str(ROOT),
