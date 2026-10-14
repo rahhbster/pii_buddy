@@ -14,6 +14,7 @@ Set PII_BUDDY_DIR env var to change the base folder (default: ~/PII_Buddy).
 """
 
 import argparse
+import errno
 import json
 import logging
 import os
@@ -588,6 +589,11 @@ def main():
             mapping_data = json.loads(mapping_path.read_text(encoding="utf-8"))
             if not isinstance(mapping_data, dict):
                 raise ValueError("mapping is not a JSON object")
+            tags = mapping_data.get("tags")
+            if not isinstance(tags, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in tags.items()
+            ):
+                raise ValueError("mapping has no valid tags object")
         except (OSError, ValueError) as e:
             logger.error(f"Cannot read mapping file {mapping_path}: {type(e).__name__}")
             sys.exit(1)
@@ -609,12 +615,25 @@ def main():
         restored_name = f"RESTORED_{restored_name}"
 
         out_path = redacted_path.parent / restored_name
-        # Restored text is plaintext PII: owner-only from creation, and
-        # tightened even when the file already existed with looser bits.
+        # Restored text is plaintext PII: created 0600, never following a
+        # symlink and never replacing an existing file (pick a free name).
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        stem, suffix = os.path.splitext(restored_name)
         try:
-            fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd = None
+            for n in range(0, 1000):
+                candidate = out_path if n == 0 else out_path.with_name(f"{stem}_{n}{suffix}")
+                try:
+                    fd = os.open(candidate, flags, 0o600)
+                except (FileExistsError, OSError) as e:
+                    if isinstance(e, FileExistsError) or e.errno == errno.ELOOP:
+                        continue
+                    raise
+                out_path = candidate
+                break
+            if fd is None:
+                raise FileExistsError("no free output name")
             try:
-                os.fchmod(fd, 0o600)
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(restored)
             except BaseException:
