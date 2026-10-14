@@ -10,13 +10,16 @@ Usage:
     python -m pii_buddy.menubar
 """
 
+import errno
 import fcntl
 import json
 import logging
 import os
 import subprocess
 import sys
+import plistlib
 import threading
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +30,7 @@ logger = logging.getLogger("pii_buddy")
 # Only wired into the menu when PII_BUDDY_MAS_BUILD is set (see
 # setup_py2app.py's MAS variant / extras/entitlements_mas.plist). The
 # existing direct-download build never references this.
-from .config import PII_BUDDY_MAS_BUILD  # noqa: E402
+from .config import BASE_DIR, LOGS_DIR, PII_BUDDY_MAS_BUILD  # noqa: E402
 from .mac_sandbox.bookmark_store import BookmarkStore  # noqa: E402
 
 
@@ -65,8 +68,25 @@ class WatchFolderMenuController:
 
 # --- Single-instance guard ---
 
-_LOCK_FILE_PATH = "/tmp/pii_buddy_menubar.lock"
+_LOCK_FILE_PATH = BASE_DIR / "menubar.lock"
 _lock_file = None  # keep reference alive to hold the lock
+
+_LOG_PATH = LOGS_DIR / "menubar.log"
+
+
+def _ensure_private_log() -> Path:
+    """Create the menubar log owner-readable only and return its path."""
+    _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(_LOG_PATH, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+    os.close(fd)
+    os.chmod(_LOG_PATH, 0o600)
+    return _LOG_PATH
+
+
+def _log_failure(message: str, exc: BaseException):
+    """Log the exception type and frames only; messages can carry user text."""
+    frames = "".join(traceback.format_tb(exc.__traceback__))
+    logger.error(f"{message}: {type(exc).__name__}\n{frames}")
 
 
 def _exit_if_already_running():
@@ -84,14 +104,38 @@ def _exit_if_already_running():
     global _lock_file
 
     # --- Option A: file lock ---
+    # Append mode so a losing instance doesn't truncate the holder's PID.
     try:
-        _lock_file = open(_LOCK_FILE_PATH, "w")
-        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _lock_file.write(str(os.getpid()))
-        _lock_file.flush()
-    except (IOError, OSError):
-        print("PII Buddy is already running (lock held).", file=sys.stderr)
-        sys.exit(0)
+        _LOCK_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        lock_file = open(_LOCK_FILE_PATH, "a")
+    except OSError as e:
+        logger.error(f"Single-instance lock unavailable: {e}")
+        print(
+            f"PII Buddy could not create its lock file ({e}); "
+            "continuing without the file-lock guard.",
+            file=sys.stderr,
+        )
+        lock_file = None
+
+    if lock_file is not None:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            lock_file.close()
+            if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+                print("PII Buddy is already running (lock held).", file=sys.stderr)
+                sys.exit(0)
+            logger.error(f"Single-instance lock failed: {e}")
+            print(
+                f"PII Buddy could not take its lock ({e}); "
+                "continuing without the file-lock guard.",
+                file=sys.stderr,
+            )
+        else:
+            _lock_file = lock_file
+            lock_file.truncate(0)
+            lock_file.write(str(os.getpid()))
+            lock_file.flush()
 
     # --- Option B: NSRunningApplication check ---
     try:
@@ -116,6 +160,16 @@ _DONE_DISPLAY_SECONDS = 5
 # Preferences file path
 _PREFS_DIR = Path.home() / "PII_Buddy"
 _PREFS_PATH = _PREFS_DIR / "menubar_prefs.json"
+
+_GENERIC_ERROR_MESSAGE = (
+    "Something went wrong. See the logs folder in your PII Buddy "
+    "directory for details."
+)
+
+_LOGIN_UNAVAILABLE_MESSAGE = (
+    "Start at Login isn't available in the App Store version. "
+    "Add PII Buddy under System Settings > General > Login Items."
+)
 
 # LaunchAgent for "Start at Login"
 _LAUNCHAGENT_DIR = Path.home() / "Library" / "LaunchAgents"
@@ -165,41 +219,39 @@ def _save_prefs(prefs: dict):
 
 # --- LaunchAgent for login item ---
 
-def _set_login_item(enabled: bool):
-    """Create or remove a LaunchAgent plist for auto-start at login."""
+def _set_login_item(enabled: bool) -> bool:
+    """Create or remove a LaunchAgent plist for auto-start at login.
+
+    Returns False when enabling is not possible (MAS sandbox).
+    """
     if enabled:
-        python_path = sys.executable
-        project_dir = str(Path(__file__).parent.parent)
-        plist = f"""\
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{_LAUNCHAGENT_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python_path}</string>
-        <string>-m</string>
-        <string>pii_buddy.menubar</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{project_dir}</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>/tmp/pii_buddy_menubar.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/pii_buddy_menubar.log</string>
-</dict>
-</plist>
-"""
+        if PII_BUDDY_MAS_BUILD:
+            # A LaunchAgent written into the sandbox container is never
+            # read by launchd; honouring the toggle would be a lie.
+            logger.warning("Start at Login is unavailable in the sandboxed build.")
+            return False
+        if getattr(sys, "frozen", False):
+            # py2app bundle: sys.executable is the app's own launcher and
+            # "-m pii_buddy.menubar" is meaningless to it.
+            program_args = [sys.executable]
+            extra = {}
+        else:
+            program_args = [sys.executable, "-m", "pii_buddy.menubar"]
+            extra = {"WorkingDirectory": str(Path(__file__).parent.parent)}
+        log_path = str(_ensure_private_log())
+        plist = {
+            "Label": _LAUNCHAGENT_LABEL,
+            "ProgramArguments": program_args,
+            **extra,
+            "RunAtLoad": True,
+            "KeepAlive": False,
+            "StandardOutPath": log_path,
+            "StandardErrorPath": log_path,
+        }
         _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
-        _LAUNCHAGENT_PATH.write_text(plist, encoding="utf-8")
+        _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(plist))
         logger.info(f"Login item created: {_LAUNCHAGENT_PATH}")
+        return True
     else:
         if _LAUNCHAGENT_PATH.exists():
             # Unload first, then remove
@@ -209,6 +261,7 @@ def _set_login_item(enabled: bool):
             )
             _LAUNCHAGENT_PATH.unlink()
             logger.info("Login item removed.")
+        return True
 
 
 # --- Dock visibility ---
@@ -337,7 +390,7 @@ class PIIBuddyMenuBar:
         threading.Thread(target=self._setup_dock_menu, daemon=True).start()
 
         # Prompt to start at login on first launch (fires once after 2s)
-        if not self._prefs.get("prompted_login"):
+        if not self._prefs.get("prompted_login") and not PII_BUDDY_MAS_BUILD:
             self._login_prompt_timer = rumps.Timer(
                 self._prompt_start_at_login, 2
             )
@@ -382,9 +435,11 @@ class PIIBuddyMenuBar:
             )
             clicked_yes = response == 1
         if clicked_yes:
-            self._login_toggle.state = True
-            self._prefs["start_at_login"] = True
-            _set_login_item(True)
+            if _set_login_item(True):
+                self._login_toggle.state = True
+                self._prefs["start_at_login"] = True
+            else:
+                self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
         self._prefs["prompted_login"] = True
         _save_prefs(self._prefs)
 
@@ -409,9 +464,7 @@ class PIIBuddyMenuBar:
             class _Target(NSObject):
                 @objc.typedSelector(b'v@:@')
                 def removePII_(self, sender):
-                    _app_ref._on_remove_pii(
-                        _app_ref.app.menu["Remove PII from Clipboard"]
-                    )
+                    _app_ref._dock_remove_pii()
 
                 @objc.typedSelector(b'v@:@')
                 def restoreLast_(self, sender):
@@ -448,6 +501,14 @@ class PIIBuddyMenuBar:
             )
         except Exception as e:
             logger.debug(f"Dock menu setup skipped: {e}")
+
+    def _dock_remove_pii(self):
+        # rumps keys menu items by title, which reads "Processing..." mid-run.
+        try:
+            item = self.app.menu["Remove PII from Clipboard"]
+        except KeyError:
+            item = None
+        self._on_remove_pii(item)
 
     # --- Icon state management ---
 
@@ -496,10 +557,12 @@ class PIIBuddyMenuBar:
 
     def _on_toggle_login(self, sender):
         new_state = not sender.state
+        if not _set_login_item(new_state):
+            self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
+            return
         sender.state = new_state
         self._prefs["start_at_login"] = new_state
         _save_prefs(self._prefs)
-        _set_login_item(new_state)
 
     # --- Feedback callbacks ---
 
@@ -587,9 +650,8 @@ class PIIBuddyMenuBar:
                 except Exception as e:
                     logger.warning(f"Verify skipped: {e}")
 
-            self._write_clipboard(redacted_text)
-
-            # Save mapping
+            # Mapping first: if it can't be saved the clipboard still holds
+            # the original, which is otherwise unrecoverable.
             MAPPINGS_DIR.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             mapping["metadata"] = {
@@ -602,6 +664,7 @@ class PIIBuddyMenuBar:
                 json.dumps(mapping, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            self._write_clipboard(redacted_text)
             self._last_mapping_path = mapping_path
             self._last_entities_found = len(entities)
 
@@ -611,8 +674,8 @@ class PIIBuddyMenuBar:
             )
             self._show_done_then_reset()
         except Exception as e:
-            self._notify(f"Error: {e}")
-            logger.error(f"Menu bar error: {e}", exc_info=True)
+            self._notify(_GENERIC_ERROR_MESSAGE)
+            _log_failure("Menu bar error", e)
             self._set_icon(_ICON_READY)
         finally:
             if sender:
@@ -633,7 +696,8 @@ class PIIBuddyMenuBar:
             self._notify("PII Restored! Original text copied to clipboard.")
             self._show_done_then_reset()
         except Exception as e:
-            self._notify(f"Error: {e}")
+            self._notify(_GENERIC_ERROR_MESSAGE)
+            _log_failure("Menu bar restore error", e)
             self._set_icon(_ICON_READY)
         finally:
             self._processing = False
@@ -664,6 +728,12 @@ def main():
         format="%(asctime)s  %(message)s",
         datefmt="%H:%M:%S",
     )
+    try:
+        handler = logging.FileHandler(_ensure_private_log(), encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s"))
+        logger.addHandler(handler)
+    except OSError as e:
+        print(f"PII Buddy could not open its log file: {e}", file=sys.stderr)
     _exit_if_already_running()
     app = PIIBuddyMenuBar()
     app.run()
