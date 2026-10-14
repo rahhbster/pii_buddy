@@ -12,6 +12,23 @@ Regression tests: `tests/test_dir_override.py`.
 
 ## Next
 
+**Team-mode wave in flight (2026-10-14).** Read each PR's "Design notes",
+"Objections" and "Needs owner decision" sections before merging.
+
+1. Fix PRs (open, unmerged, none red-teamed yet): #3 updater/blocklist,
+   #4 redactor/restorer tag collisions. Still being written: detector
+   (2 stacked PRs), watcher collisions + permissions, menubar, site +
+   LICENSE, CI + fixtures. Run `gh pr list` for the live set.
+2. Next step: dispatch a red-team agent per PR (not its author), then
+   merge in this order to avoid conflicts: 4, 3, detector stack,
+   watcher, menubar, site/LICENSE, CI.
+3. Local API + MCP server: an Architect design is being produced
+   (design only, no code). Reuse tool names from
+   `pii_buddy_private/docs/strategy/08-mcp-hosted-service-design.md`.
+   Mac App Store build cannot host a server (needs network.server);
+   server is CLI/DMG build only.
+4. Do not delete any remote branch without asking the owner.
+
 **Free sandbox smoke test — do this first.** Needs a real Mac and
 Console.app. Run the tests first:
 `pip install pytest && pytest -q` (pytest is not in `requirements.txt`;
