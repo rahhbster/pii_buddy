@@ -21,8 +21,9 @@ jobs:
           # md only: what production prefers (SPACY_MODEL)
           - python: "3.12"
             model: en_core_web_md
-          # README promises 3.9+; keep the floor honest
-          - python: "3.9"
+          # Floor: the current spaCy needs thinc>=8.3.12, which requires
+          # Python 3.10, so 3.9 cannot install it on current PyPI.
+          - python: "3.10"
             model: en_core_web_md
     steps:
       - uses: actions/checkout@v4
