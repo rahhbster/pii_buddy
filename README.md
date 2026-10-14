@@ -22,7 +22,7 @@ The fastest way to get started on a Mac:
 
 On first launch, PII Buddy will walk you through a one-time setup (~2-3 min) that creates a Python environment and downloads language models. After that it starts instantly.
 
-> **Requirement:** Python 3.9+ must already be installed. If you don't have it: `brew install python@3.12` or download from [python.org](https://www.python.org/downloads/).
+> **Requirement:** Python 3.10+ must already be installed. If you don't have it: `brew install python@3.12` or download from [python.org](https://www.python.org/downloads/).
 
 For manual installation or Linux, see [Installation](#installation) below.
 
@@ -53,7 +53,7 @@ Every processed file gets a companion `.map.json` file that stores the mapping b
 ## Requirements
 
 - **macOS** or **Linux** (Windows support possible but untested)
-- **Python 3.9+** (Python 3.12 recommended)
+- **Python 3.10+** (Python 3.12 recommended)
   - On macOS with Homebrew: `brew install python@3.12`
 
 ## Installation
@@ -68,7 +68,7 @@ cd pii_buddy
 ```
 
 Setup takes about 2-3 minutes. It will:
-1. Find a suitable Python 3.9+ on your system
+1. Find a suitable Python 3.10+ on your system
 2. Create an isolated virtual environment in `.venv/`
 3. Install dependencies (spaCy, watchdog, pdfplumber, python-docx, fpdf2)
 4. Download spaCy English language models (`en_core_web_md` ~40MB, `en_core_web_sm` ~12MB fallback)
@@ -496,7 +496,7 @@ Run this periodically to pick up new false-positive terms as they're added to th
 ## Troubleshooting
 
 **`setup.sh` fails with Python version error**
-You need Python 3.9+. On macOS: `brew install python@3.12`
+You need Python 3.10+. On macOS: `brew install python@3.12`
 
 **spaCy model download fails**
 Run manually:

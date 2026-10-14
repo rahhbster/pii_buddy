@@ -253,27 +253,25 @@ APPLESCRIPT
 fi
 rm -f "${BUNDLE_DIR}/.write_test"
 
-# ---- Find Python 3.9+ on the system ----
+# ---- Find Python 3.10+ on the system ----
 PYTHON=""
 for candidate in \
     /opt/homebrew/bin/python3.12 \
     /opt/homebrew/bin/python3.13 \
     /opt/homebrew/bin/python3.11 \
     /opt/homebrew/bin/python3.10 \
-    /opt/homebrew/bin/python3.9 \
     /opt/homebrew/bin/python3 \
     /usr/local/bin/python3.12 \
     /usr/local/bin/python3.13 \
     /usr/local/bin/python3.11 \
     /usr/local/bin/python3.10 \
-    /usr/local/bin/python3.9 \
     /usr/local/bin/python3 \
     /usr/bin/python3; do
     if [ -x "$candidate" ]; then
         version=$("$candidate" -c "import sys; print(sys.version_info[:2])" 2>/dev/null || true)
         major=$(echo "$version" | grep -oE '[0-9]+' | head -1)
         minor=$(echo "$version" | grep -oE '[0-9]+' | tail -1)
-        if [ -n "$major" ] && [ -n "$minor" ] && [ "$major" -ge 3 ] && [ "$minor" -ge 9 ] 2>/dev/null; then
+        if [ -n "$major" ] && [ -n "$minor" ] && [ "$major" -ge 3 ] && [ "$minor" -ge 10 ] 2>/dev/null; then
             PYTHON="$candidate"
             break
         fi
@@ -283,7 +281,7 @@ done
 if [ -z "$PYTHON" ]; then
     # Show a native macOS dialog — no Python found
     button=$(osascript <<'APPLESCRIPT'
-set r to display dialog "PII Buddy requires Python 3.9 or later." & return & return & "Install it with:" & return & "  brew install python@3.12" & return & return & "Or download from python.org." with title "PII Buddy - Python Not Found" buttons {"Open python.org", "OK"} default button "OK" with icon caution
+set r to display dialog "PII Buddy requires Python 3.10 or later." & return & return & "Install it with:" & return & "  brew install python@3.12" & return & return & "Or download from python.org." with title "PII Buddy - Python Not Found" buttons {"Open python.org", "OK"} default button "OK" with icon caution
 return button returned of r
 APPLESCRIPT
     )
