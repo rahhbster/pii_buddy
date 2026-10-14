@@ -1,4 +1,4 @@
-# Backlog — App Store submission
+# Backlog
 
 Tracked follow-up work after the sandbox-compliance build
 (`pii_buddy/mac_sandbox/`). See `app_store_sandbox.md` for the full
@@ -6,7 +6,10 @@ writeup of what's implemented/tested vs. unverified, and the
 "if you're picking this up to actually ship it" section for the
 detailed order of operations.
 
-## Next immediate step — free sandbox smoke test (DO THIS FIRST)
+## Next
+
+**Free sandbox smoke test — do this first.** Status: not yet run.
+
 
 Do this before spending money or time on Apple Developer enrollment/certs.
 It answers the single biggest open risk for free, using **ad-hoc code
@@ -58,7 +61,30 @@ Then:
 Whatever happens, capture the Console.app output (verbatim, especially
 any `deny` lines) before moving on to certs/provisioning below.
 
-## Blocking submission (after the smoke test above passes)
+Local env: `.venv` was rebuilt on Python 3.13 (CI uses 3.12). `pytest` is
+not in `requirements.txt`; install it into the venv before running tests.
+Suite is 79 passing.
+
+After the smoke test passes, the submission checklist is under
+**Open decisions**.
+
+## Open decisions
+
+- **Does a sandboxed app get background folder access via
+  `startAccessingSecurityScopedResource`?** The smoke test answers this.
+  If it fails, "watch a folder" becomes drag-and-drop. That is a
+  structural change, not a patch.
+- **Will App Review accept the "watch a folder in the background"
+  pattern?** Budget for one rejection cycle regardless of entitlements.
+- **`origin/claude/pii-redaction-cost-analysis-SjAw1`**: two commits, one
+  doc (`docs/pii_redaction_cost_analysis.md`, 1086 lines), never merged.
+  Merge or delete.
+- **Bookmark staleness** across OS upgrades, volume renames or iCloud
+  Drive folders is only observable through long-term use. Code logs a
+  warning and proceeds on `is_stale`; UX not validated.
+
+### Blocking submission (after the smoke test passes)
+
 
 - [ ] Get an Apple Developer Program membership (if not already enrolled).
 - [ ] Create the "3rd Party Mac Developer Application" and "3rd Party Mac
@@ -78,17 +104,9 @@ any `deny` lines) before moving on to certs/provisioning below.
       one rejection cycle — Apple may reject the "watch a folder in the
       background" pattern outright regardless of correct entitlements.
 
-## Known gaps, unrelated to this work
+## Ruled out
 
-- [x] ~~Pre-existing bug: `main.py --once` throws `FileNotFoundError` in
-      non-MAS `--dir` mode~~ — root-caused and fixed: `ensure_dirs()`
-      referenced a stale `ALL_DIRS`/`USER_BLOCKLISTS_DIR` binding captured
-      at import time, so a `--dir` override's directories were never
-      actually created before the file copy ran. The `--dir` override
-      block was also missing `USER_BLOCKLISTS_DIR`/`FEEDBACK_DIR` from the
-      dirs it created. Both fixed; regression tests in
-      `tests/test_dir_override.py`.
-- [ ] Bookmark staleness behavior across OS upgrades, volume renames, or
-      iCloud Drive folders is only observable through real, long-term
-      usage — current code logs a warning and proceeds on `is_stale`, UX
-      not yet validated.
+- Nothing tried-and-failed yet. The `--once` + `--dir` `FileNotFoundError`
+  was a real bug, now fixed: `ensure_dirs()` used a stale `ALL_DIRS` /
+  `USER_BLOCKLISTS_DIR` binding captured at import time. Regression tests
+  in `tests/test_dir_override.py`.
