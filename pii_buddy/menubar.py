@@ -14,6 +14,7 @@ import errno
 import fcntl
 import json
 import logging
+import logging.handlers
 import os
 import subprocess
 import sys
@@ -83,6 +84,39 @@ def _ensure_private_log() -> Path:
     return _LOG_PATH
 
 
+class _PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotating handler whose files, including rotated ones, stay 0600."""
+
+    def _open(self):
+        stream = super()._open()
+        os.chmod(self.baseFilename, 0o600)
+        return stream
+
+
+def _make_log_handler(max_bytes=1_000_000, backup_count=3):
+    handler = _PrivateRotatingFileHandler(
+        _ensure_private_log(),
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s"))
+    return handler
+
+
+def _write_private_text(path: Path, text: str):
+    """Write ``text`` to ``path`` owner-readable only (mappings hold PII)."""
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1
+            f.write(text)
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
 def _log_failure(message: str, exc: BaseException):
     """Log the exception type and frames only; messages can carry user text."""
     frames = "".join(traceback.format_tb(exc.__traceback__))
@@ -109,7 +143,7 @@ def _exit_if_already_running():
         _LOCK_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
         lock_file = open(_LOCK_FILE_PATH, "a")
     except OSError as e:
-        logger.error(f"Single-instance lock unavailable: {e}")
+        logger.error(f"Single-instance lock unavailable: {type(e).__name__}")
         print(
             f"PII Buddy could not create its lock file ({e}); "
             "continuing without the file-lock guard.",
@@ -125,7 +159,7 @@ def _exit_if_already_running():
             if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
                 print("PII Buddy is already running (lock held).", file=sys.stderr)
                 sys.exit(0)
-            logger.error(f"Single-instance lock failed: {e}")
+            logger.error(f"Single-instance lock failed: {type(e).__name__}")
             print(
                 f"PII Buddy could not take its lock ({e}); "
                 "continuing without the file-lock guard.",
@@ -136,8 +170,11 @@ def _exit_if_already_running():
             lock_file.truncate(0)
             lock_file.write(str(os.getpid()))
             lock_file.flush()
+            # We own the lock, so no other instance can: a count > 1 here
+            # is a racing launch that also sees us, and both would exit.
+            return
 
-    # --- Option B: NSRunningApplication check ---
+    # --- Option B: NSRunningApplication check (lock unavailable only) ---
     try:
         from AppKit import NSRunningApplication
         bundle_id = "dev.piibuddy.menubar"
@@ -169,6 +206,11 @@ _GENERIC_ERROR_MESSAGE = (
 _LOGIN_UNAVAILABLE_MESSAGE = (
     "Start at Login isn't available in the App Store version. "
     "Add PII Buddy under System Settings > General > Login Items."
+)
+
+_LOGIN_FAILED_MESSAGE = (
+    "Couldn't change the Start at Login setting. "
+    "You can add PII Buddy under System Settings > General > Login Items."
 )
 
 # LaunchAgent for "Start at Login"
@@ -214,7 +256,7 @@ def _save_prefs(prefs: dict):
             json.dumps(prefs, indent=2), encoding="utf-8"
         )
     except Exception as e:
-        logger.warning(f"Could not save preferences: {e}")
+        logger.warning(f"Could not save preferences: {type(e).__name__}")
 
 
 # --- LaunchAgent for login item ---
@@ -238,15 +280,14 @@ def _set_login_item(enabled: bool) -> bool:
         else:
             program_args = [sys.executable, "-m", "pii_buddy.menubar"]
             extra = {"WorkingDirectory": str(Path(__file__).parent.parent)}
-        log_path = str(_ensure_private_log())
+        # No StandardOut/ErrorPath: main() logs to a rotating file itself,
+        # and pointing launchd at the same file duplicates every line.
         plist = {
             "Label": _LAUNCHAGENT_LABEL,
             "ProgramArguments": program_args,
             **extra,
             "RunAtLoad": True,
             "KeepAlive": False,
-            "StandardOutPath": log_path,
-            "StandardErrorPath": log_path,
         }
         _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
         _LAUNCHAGENT_PATH.write_bytes(plistlib.dumps(plist))
@@ -435,11 +476,17 @@ class PIIBuddyMenuBar:
             )
             clicked_yes = response == 1
         if clicked_yes:
-            if _set_login_item(True):
-                self._login_toggle.state = True
-                self._prefs["start_at_login"] = True
+            try:
+                enabled = _set_login_item(True)
+            except OSError as e:
+                logger.error(f"Login item failed: {type(e).__name__}")
+                self._notify(_LOGIN_FAILED_MESSAGE)
             else:
-                self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
+                if enabled:
+                    self._login_toggle.state = True
+                    self._prefs["start_at_login"] = True
+                else:
+                    self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
         self._prefs["prompted_login"] = True
         _save_prefs(self._prefs)
 
@@ -500,7 +547,7 @@ class PIIBuddyMenuBar:
                 applicationDockMenu_,
             )
         except Exception as e:
-            logger.debug(f"Dock menu setup skipped: {e}")
+            logger.debug(f"Dock menu setup skipped: {type(e).__name__}")
 
     def _dock_remove_pii(self):
         # rumps keys menu items by title, which reads "Processing..." mid-run.
@@ -557,7 +604,13 @@ class PIIBuddyMenuBar:
 
     def _on_toggle_login(self, sender):
         new_state = not sender.state
-        if not _set_login_item(new_state):
+        try:
+            changed = _set_login_item(new_state)
+        except OSError as e:
+            logger.error(f"Login item failed: {type(e).__name__}")
+            self._notify(_LOGIN_FAILED_MESSAGE)
+            return
+        if not changed:
             self._notify(_LOGIN_UNAVAILABLE_MESSAGE)
             return
         sender.state = new_state
@@ -648,7 +701,7 @@ class PIIBuddyMenuBar:
                         redacted_text, mapping, settings
                     )
                 except Exception as e:
-                    logger.warning(f"Verify skipped: {e}")
+                    logger.warning(f"Verify skipped: {type(e).__name__}")
 
             # Mapping first: if it can't be saved the clipboard still holds
             # the original, which is otherwise unrecoverable.
@@ -660,11 +713,11 @@ class PIIBuddyMenuBar:
                 "entities_found": len(entities),
             }
             mapping_path = MAPPINGS_DIR / f"clipboard_{timestamp}.map.json"
-            mapping_path.write_text(
-                json.dumps(mapping, indent=2, ensure_ascii=False),
-                encoding="utf-8",
+            _write_private_text(
+                mapping_path, json.dumps(mapping, indent=2, ensure_ascii=False)
             )
-            self._write_clipboard(redacted_text)
+            if not self._copy_back(redacted_text):
+                return
             self._last_mapping_path = mapping_path
             self._last_entities_found = len(entities)
 
@@ -692,7 +745,8 @@ class PIIBuddyMenuBar:
 
             from .restorer import restore
             restored = restore(text, self._last_mapping_path)
-            self._write_clipboard(restored)
+            if not self._copy_back(restored):
+                return
             self._notify("PII Restored! Original text copied to clipboard.")
             self._show_done_then_reset()
         except Exception as e:
@@ -713,7 +767,20 @@ class PIIBuddyMenuBar:
 
     @staticmethod
     def _write_clipboard(text: str):
-        subprocess.run(["pbcopy"], input=text, text=True)
+        subprocess.run(["pbcopy"], input=text, text=True, check=True)
+
+    def _copy_back(self, text: str) -> bool:
+        """Write to the clipboard; on failure say so without the text."""
+        try:
+            self._write_clipboard(text)
+        except (subprocess.CalledProcessError, OSError) as e:
+            logger.error(f"Clipboard write failed: {type(e).__name__}")
+            self._notify(
+                "Couldn't copy to the clipboard. Your clipboard is unchanged."
+            )
+            self._set_icon(_ICON_READY)
+            return False
+        return True
 
     def _notify(self, message: str):
         self._rumps.notification("PII Buddy", "", message)
@@ -729,9 +796,7 @@ def main():
         datefmt="%H:%M:%S",
     )
     try:
-        handler = logging.FileHandler(_ensure_private_log(), encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s"))
-        logger.addHandler(handler)
+        logger.addHandler(_make_log_handler())
     except OSError as e:
         print(f"PII Buddy could not open its log file: {e}", file=sys.stderr)
     _exit_if_already_running()

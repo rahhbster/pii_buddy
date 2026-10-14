@@ -7,8 +7,12 @@ the attributes each method touches are provided.
 
 import errno
 import fcntl
+import logging
+import logging.handlers
 import plistlib
+import re
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +23,7 @@ import pii_buddy.menubar as menubar
 from pii_buddy.menubar import PIIBuddyMenuBar
 
 FAKE_PII = "jane.doe@example.com 555-01-0199"
+_REAL_WRITE_CLIPBOARD = PIIBuddyMenuBar.__dict__["_write_clipboard"]
 
 
 @pytest.fixture(autouse=True)
@@ -66,8 +71,46 @@ class TestSingleInstanceLock:
         assert lock_path.exists()
         menubar._lock_file.close()
 
-    def test_default_lock_path_is_not_tmp(self):
-        assert not str(menubar._LOCK_FILE_PATH).startswith("/tmp")
+    def test_default_lock_path_is_inside_configured_base_dir(self):
+        assert menubar._LOCK_FILE_PATH == menubar.BASE_DIR / "menubar.lock"
+
+    def test_held_flock_skips_bundle_check(self, lock_path, monkeypatch):
+        # Two racing launches both see 2 running copies; the flock winner
+        # must not exit on that count or both exit(0).
+        fake = SimpleNamespace(
+            NSRunningApplication=SimpleNamespace(
+                runningApplicationsWithBundleIdentifier_=lambda bid: [1, 2]
+            )
+        )
+        monkeypatch.setitem(sys.modules, "AppKit", fake)
+
+        menubar._exit_if_already_running()
+
+        assert menubar._lock_file is not None
+        menubar._lock_file.close()
+
+    def test_bundle_check_still_applies_when_lock_unavailable(
+        self, lock_path, monkeypatch, capsys
+    ):
+        fake = SimpleNamespace(
+            NSRunningApplication=SimpleNamespace(
+                runningApplicationsWithBundleIdentifier_=lambda bid: [1, 2]
+            )
+        )
+        monkeypatch.setitem(sys.modules, "AppKit", fake)
+        real_open = open
+
+        def deny(path, *a, **k):
+            if str(path) == str(lock_path):
+                raise PermissionError(errno.EPERM, "denied")
+            return real_open(path, *a, **k)
+
+        monkeypatch.setattr("builtins.open", deny)
+
+        with pytest.raises(SystemExit) as exc:
+            menubar._exit_if_already_running()
+        assert exc.value.code == 0
+        assert "bundle check" in capsys.readouterr().err
 
 
 @pytest.fixture
@@ -132,7 +175,7 @@ class TestClipboardOrdering:
         def boom(self, *args, **kwargs):
             raise OSError(errno.ENOSPC, "no space")
 
-        monkeypatch.setattr(Path, "write_text", boom)
+        monkeypatch.setattr(menubar.os, "open", boom)
 
         bar._do_remove_pii(None)
 
@@ -143,6 +186,45 @@ class TestClipboardOrdering:
 
         assert pipeline == ["<<EMAIL_1>>"]
         assert bar._last_mapping_path.exists()
+
+    def test_mapping_file_is_owner_only(self, bar, pipeline):
+        bar._do_remove_pii(None)
+
+        mode = stat.S_IMODE(bar._last_mapping_path.stat().st_mode)
+        assert mode == 0o600
+
+    def test_pbcopy_failure_is_not_reported_as_copied(
+        self, bar, pipeline, monkeypatch, caplog
+    ):
+        def failing_run(cmd, **kwargs):
+            raise subprocess.CalledProcessError(1, cmd)
+
+        monkeypatch.setattr(PIIBuddyMenuBar, "_write_clipboard", _REAL_WRITE_CLIPBOARD)
+        monkeypatch.setattr(menubar.subprocess, "run", failing_run)
+
+        with caplog.at_level("DEBUG", logger="pii_buddy"):
+            bar._do_remove_pii(None)
+
+        assert bar.notifications
+        assert any("clipboard" in m.lower() for m in bar.notifications)
+        assert all("Copied back" not in m for m in bar.notifications)
+        assert all("jane.doe" not in m for m in bar.notifications)
+        assert "jane.doe" not in caplog.text
+        assert bar._last_mapping_path is None
+        assert bar._processing is False
+
+    def test_write_clipboard_uses_check_true(self, monkeypatch):
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(menubar.subprocess, "run", fake_run)
+
+        _REAL_WRITE_CLIPBOARD.__func__("x")
+
+        assert seen.get("check") is True
 
 
 class TestErrorHygiene:
@@ -198,14 +280,37 @@ class TestErrorHygiene:
         assert bar.notifications
         assert all("jane.doe" not in m for m in bar.notifications)
 
-    def test_private_log_is_owner_only_and_not_in_tmp(self, tmp_path, monkeypatch):
+    def test_verify_failure_logs_type_only(
+        self, bar, pipeline, monkeypatch, caplog
+    ):
+        import pii_buddy.settings as settings
+        verifier = SimpleNamespace()
+        monkeypatch.setitem(sys.modules, "pii_buddy.verifier", verifier)
+        monkeypatch.setattr(
+            settings, "resolve_settings",
+            lambda base_dir: SimpleNamespace(
+                verify_enabled=True, verify_api_key="k"
+            ),
+        )
+
+        def boom(*args, **kwargs):
+            raise RuntimeError(f"upstream echoed {FAKE_PII}")
+
+        verifier.verify_and_patch = boom
+
+        with caplog.at_level("DEBUG", logger="pii_buddy"):
+            bar._do_remove_pii(None)
+
+        assert "jane.doe" not in caplog.text
+        assert "RuntimeError" in caplog.text
+
+    def test_private_log_is_owner_only(self, tmp_path, monkeypatch):
         path = tmp_path / "logs" / "menubar.log"
         monkeypatch.setattr(menubar, "_LOG_PATH", path)
 
         menubar._ensure_private_log()
 
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
-        assert not str(menubar._LOG_PATH).startswith("/tmp")
 
 
 class TestDockLookup:
@@ -264,11 +369,55 @@ class TestLoginItem:
         args = plistlib.loads(agent.read_bytes())["ProgramArguments"]
         assert args[1:] == ["-m", "pii_buddy.menubar"]
 
-    def test_log_paths_are_not_tmp(self, agent):
+    def test_plist_does_not_duplicate_the_file_log(self, agent):
+        # main() already attaches a rotating file handler; routing
+        # stdout/stderr to the same file doubles every line unrotated.
         menubar._set_login_item(True)
 
         data = plistlib.loads(agent.read_bytes())
-        assert not data["StandardErrorPath"].startswith("/tmp")
+        assert "StandardOutPath" not in data
+        assert "StandardErrorPath" not in data
+
+    def test_oserror_on_enable_does_not_raise_from_toggle(
+        self, agent, bar, monkeypatch
+    ):
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        monkeypatch.setattr(menubar, "_save_prefs", lambda prefs: None)
+
+        def deny(self, *a, **k):
+            raise PermissionError(errno.EACCES, "denied")
+
+        monkeypatch.setattr(Path, "write_bytes", deny)
+        bar._prefs = {"start_at_login": False}
+        sender = SimpleNamespace(state=False)
+
+        bar._on_toggle_login(sender)
+
+        assert sender.state is False
+        assert bar.notifications
+
+    def test_oserror_in_first_launch_prompt_still_sets_flag(
+        self, agent, bar, monkeypatch
+    ):
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        saved = []
+        monkeypatch.setattr(menubar, "_save_prefs", saved.append)
+
+        def deny(self, *a, **k):
+            raise PermissionError(errno.EACCES, "denied")
+
+        monkeypatch.setattr(Path, "write_bytes", deny)
+        bar._prefs = {"start_at_login": False, "prompted_login": False}
+        bar._login_toggle = SimpleNamespace(state=False)
+        bar._rumps = SimpleNamespace(alert=lambda **kw: 1)
+        timer = SimpleNamespace(stop=lambda: None)
+
+        bar._prompt_start_at_login(timer)
+
+        assert bar._prefs["prompted_login"] is True
+        assert saved
+        assert bar._prefs["start_at_login"] is False
+        assert bar.notifications
 
     def test_mas_build_skips_launchagent_and_says_so(self, agent, monkeypatch):
         monkeypatch.setattr(menubar, "PII_BUDDY_MAS_BUILD", True)

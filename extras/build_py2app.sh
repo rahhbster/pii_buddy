@@ -98,22 +98,12 @@ cat > "${PROJECT_DIR}/_py2app_entry.py" << 'ENTRY'
 
 Launches the menu bar app directly — no CLI argument parsing needed.
 """
-import logging
-import sys
-
 def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s  %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    # menubar.main() owns logging setup (rotating private file log) and the
+    # single-instance guard; don't duplicate either here.
+    from pii_buddy.menubar import main as menubar_main
 
-    # Import and run the menu bar app
-    from pii_buddy.menubar import _exit_if_already_running, PIIBuddyMenuBar
-
-    _exit_if_already_running()
-    app = PIIBuddyMenuBar()
-    app.run()
+    menubar_main()
 
 if __name__ == "__main__":
     main()
