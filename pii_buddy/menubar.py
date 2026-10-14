@@ -155,8 +155,9 @@ def _try_lock(path: Path, created: list):
 
     Returns ``(state, file)``: "acquired" with the open file, "held" when
     another process owns it, "unavailable" when it can't be used.  Every
-    file or directory this call creates is appended to ``created`` so a
-    losing instance can remove what it made.
+    directory this call creates is appended to ``created`` so a losing
+    instance can remove it if still empty.  The lock file itself is never
+    unlinked: a racing opener may hold a flock on that inode.
     """
     try:
         # Only directories whose mkdir succeeds here are ours to remove; one
@@ -173,7 +174,6 @@ def _try_lock(path: Path, created: list):
         flags = os.O_WRONLY | os.O_APPEND
         try:
             fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
-            created.append(path)
         except FileExistsError:
             fd = os.open(path, flags, 0o600)
         lock_file = os.fdopen(fd, "a")
@@ -205,10 +205,10 @@ def _try_lock(path: Path, created: list):
 
 
 def _remove_created(created: list):
-    """Undo files and directories a losing instance made (deepest first)."""
+    """Remove directories a losing instance made, if empty (deepest first)."""
     for p in sorted(created, key=lambda p: len(p.parts), reverse=True):
         try:
-            p.rmdir() if p.is_dir() else p.unlink()
+            p.rmdir()
         except OSError:
             pass
 
@@ -259,6 +259,11 @@ def _exit_if_already_running():
         state, lock_file = _try_lock(path, created)
         if state == "held":
             for f in acquired:
+                # Leave an empty file, not our PID, once we step aside.
+                try:
+                    f.truncate(0)
+                except OSError:
+                    pass
                 f.close()
             _remove_created(created)
             print("PII Buddy is already running (lock held).", file=sys.stderr)
@@ -431,8 +436,10 @@ def _write_launchagent_plist(allow_replace: bool) -> bool:
     Never returns False: when the existing file is not ours to replace it
     raises ``LoginItemRefused`` and touches nothing.  A plist whose Label is
     not ours (or that can't be parsed) is never replaced.  One with our Label
-    but different ProgramArguments is replaced only with ``allow_replace``;
-    unknown keys (EnvironmentVariables, ThrottleInterval, ...) are kept.
+    but different ProgramArguments is replaced only with ``allow_replace``,
+    and then only ProgramArguments/WorkingDirectory/RunAtLoad change; every
+    other key (log paths, EnvironmentVariables, ThrottleInterval, ...) stays.
+    An identical Label and ProgramArguments is left untouched.
     """
     new = _build_launchagent_plist()
     if _LAUNCHAGENT_PATH.exists():
@@ -447,12 +454,14 @@ def _write_launchagent_plist(allow_replace: bool) -> bool:
             if not allow_replace:
                 logger.warning("Login item differs; not overwriting it.")
                 raise LoginItemRefused(_LOGIN_DIFFERS_MESSAGE)
-        kept = {
-            k: v for k, v in old.items()
-            if k not in new
-            and k not in ("StandardOutPath", "StandardErrorPath", "WorkingDirectory")
-        }
-        new = {**kept, **new}
+        else:
+            return True
+        merged = dict(old)
+        merged.pop("WorkingDirectory", None)
+        for k in ("ProgramArguments", "WorkingDirectory", "RunAtLoad"):
+            if k in new:
+                merged[k] = new[k]
+        new = merged
     _LAUNCHAGENT_DIR.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(
         dir=_LAUNCHAGENT_DIR, prefix=f".{_LAUNCHAGENT_PATH.name}.", suffix=".tmp"

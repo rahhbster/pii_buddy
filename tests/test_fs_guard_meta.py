@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 SCRIPT = r'''
-import importlib.util, io, json, os, pathlib, plistlib, shutil, sys
+import importlib.util, io, json, os, pathlib, plistlib, shutil, subprocess, sys
 import pytest
 
 spec = importlib.util.spec_from_file_location("guard_conftest", sys.argv[1])
@@ -51,7 +51,32 @@ cases = {
     "plistlib.dump": lambda: plistlib.dump(
         {}, type("F", (), {"name": la + "/a.plist"})()
     ),
+    "os.utime": lambda: os.utime(la + "/a.plist"),
+    "os.chown": lambda: os.chown(la + "/a.plist", -1, -1),
+    "os.rmdir": lambda: os.rmdir(pb),
+    "os.removedirs": lambda: os.removedirs(pb + "/x/y"),
+    "shutil.rmtree": lambda: shutil.rmtree(pb),
+    "shutil.copytree": lambda: shutil.copytree("/nonexistent-src", pb + "/c"),
+    "Path.rmdir": lambda: P(pb).rmdir(),
+    "subprocess.run": lambda: subprocess.run(["pbcopy"]),
+    "subprocess.run(shell)": lambda: subprocess.run("echo x | pbcopy", shell=True),
+    "subprocess.Popen": lambda: subprocess.Popen(["pbpaste"]),
+    "subprocess.check_output": lambda: subprocess.check_output(["pbpaste"]),
+    "subprocess.check_call": lambda: subprocess.check_call(["launchctl", "list"]),
+    "subprocess.call": lambda: subprocess.call(["/nonexistent/bin/pbcopy"]),
+    "os.system": lambda: os.system("pbcopy"),
+    "os.popen": lambda: os.popen("pbpaste"),
+    "os.execv": lambda: os.execv("pbcopy", ["pbcopy"]),
+    "os.execvp": lambda: os.execvp("launchctl", ["launchctl"]),
+    "os.execl": lambda: os.execl("pbcopy", "pbcopy"),
+    "os.spawnv": lambda: os.spawnv(os.P_WAIT, "pbcopy", ["pbcopy"]),
+    "os.spawnvp": lambda: os.spawnvp(os.P_WAIT, "launchctl", ["launchctl"]),
+    "os.spawnl": lambda: os.spawnl(os.P_WAIT, "pbpaste", "pbpaste"),
 }
+# Linux-only; absent on macOS, so only exercised where they exist.
+if hasattr(os, "setxattr"):
+    cases["os.setxattr"] = lambda: os.setxattr(la + "/a.plist", "user.x", b"1")
+    cases["os.removexattr"] = lambda: os.removexattr(la + "/a.plist", "user.x")
 out = {}
 for name, fn in cases.items():
     try:
@@ -67,6 +92,11 @@ EXPECTED = [
     "Path.write_bytes", "os.open", "os.mkdir", "os.makedirs", "Path.mkdir",
     "os.chmod", "os.symlink", "os.link", "os.truncate", "os.replace",
     "os.rename", "os.unlink", "os.remove", "shutil.move", "plistlib.dump",
+    "os.utime", "os.chown", "os.rmdir", "os.removedirs", "shutil.rmtree",
+    "shutil.copytree", "Path.rmdir", "subprocess.run", "subprocess.run(shell)",
+    "subprocess.Popen", "subprocess.check_output", "subprocess.check_call",
+    "subprocess.call", "os.system", "os.popen", "os.execv", "os.execvp",
+    "os.execl", "os.spawnv", "os.spawnvp", "os.spawnl",
 ]
 
 
@@ -78,7 +108,9 @@ def result():
         env = {
             "HOME": str(fake_home),
             "PII_BUDDY_DIR": str(Path(td) / "base" / "PII_Buddy"),
-            "PATH": os.environ.get("PATH", ""),
+            # No pbcopy/pbpaste/launchctl on PATH: if a guard ever fails, the
+            # call dies with FileNotFoundError instead of touching the clipboard.
+            "PATH": str(Path(td) / "emptybin"),
             "PYTHONPATH": str(ROOT),
         }
         proc = subprocess.run(

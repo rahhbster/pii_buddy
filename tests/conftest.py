@@ -13,6 +13,7 @@ import json
 import os
 import plistlib
 import pwd
+import re
 import shutil
 import subprocess
 import tempfile
@@ -74,6 +75,24 @@ def _is_protected(path) -> bool:
     return False
 
 
+def _mentions_banned(*parts) -> bool:
+    """True if any string in ``parts`` (nested, or a shell line) names a banned program."""
+    for part in parts:
+        if isinstance(part, (bytes, os.PathLike)):
+            part = os.fsdecode(part)
+        if isinstance(part, str):
+            for tok in re.split(r"[\s;|&()<>]+", part):
+                if tok and os.path.basename(tok) in _BANNED_COMMANDS:
+                    return True
+        elif isinstance(part, (list, tuple)):
+            if _mentions_banned(*part):
+                return True
+        elif isinstance(part, dict):
+            if _mentions_banned(*part.values()):
+                return True
+    return False
+
+
 def _guard(path, what):
     if _is_protected(path):
         pytest.fail(f"test touched a real protected path via {what}: {path}")
@@ -125,13 +144,26 @@ def install_guards(monkeypatch):
     monkeypatch.setattr(builtins, "open", g_open)
     monkeypatch.setattr(io, "open", g_open)
 
+    def wrap_dst(owner, attr):
+        real = getattr(owner, attr)
+        label = f"{owner.__name__}.{attr}"
+
+        def inner(src, dst, *a, **k):
+            _guard(dst, label)
+            return real(src, dst, *a, **k)
+
+        monkeypatch.setattr(owner, attr, inner)
+
     for attr in ("open", "mkdir", "makedirs", "chmod", "truncate", "unlink",
-                 "remove", "rmdir"):
-        wrap_one(os, attr)
+                 "remove", "rmdir", "removedirs", "utime", "chown",
+                 "setxattr", "removexattr"):
+        if hasattr(os, attr):  # the xattr calls are Linux-only
+            wrap_one(os, attr)
     for attr in ("replace", "rename", "symlink", "link"):
         wrap_two(os, attr)
     wrap_one(shutil, "rmtree")
     wrap_two(shutil, "move")
+    wrap_dst(shutil, "copytree")
 
     for attr in ("open", "write_bytes", "write_text", "unlink", "mkdir",
                  "touch", "chmod", "rmdir"):
@@ -147,21 +179,42 @@ def install_guards(monkeypatch):
 
     monkeypatch.setattr(plistlib, "dump", g_dump)
 
-    real_run = subprocess.run
+    def wrap_exec(owner, attr):
+        if not hasattr(owner, attr):
+            return
+        real = getattr(owner, attr)
+        label = f"{owner.__name__}.{attr}"
 
-    def g_run(args, *a, **k):
-        cmd = args if isinstance(args, str) else (args[0] if args else "")
-        if os.path.basename(str(cmd)) in _BANNED_COMMANDS:
-            pytest.fail(f"test ran a real {cmd}")
-        return real_run(args, *a, **k)
+        def inner(*a, **k):
+            if _mentions_banned(*a, *k.values()):
+                pytest.fail(f"test ran a real banned program via {label}")
+            return real(*a, **k)
 
-    monkeypatch.setattr(subprocess, "run", g_run)
+        monkeypatch.setattr(owner, attr, inner)
+
+    for attr in ("run", "call", "check_call", "check_output"):
+        wrap_exec(subprocess, attr)
+    for attr in ("system", "popen", "posix_spawn", "posix_spawnp",
+                 "execl", "execle", "execlp", "execlpe", "execv", "execve",
+                 "execvp", "execvpe", "spawnl", "spawnle", "spawnlp",
+                 "spawnlpe", "spawnv", "spawnve", "spawnvp", "spawnvpe"):
+        wrap_exec(os, attr)
+
+    real_popen = subprocess.Popen
+
+    class GuardedPopen(real_popen):
+        def __init__(self, args, *a, **k):
+            if _mentions_banned(args, k.get("executable")):
+                pytest.fail("test ran a real banned program via subprocess.Popen")
+            super().__init__(args, *a, **k)
+
+    monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
 
 
 @pytest.fixture(autouse=True)
-def hermetic(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    home.mkdir()
+def hermetic(tmp_path_factory, monkeypatch):
+    # Outside tmp_path: tests that list their own tmp_path must not see it.
+    home = tmp_path_factory.mktemp("home")
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(
         os.path, "expanduser",

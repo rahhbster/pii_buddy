@@ -156,7 +156,7 @@ class TestExplicitToggleWrite:
         assert data["ThrottleInterval"] == 30
         assert data["EnvironmentVariables"] == {"PII_BUDDY_DIR": "/mine"}
         assert data["ProgramArguments"][0] == sys.executable
-        assert "StandardOutPath" not in data
+        assert data["StandardOutPath"] == "/tmp/pii_buddy_menubar.log"
 
 
 class TestLoginItemReportsHonestly:
@@ -203,6 +203,50 @@ class TestLoginItemReportsHonestly:
         assert menubar._set_login_item(
             True, confirm_replace=lambda: pytest.fail("asked")
         ) is True
+
+    def _rich(self):
+        d = dict(self._same())
+        d.update({
+            "StandardOutPath": "/mine/out.log",
+            "StandardErrorPath": "/mine/err.log",
+            "ThrottleInterval": 30,
+            "EnvironmentVariables": {"PII_BUDDY_DIR": "/mine"},
+            "KeepAlive": True,
+        })
+        return d
+
+    def test_same_label_and_args_is_a_noop_and_writes_nothing(
+        self, agent, monkeypatch
+    ):
+        _write(agent, self._rich())
+        before = agent.read_bytes()
+        monkeypatch.setattr(
+            os, "replace", lambda *a: pytest.fail("rewrote an identical login item")
+        )
+        monkeypatch.setattr(
+            menubar.tempfile, "mkstemp", lambda *a, **k: pytest.fail("wrote temp")
+        )
+        assert menubar._write_launchagent_plist(allow_replace=False) is True
+        assert menubar._set_login_item(
+            True, confirm_replace=lambda: pytest.fail("asked")
+        ) is True
+        assert agent.read_bytes() == before
+
+    def test_confirmed_replace_merges_and_keeps_every_other_key(self, agent):
+        old = self._rich()
+        old["ProgramArguments"] = ["/old/python", "-m", "x"]
+        old["WorkingDirectory"] = "/old/dir"
+        old["RunAtLoad"] = False
+        _write(agent, old)
+        assert menubar._set_login_item(True, confirm_replace=lambda: True) is True
+        data = plistlib.loads(agent.read_bytes())
+        new = self._same()
+        assert data["ProgramArguments"] == new["ProgramArguments"]
+        assert data.get("WorkingDirectory") == new.get("WorkingDirectory")
+        assert data["RunAtLoad"] is True
+        for k in ("StandardOutPath", "StandardErrorPath", "ThrottleInterval",
+                  "EnvironmentVariables", "KeepAlive"):
+            assert data[k] == old[k]
 
     @pytest.mark.parametrize("old", [
         {"Label": "com.other", "ProgramArguments": ["/x"], "ThrottleInterval": 5},
@@ -310,8 +354,48 @@ class TestLockDirectories:
                 menubar._exit_if_already_running()
         finally:
             holder.close()
-        assert not a.exists()
-        assert not a.parent.exists()
+        assert not a.exists() or a.read_bytes() == b""
+        assert list(a.parent.iterdir()) in ([], [a])
+
+    def test_lock_file_is_never_unlinked(self, tmp_path, monkeypatch):
+        path = tmp_path / "x" / "menubar.lock"
+        monkeypatch.setattr(
+            os, "unlink", lambda *a: pytest.fail("unlinked a lock file")
+        )
+        monkeypatch.setattr(
+            Path, "unlink", lambda *a, **k: pytest.fail("unlinked a lock file")
+        )
+        created = []
+        state, f = menubar._try_lock(path, created)
+        assert state == "acquired"
+        f.close()
+        assert path not in created
+        menubar._remove_created(created)
+        assert path.exists()
+
+    def test_creator_that_lost_flock_leaves_winners_inode_alone(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "y" / "menubar.lock"
+        real_flock = fcntl.flock
+        winner = {}
+
+        def racing(fobj, op):
+            if "f" not in winner:
+                winner["f"] = open(path, "a")
+                real_flock(winner["f"], fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return real_flock(fobj, op)
+
+        monkeypatch.setattr(fcntl, "flock", racing)
+        created = []
+        state, f = menubar._try_lock(path, created)
+        assert state == "held"
+        menubar._remove_created(created)
+        try:
+            assert path.exists()
+            assert os.fstat(winner["f"].fileno()).st_ino == path.stat().st_ino
+        finally:
+            winner["f"].close()
 
 
 class TestMappingNameClaim:
