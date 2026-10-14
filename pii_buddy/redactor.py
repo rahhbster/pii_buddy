@@ -49,14 +49,54 @@ def _group_names(person_entities: list) -> dict[str, str]:
     return canonical
 
 
-def _free_tag(make_tag, text: str, used: set) -> str:
-    """First make_tag(n) that is not literal source text and not already assigned."""
-    n = 1
-    while True:
-        tag = make_tag(n)
-        if tag not in text and tag not in used:
-            return tag
-        n += 1
+_LETTER = "A-Za-z\u00c0-\u024f"
+_CJK_RE = re.compile(
+    "[\u2e80-\u9fff\u3400-\u4dbf\uf900-\ufaff\uac00-\ud7af\u3040-\u30ff]"
+)
+_TAG_SHAPED_RE = re.compile(r"(?=(<<[A-Za-z0-9_]+_\d+>>|<NAME [^>]+>))")
+
+
+class _TagAllocator:
+    """Hands out tags that are neither literal source text nor already assigned.
+
+    The source is scanned once; each key keeps a counter that only moves forward.
+    """
+
+    def __init__(self, text: str):
+        self._literal = {m.group(1) for m in _TAG_SHAPED_RE.finditer(text)}
+        self._used = set()
+        self._next = {}
+
+    def allocate(self, key, make_tag) -> str:
+        n = self._next.get(key, 1)
+        while True:
+            tag = make_tag(n)
+            n += 1
+            if tag not in self._literal and tag not in self._used:
+                self._next[key] = n
+                self._used.add(tag)
+                return tag
+
+
+def _name_pattern(surfaces, left_boundary=True) -> "re.Pattern":
+    """Whole-name matcher: letter-only boundaries, CJK surfaces unanchored.
+
+    Underscores, digits and CJK glued to a name still match; a trailing plural
+    or possessive is tolerated and left in place after the tag.
+    left_boundary=False drops the left anchor (used for CamelCase continuations).
+    """
+    left = rf"(?<![{_LETTER}])" if left_boundary else ""
+    alts = []
+    for s in sorted(surfaces, key=len, reverse=True):
+        esc = re.escape(s)
+        if _CJK_RE.search(s):
+            alts.append(esc)
+        else:
+            alts.append(
+                rf"{left}{esc}(?:(?=(?:'s|\u2019s|s)?(?![{_LETTER}]))"
+                r"|(?<=(?-i:[a-z]))(?=(?-i:[A-Z])))"
+            )
+    return re.compile("|".join(alts), re.IGNORECASE)
 
 
 def redact(text: str, entities: list) -> tuple[str, dict]:
@@ -77,16 +117,15 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
 
     # Tags that already appear in the source are skipped so restore() can
     # never mistake a literal tag in the document for one we generated.
-    used_tags = set()
+    tags = _TagAllocator(text)
     canonical_to_tag = {}
 
     for canonical_name in sorted(set(name_groups.values())):
         initials = _make_initials(canonical_name)
-        tag = _free_tag(
+        tag = tags.allocate(
+            ("NAME", initials),
             lambda n, i=initials: f"<NAME {i}>" if n == 1 else f"<NAME {i}{n}>",
-            text, used_tags,
         )
-        used_tags.add(tag)
         canonical_to_tag[canonical_name] = tag
 
     # Map every surface form to its tag
@@ -100,10 +139,9 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
     for ent in other_entities:
         if ent.text in value_to_tag:
             continue
-        tag = _free_tag(
-            lambda n, label=ent.label: f"<<{label}_{n}>>", text, used_tags
+        tag = tags.allocate(
+            ("OTHER", ent.label), lambda n, label=ent.label: f"<<{label}_{n}>>"
         )
-        used_tags.add(tag)
         value_to_tag[ent.text] = tag
 
     # --- Plan every replacement against the ORIGINAL text, then apply once ---
@@ -127,12 +165,8 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
         lowered = {}
         for surface in sorted(surface_to_tag, key=len, reverse=True):
             lowered.setdefault(surface.lower(), surface_to_tag[surface])
-        name_re = re.compile(
-            r"(?<!\w)(?:"
-            + "|".join(re.escape(s) for s in sorted(surface_to_tag, key=len, reverse=True))
-            + r")(?!\w)",
-            re.IGNORECASE,
-        )
+        name_re = _name_pattern(surface_to_tag)
+        glued_re = _name_pattern(surface_to_tag, left_boundary=False)
         entity_starts = [s[0] for s in spans]
         entity_spans = list(spans)
         for m in name_re.finditer(text):
@@ -142,6 +176,20 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
             if i + 1 < len(entity_spans) and entity_spans[i + 1][0] < m.end():
                 continue
             spans.append((m.start(), m.end(), lowered[m.group().lower()]))
+            # "AnnTestperson": a name glued to the next by a lower->Upper hump.
+            end = m.end()
+            while end < len(text) and text[end].isupper() and text[end - 1].islower():
+                g = glued_re.match(text, end)
+                if not g:
+                    break
+                if end < len(text) and entity_spans:
+                    j = bisect_right(entity_starts, end) - 1
+                    if j >= 0 and entity_spans[j][1] > end:
+                        break
+                    if j + 1 < len(entity_spans) and entity_spans[j + 1][0] < g.end():
+                        break
+                spans.append((g.start(), g.end(), lowered[g.group().lower()]))
+                end = g.end()
 
     pieces = []
     pos = 0

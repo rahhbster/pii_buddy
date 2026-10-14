@@ -135,3 +135,65 @@ ROUND_TRIP_TABLE = [
 def test_detected_entities_round_trip(text, tmp_path):
     redacted, mapping = redact(text, detect_pii(text))
     assert _restore(redacted, mapping, tmp_path) == text
+
+
+# Detected once as "Ann Testperson"; every other occurrence is only caught by the sweep.
+_SWEEP_CASES = [
+    ("Ann_Testperson_resume.pdf", True),
+    ("ann_testperson", True),
+    ("AnnTestperson2024", True),
+    ("Ann2 is here", True),
+    ("Testpersons attended", True),
+    ("the Testpersons' house", True),
+    ("Testperson's desk", True),
+    ("Annual report", False),
+    ("JoAnn left", False),
+    ("Annette left", False),
+    ("Maximus", False),
+]
+
+
+@pytest.mark.parametrize("snippet,redacted_expected", _SWEEP_CASES)
+def test_sweep_boundaries_latin(snippet, redacted_expected, tmp_path):
+    text = f"Ann Testperson wrote. {snippet}"
+    redacted, _, restored = _round_trip(
+        text, [("Ann Testperson", "PERSON")], tmp_path
+    )
+    tail = redacted.split("wrote. ", 1)[1]
+    if redacted_expected:
+        assert not re.search(r"ann|testperson", tail, re.IGNORECASE), tail
+        assert "<NAME AT>" in tail
+    else:
+        assert tail == snippet
+        assert restored == text
+
+
+@pytest.mark.parametrize("snippet", ["王小明先生", "王小明的", "见王小明。"])
+def test_sweep_boundaries_cjk(snippet, tmp_path):
+    text = f"王小明 wrote. {snippet}"
+    ents = [FakeEntity("王小明", "PERSON", 0, 3)]
+    redacted, mapping = redact(text, ents)
+    restored = _restore(redacted, mapping, tmp_path)
+    assert "王小明" not in redacted
+    assert restored == text
+
+
+def test_many_emails_is_not_quadratic(tmp_path):
+    import time
+    text = " ".join(f"user{i}@example.test" for i in range(2000))
+    ents = _entities(text, [(m, "EMAIL") for m in re.findall(r"\S+", text)])
+    t = time.perf_counter()
+    redacted, mapping = redact(text, ents)
+    assert time.perf_counter() - t < 1.0
+    assert _restore(redacted, mapping, tmp_path) == text
+
+
+def test_many_persons_is_not_quadratic(tmp_path):
+    import time
+    names = [f"Zxq{i} Testperson{i}" for i in range(1000)]
+    text = ". ".join(names)
+    ents = _entities(text, [(n, "PERSON") for n in names])
+    t = time.perf_counter()
+    redacted, mapping = redact(text, ents)
+    assert time.perf_counter() - t < 2.0
+    assert _restore(redacted, mapping, tmp_path) == text
