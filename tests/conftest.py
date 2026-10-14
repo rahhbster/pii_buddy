@@ -36,11 +36,11 @@ def default_settings():
 def sample_text():
     """A raw text with PII."""
     return (
-        "Dear Mr. Singh,\n\n"
-        "This is to confirm that Atul Singh and Robert Merrill "
-        "will attend the meeting on March 5. Robert's assistant "
+        "Dear Mr. Sample,\n\n"
+        "This is to confirm that Alex Sample and Rory Mockdata "
+        "will attend the meeting on March 5. Rory's assistant "
         "will prepare the agenda.\n\n"
-        "Best,\nDr. Amanda Chen"
+        "Best,\nDr. Ava Testcase"
     )
 
 
@@ -48,11 +48,11 @@ def sample_text():
 def sample_redacted_text():
     """Text after Pass 1 (spaCy + regex) — deliberately leaves some PII."""
     return (
-        "Dear Mr. Singh,\n\n"
+        "Dear Mr. Sample,\n\n"
         "This is to confirm that <NAME AS> and <NAME RM> "
-        "will attend the meeting on March 5. Robert's assistant "
+        "will attend the meeting on March 5. Rory's assistant "
         "will prepare the agenda.\n\n"
-        "Best,\nDr. Amanda Chen"
+        "Best,\nDr. Ava Testcase"
     )
 
 
@@ -61,16 +61,16 @@ def sample_mapping():
     """Mapping after Pass 1 — matches sample_redacted_text."""
     return {
         "tags": {
-            "<NAME AS>": "Atul Singh",
-            "<NAME RM>": "Robert Merrill",
+            "<NAME AS>": "Alex Sample",
+            "<NAME RM>": "Rory Mockdata",
         },
         "persons": {
-            "Atul Singh": "<NAME AS>",
-            "Robert Merrill": "<NAME RM>",
-            "Atul": "<NAME AS>",
-            "Singh": "<NAME AS>",
-            "Robert": "<NAME RM>",
-            "Merrill": "<NAME RM>",
+            "Alex Sample": "<NAME AS>",
+            "Rory Mockdata": "<NAME RM>",
+            "Alex": "<NAME AS>",
+            "Sample": "<NAME AS>",
+            "Rory": "<NAME RM>",
+            "Mockdata": "<NAME RM>",
         },
     }
 
