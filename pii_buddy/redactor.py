@@ -1,7 +1,7 @@
 """Replace detected PII with reversible tags and produce a mapping file."""
 
 import re
-from collections import defaultdict
+from bisect import bisect_right
 
 
 def _make_initials(name: str) -> str:
@@ -49,6 +49,31 @@ def _group_names(person_entities: list) -> dict[str, str]:
     return canonical
 
 
+_TAG_SHAPED_RE = re.compile(r"(?=(<<[A-Za-z0-9_]+_\d+>>|<NAME [^>]+>))")
+
+
+class _TagAllocator:
+    """Hands out tags that are neither literal source text nor already assigned.
+
+    The source is scanned once; each key keeps a counter that only moves forward.
+    """
+
+    def __init__(self, text: str):
+        self._literal = {m.group(1) for m in _TAG_SHAPED_RE.finditer(text)}
+        self._used = set()
+        self._next = {}
+
+    def allocate(self, key, make_tag) -> str:
+        n = self._next.get(key, 1)
+        while True:
+            tag = make_tag(n)
+            n += 1
+            if tag not in self._literal and tag not in self._used:
+                self._next[key] = n
+                self._used.add(tag)
+                return tag
+
+
 def redact(text: str, entities: list) -> tuple[str, dict]:
     """
     Replace PII entities with tags. Returns (redacted_text, mapping).
@@ -65,17 +90,17 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
     # --- Build person tag assignments ---
     name_groups = _group_names(person_entities)
 
-    # Assign initials-based tags, handling collisions
-    initials_count = defaultdict(int)
+    # Tags that already appear in the source are skipped so restore() can
+    # never mistake a literal tag in the document for one we generated.
+    tags = _TagAllocator(text)
     canonical_to_tag = {}
 
     for canonical_name in sorted(set(name_groups.values())):
         initials = _make_initials(canonical_name)
-        initials_count[initials] += 1
-        if initials_count[initials] > 1:
-            tag = f"<NAME {initials}{initials_count[initials]}>"
-        else:
-            tag = f"<NAME {initials}>"
+        tag = tags.allocate(
+            ("NAME", initials),
+            lambda n, i=initials: f"<NAME {i}>" if n == 1 else f"<NAME {i}{n}>",
+        )
         canonical_to_tag[canonical_name] = tag
 
     # Map every surface form to its tag
@@ -84,36 +109,91 @@ def redact(text: str, entities: list) -> tuple[str, dict]:
         surface_to_tag[surface] = canonical_to_tag[canonical]
 
     # --- Build tags for other entity types ---
-    type_counters = defaultdict(int)
     value_to_tag = {}  # dedup: same email appearing twice gets same tag
 
     for ent in other_entities:
         if ent.text in value_to_tag:
             continue
-        type_counters[ent.label] += 1
-        n = type_counters[ent.label]
-        tag = f"<<{ent.label}_{n}>>"
+        tag = tags.allocate(
+            ("OTHER", ent.label), lambda n, label=ent.label: f"<<{label}_{n}>>"
+        )
         value_to_tag[ent.text] = tag
 
-    # --- Perform replacements (work from end to start to preserve positions) ---
-    all_entities = sorted(entities, key=lambda e: e.start, reverse=True)
-    redacted = text
+    # --- Plan every replacement against the ORIGINAL text, then apply once ---
+    # `claimed` marks characters already assigned to a tag, so nothing can match
+    # inside an inserted tag or inside another entity's span.
+    claimed = bytearray(len(text))
+    spans = []
 
-    for ent in all_entities:
+    def claim(start, end, tag, partial_ok):
+        if claimed.find(1, start, end) == -1:
+            claimed[start:end] = b"\x01" * (end - start)
+            spans.append((start, end, tag))
+            return
+        if not partial_ok:
+            return
+        # Overlapping detected entities: tag only the part not yet covered.
+        i = start
+        while i < end:
+            if claimed[i]:
+                i += 1
+                continue
+            j = i
+            while j < end and not claimed[j]:
+                j += 1
+            claimed[i:j] = b"\x01" * (j - i)
+            spans.append((i, j, tag))
+            i = j
+
+    for ent in sorted(entities, key=lambda e: (e.start, e.start - e.end)):
+        start, end = max(ent.start, 0), min(ent.end, len(text))
+        if end <= start:
+            continue
         if ent.label == "PERSON":
             tag = surface_to_tag.get(ent.text, f"<NAME {_make_initials(ent.text)}>")
         else:
             tag = value_to_tag.get(ent.text, f"<<{ent.label}>>")
-        redacted = redacted[:ent.start] + tag + redacted[ent.end:]
+        claim(start, end, tag, True)
 
-    # --- Also catch person name references that spaCy missed ---
-    # Sort by length descending so "Steve Johnson" is replaced before "Steve"
-    for surface in sorted(surface_to_tag, key=len, reverse=True):
+    # --- Also catch name references that spaCy missed ---
+    # Case-insensitive substring match, longest surface first so
+    # "Steve Johnson" wins over "Steve". One pattern per surface keeps the
+    # match -> tag mapping exact (no .lower() round trip).
+    # Scan only the text no entity claimed (joined with NUL separators, which no
+    # surface contains) so the sweep costs what it did on main's shrunken text.
+    surfaces = sorted(surface_to_tag, key=len, reverse=True)
+    if any("\0" in s for s in surfaces):
+        residual, starts, origins = text, [0], [0]
+    else:
+        segs, starts, origins = [], [], []
+        pos, off = 0, 0
+        for s, e, _ in sorted(spans):
+            if s > pos:
+                segs.append(text[pos:s])
+                starts.append(off)
+                origins.append(pos)
+                off += s - pos + 1
+            pos = max(pos, e)
+        if pos < len(text):
+            segs.append(text[pos:])
+            starts.append(off)
+            origins.append(pos)
+        residual = "\0".join(segs)
+    for surface in surfaces:
         tag = surface_to_tag[surface]
-        # Replace remaining occurrences that weren't entity-tagged
-        # Use word boundaries to avoid partial matches
-        pattern = re.compile(re.escape(surface), re.IGNORECASE)
-        redacted = pattern.sub(tag, redacted)
+        for m in re.finditer(re.escape(surface), residual, re.IGNORECASE):
+            i = bisect_right(starts, m.start()) - 1
+            delta = origins[i] - starts[i]
+            claim(m.start() + delta, m.end() + delta, tag, False)
+
+    pieces = []
+    pos = 0
+    for start, end, tag in sorted(spans):
+        pieces.append(text[pos:start])
+        pieces.append(tag)
+        pos = end
+    pieces.append(text[pos:])
+    redacted = "".join(pieces)
 
     # --- Build the reversible mapping ---
     tag_to_original = {}

@@ -50,7 +50,7 @@ labels: detection-quality
 
 ## PII Buddy Version
 
-<!-- Run: python main.py --version (or check your release) -->
+<!-- Installed from a release: the release tag you downloaded. Cloned the repo: run `git rev-parse --short HEAD` in the pii_buddy folder. -->
 
 ## Additional Context
 

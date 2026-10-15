@@ -1,4 +1,4 @@
-// PII Buddy — Mobile nav & smooth scroll
+// PII Buddy — Mobile nav
 
 (function () {
   const toggle = document.querySelector('.nav-toggle');
@@ -21,60 +21,9 @@
 
   // Close nav on outside click
   document.addEventListener('click', function (e) {
-    if (links && !links.contains(e.target) && !toggle.contains(e.target)) {
+    if (links && toggle && !links.contains(e.target) && !toggle.contains(e.target)) {
       links.classList.remove('open');
       toggle.setAttribute('aria-expanded', 'false');
     }
   });
-
-  // Highlight active nav link on scroll
-  var sections = document.querySelectorAll('section[id]');
-  window.addEventListener('scroll', function () {
-    var scrollY = window.scrollY + 100;
-    sections.forEach(function (section) {
-      var top = section.offsetTop;
-      var height = section.offsetHeight;
-      var id = section.getAttribute('id');
-      var link = document.querySelector('.nav-links a[href="#' + id + '"]');
-      if (link) {
-        if (scrollY >= top && scrollY < top + height) {
-          link.style.color = '';
-        }
-      }
-    });
-  });
-  // Subscribe form handler
-  var form = document.getElementById('subscribeForm');
-  if (form) {
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var email = document.getElementById('subscribeEmail').value.trim();
-      if (!email) return;
-
-      // Try API endpoint first, fall back gracefully
-      fetch('https://api.piibuddy.com/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, source: 'landing_page' }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function () {
-          showSubscribeSuccess(form);
-        })
-        .catch(function () {
-          // API not live yet — show success anyway
-          showSubscribeSuccess(form);
-        });
-    });
-  }
-
-  function showSubscribeSuccess(formEl) {
-    while (formEl.firstChild) {
-      formEl.removeChild(formEl.firstChild);
-    }
-    var msg = document.createElement('p');
-    msg.className = 'subscribe-success';
-    msg.textContent = 'Subscribed! We\'ll keep you posted.';
-    formEl.appendChild(msg);
-  }
 })();

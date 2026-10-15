@@ -7,14 +7,14 @@ cd "$SCRIPT_DIR"
 
 echo "=== PII Buddy Setup ==="
 
-# Find a suitable Python 3.9+ — prefer homebrew, fall back to system
+# Find a suitable Python 3.10+ — prefer homebrew, fall back to system
 PYTHON=""
 for candidate in /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3 /usr/local/bin/python3.12 /usr/local/bin/python3.13 /usr/bin/python3; do
     if [ -x "$candidate" ]; then
         version=$("$candidate" -c "import sys; print(sys.version_info[:2])" 2>/dev/null)
         major=$(echo "$version" | grep -oE '[0-9]+' | head -1)
         minor=$(echo "$version" | grep -oE '[0-9]+' | tail -1)
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 9 ] 2>/dev/null; then
+        if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ] 2>/dev/null; then
             PYTHON="$candidate"
             break
         fi
@@ -22,7 +22,7 @@ for candidate in /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.13 /opt/
 done
 
 if [ -z "$PYTHON" ]; then
-    echo "ERROR: Python 3.9+ required. Found versions:"
+    echo "ERROR: Python 3.10+ required. Found versions:"
     python3 --version 2>/dev/null
     echo "Install Python 3.12 via: brew install python@3.12"
     exit 1
