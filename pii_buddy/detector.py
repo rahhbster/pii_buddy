@@ -22,8 +22,19 @@ class PIIEntity:
 
 # The lookbehind pins the start to the beginning of a run of local-part
 # characters; without it every position in "a.a.a.…" rescans the whole run.
+# Two bounded alternatives start inside a run: right after a hyphen
+# ("--x@y.io") and at a "- + . _ %" that follows a letter or digit
+# ("a@b.co+c@d.io", where main's word boundary started the match at the "+"),
+# so the glue character is covered too. The 64-character cap keeps each start
+# constant-time. The TLD class keeps main's "|" ("[A-Z|a-z]"), so a pipe that
+# closes an address stays covered as it was on main. A single "@" ahead of the
+# local part is taken with it: HANDLE_RE hands "@jane@host.tld" to this pattern,
+# and the "@" would otherwise stay visible.
 EMAIL_RE = re.compile(
-    r"(?:(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+|(?<=-)[A-Za-z0-9._%+-]{1,64})@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    r"(?:(?:(?<![\w@])@(?=[A-Za-z0-9._%+-]+@))?(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+"
+    r"|(?<=-)[A-Za-z0-9._%+-]{1,64}"
+    r"|(?<=[A-Za-z0-9])(?=[-+._%])[A-Za-z0-9._%+-]{1,64})"
+    r"@[A-Za-z0-9.-]+\.[A-Za-z|]{2,}\b"
     r"(?:@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)*"
 )
 
@@ -51,31 +62,29 @@ INTL_PHONE_WIDE_RE = re.compile(_INTL_BODY)
 # NBSP, thin space from PDF extraction) or dash (en/em dash, minus). Luhn still
 # gates every match.
 _CSEP = r"[ \-\u00a0\u2000-\u200a\u202f\u2010-\u2015\u2212]"
-# Separated numbers must be in a standard card grouping: 4-4-4-4 (16), 4-4-4-4-3
-# (19), 4-6-5 (Amex), 4-6-4 (Diners). Anything else ("INV-5642-29793087-1525",
-# "91-4066-4944-80939-07") is an ordinary hyphenated ID, not a card. An
-# unseparated run of 13-19 digits is a candidate whatever the grouping.
-# Space-separated groups (never hyphens) are matched leniently where digits are
-# glued on without a separator, as PDF extraction does: "894111 1111 1111 1111"
-# and "4111 1111 1111 1111078" still yield the card, and _check_card absorbs the
-# glued digits so none stay visible.
-_CWS = r"[ \u00a0\u2000-\u200a\u202f]"
-_CARD_NUMBER = (
-    r"(?<!\d)\d{13,19}"
-    rf"|(?<!\d)\d{{4}}{_CSEP}\d{{4}}{_CSEP}\d{{4}}{_CSEP}\d{{4}}(?:{_CSEP}\d{{3}})?"
-    rf"|\d{{4}}{_CWS}\d{{4}}{_CWS}\d{{4}}{_CWS}\d{{4,7}}"
-    rf"|(?<!\d)\d{{4}}{_CSEP}\d{{6}}{_CSEP}\d{{4,5}}"
-)
-# The optional tail is a trailing 1-4 digit group ("4111 1111 1111 1111 123");
-# _check_card absorbs it when the number before it is a valid PAN.
-# The tail sits in a lookahead so a following card ("4111 1111 1111 1111 5500
-# 0000 0000 0004") is still found by the next match instead of being eaten.
-# Only a digit blocks the start: a hyphen before a card is a separator from the
-# previous item ("10.0.0.1-4012888888881881", "123-45-6789-5500 ..."), and
-# blocking it hid the card. A Luhn-valid run inside a longer hyphenated number
-# is redacted (fail closed).
+# CARD_RE only finds a run of up to six digit groups that starts where no digit
+# precedes it (a hyphen or letter before it is a separator, so "ab-4111 ..." is
+# found) and is at least four digits long; _check_card decides what is a card.
+# Starts are bounded to run starts and every repetition is bounded, so each
+# start does constant work. A run that begins mid-way through a longer one is
+# reached from its own start.
 CARD_RE = re.compile(
-    rf"(?P<base>{_CARD_NUMBER})(?=(?P<tail>{_CSEP}\d{{1,4}})?(?!\d))"
+    rf"(?<!\d)\d{{4,128}}(?:{_CSEP}\d{{1,128}}){{0,5}}"
+)
+# Separated numbers count as a card only in a standard grouping: 4-4-4-4,
+# 4-6-5 (Amex), 4-6-4 (Diners), 4-4-8, 8-8, or the short last groups 4-4-4-3,
+# 4-4-4-2, 4-4-4-1 (15-, 14- and 13-digit PANs). A trailing 1-4 digit group is
+# absorbed when the whole is a valid PAN ("4111 1111 1111 111 1", 4-4-4-4-3).
+# Anything else ("INV-5642-29793087-1525", "91-4066-4944-80939-07") is an
+# ordinary hyphenated ID, not a card. The flag says the last group may carry
+# glued digits ("4111 1111 1111 1111326", as PDF extraction produces); the whole
+# group is then redacted. The first group may likewise carry glued leading
+# digits ("123 45 67894111 1111 1111 1111") and is redacted whole. An unseparated
+# run of 13-19 digits is a candidate whatever the grouping.
+_CARD_SHAPES = (
+    ((4, 4, 4, 4), True), ((4, 4, 4, 4, 3), True), ((4, 6, 5), True), ((4, 6, 4), True),
+    ((4, 4, 8), True), ((8, 8), True),
+    ((4, 4, 4, 3), False), ((4, 4, 4, 2), False), ((4, 4, 4, 1), False),
 )
 
 # Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
@@ -210,7 +219,17 @@ ZIP_RE = re.compile(
 )
 
 
+_LUHN_DOUBLE = str.maketrans("0123456789", "0246813579")
+
+
 def _luhn_ok(digits: str) -> bool:
+    if digits.isascii():
+        # Byte sums at C speed: each byte is 48 + digit, so subtract 48 per
+        # digit; every second digit from the right is doubled (and folded) by
+        # the translate table.
+        total = (sum(digits[-1::-2].encode())
+                 + sum(digits[-2::-2].translate(_LUHN_DOUBLE).encode()))
+        return (total - 48 * len(digits)) % 10 == 0
     total = 0
     for i, ch in enumerate(reversed(digits)):
         d = int(ch)
@@ -227,17 +246,69 @@ def _pan_ok(raw: str) -> bool:
     return 13 <= len(digits) <= 19 and _luhn_ok(digits)
 
 
+_CSEP_TO_SPACE = {c: 32 for c in
+                  [0x20, 0x2D, 0xA0, *range(0x2000, 0x200B), 0x202F,
+                   *range(0x2010, 0x2016), 0x2212]}
+_SHAPES_BY_SECOND: dict[int, list] = {}
+for _shape, _glue in _CARD_SHAPES:
+    # Keyed by the second group's length; 9 stands for "longer than 8" (the
+    # glued last group of 8-8).
+    _SHAPES_BY_SECOND.setdefault(_shape[1], []).append((_shape, _glue))
+_SHAPES_BY_SECOND[9] = [s for s in _SHAPES_BY_SECOND[8] if len(s[0]) == 2]
+
+
+def _card_reach(groups, lens, last: int, digits: str, absorb_tail: bool) -> int:
+    """Index of the last group a PAN ending at group ``last`` reaches, or -1.
+    A valid PAN swallows one short trailing group so no digits are left
+    visible; an invalid base may still be a valid PAN with that group."""
+    nxt = last + 1
+    tail = absorb_tail and nxt < len(groups) and lens[nxt] <= 4
+    if 13 <= len(digits) <= 19 and _luhn_ok(digits):
+        return nxt if tail else last
+    if tail:
+        both = digits + groups[nxt]
+        if 13 <= len(both) <= 19 and _luhn_ok(both):
+            return nxt
+    return -1
+
+
 def _check_card(m: re.Match, text: str):
-    # A valid PAN swallows a short trailing group so no digits are left visible.
-    base = m.group("base")
-    # More than 16 digits that are not a valid PAN as a whole may still be a
-    # valid 16-digit PAN followed by a short or glued group; the alternation
-    # cannot back off to it itself, and the extra digits must not stay visible.
-    if _pan_ok(base) or (len(base) > 19 and _pan_ok(base[:19])):
-        return m.start(), (m.end("tail") if m.group("tail") else m.end())
-    if m.group("tail") and _pan_ok(m.group() + m.group("tail")):
-        return m.start(), m.end("tail")
-    return None
+    groups = m.group().translate(_CSEP_TO_SPACE).split(" ")
+    n = len(groups)
+    g0 = groups[0]
+    if n == 1:
+        return m.span() if 13 <= len(g0) <= 19 and _luhn_ok(g0) else None
+    lens = [len(g) for g in groups]
+    if sum(lens) < 13:
+        return None
+    best = -1  # index of the last group the card (plus its tail) reaches
+    if 13 <= lens[0] <= 19:
+        best = _card_reach(groups, lens, 0, g0, True)
+    second = lens[1]
+    for shape, glue in _SHAPES_BY_SECOND.get(second if second <= 8 else 9, ()):
+        k = len(shape)
+        if k > n or lens[0] < shape[0]:
+            continue
+        last = lens[k - 1]
+        if last < shape[-1] or (last > shape[-1] and not glue):
+            continue
+        if any(lens[i] != shape[i] for i in range(1, k - 1)):
+            continue
+        head = g0[-shape[0]:] + "".join(groups[1:k - 1])
+        # A group that carries glued digits closes the card (no tail after it),
+        # except 4-4-4-4 with up to three glued digits, where a trailing group
+        # was always absorbed ("4111 1111 1111 1111078 12").
+        r = _card_reach(groups, lens, k - 1, head + groups[k - 1][:shape[-1]],
+                        last == shape[-1] or (shape == (4, 4, 4, 4) and last <= 7))
+        if r > best:
+            best = r
+        if shape == (4, 4, 4, 4) and 4 < last <= 7:
+            r = _card_reach(groups, lens, k - 1, head + groups[k - 1], True)
+            if r > best:
+                best = r
+    if best < 0:
+        return None
+    return m.start(), m.start() + sum(lens[:best + 1]) + best
 
 
 _INTL_SEP_RE = re.compile(r"[\s.-]")
