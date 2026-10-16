@@ -1,8 +1,9 @@
 """Restore PII from a redacted file using its mapping."""
 
 import json
-import re
 from pathlib import Path
+
+from . import core
 
 
 def restore(redacted_text: str, mapping_path: Path) -> str:
@@ -17,8 +18,4 @@ def restore(redacted_text: str, mapping_path: Path) -> str:
     if not tags:
         return redacted_text
 
-    # One pass, longest tag first: restored values are never re-scanned.
-    pattern = re.compile(
-        "|".join(re.escape(t) for t in sorted(tags, key=len, reverse=True))
-    )
-    return pattern.sub(lambda m: tags[m.group()], redacted_text)
+    return core.restore_text(redacted_text, tags, trusted=True)

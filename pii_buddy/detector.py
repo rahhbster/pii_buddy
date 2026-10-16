@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import bisect
 import re
+import threading
 from dataclasses import dataclass, field
 
 from .validation import validate_entities
@@ -438,13 +439,22 @@ SPACY_MODEL = "en_core_web_md"
 SPACY_FALLBACK = "en_core_web_sm"
 
 
-def _load_spacy():
+class ModelNotInstalledError(RuntimeError):
+    """No spaCy model is installed and downloading was not allowed."""
+
+
+def _load_spacy(allow_download=True):
     import spacy
     for model in (SPACY_MODEL, SPACY_FALLBACK):
         try:
             return spacy.load(model)
         except OSError:
             pass
+    if not allow_download:
+        raise ModelNotInstalledError(
+            f"No spaCy model installed (need {SPACY_MODEL} or {SPACY_FALLBACK}); "
+            f"run: python -m spacy download {SPACY_MODEL}"
+        )
     # Download fallback
     import spacy.cli
     print(f"Downloading spaCy model {SPACY_FALLBACK} (one-time)...")
@@ -453,13 +463,32 @@ def _load_spacy():
 
 
 _nlp = None
+_warmed = False
+_load_lock = threading.Lock()
+# spaCy pipelines are not documented as thread-safe; every nlp() call takes this.
+_nlp_lock = threading.Lock()
 
 
-def get_nlp():
+def get_nlp(allow_download=True):
     global _nlp
     if _nlp is None:
-        _nlp = _load_spacy()
+        with _load_lock:
+            if _nlp is None:
+                _nlp = _load_spacy(allow_download)
     return _nlp
+
+
+def preflight():
+    """Load and pre-warm the model without ever downloading or printing.
+
+    Raises ModelNotInstalledError if no model is installed. Idempotent.
+    """
+    global _warmed
+    nlp = get_nlp(allow_download=False)
+    with _nlp_lock:
+        if not _warmed:
+            nlp("Warm up.")
+            _warmed = True
 
 
 def _is_specific_date(text: str) -> bool:
@@ -757,7 +786,8 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
 
     # 1b. spaCy NER (names and dates)
     nlp = get_nlp()
-    doc = nlp(text)
+    with _nlp_lock:
+        doc = nlp(text)
     spacy_entities = []
 
     for ent in doc.ents:
