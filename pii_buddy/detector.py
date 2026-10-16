@@ -491,6 +491,38 @@ def preflight():
             _warmed = True
 
 
+def tokenizer_cost(text: str) -> int:
+    """Linear-time upper-bound proxy for spaCy tokenizer work on `text`.
+
+    The tokenizer is quadratic in the length of a whitespace-free chunk that
+    splits into many tokens (e.g. "$" * 4000 takes seconds on first sight;
+    measured <= ~250 ns per unit), and its cache hides that on repeat calls.
+    Each split-off token costs about one chunk length, and a chunk yields at
+    most (non-alphanumeric characters + 1) tokens, so cost is the sum of
+    length * (non-alphanumerics + 1) per chunk. Alphanumeric-only blobs are one
+    token and cost their length only. Never calls the tokenizer.
+    """
+    total = 0
+    for chunk in text.split():
+        n = len(chunk)
+        if chunk.isalnum():
+            total += n
+        else:
+            total += n * (sum(1 for ch in chunk if not ch.isalnum()) + 1)
+    return total
+
+
+def count_tokens(text: str) -> int:
+    """Token count by the tokenizer alone (no pipeline); takes the spaCy lock.
+
+    Callers must bound `tokenizer_cost(text)` first. Requires the model to be
+    loaded (get_nlp(allow_download=False) first).
+    """
+    nlp = get_nlp(allow_download=False)
+    with _nlp_lock:
+        return len(nlp.make_doc(text))
+
+
 def _is_specific_date(text: str) -> bool:
     if not any(c.isdigit() for c in text):
         return False

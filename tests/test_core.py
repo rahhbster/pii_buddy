@@ -135,6 +135,7 @@ class TestPayloadCap:
 
         monkeypatch.setattr(detector, "detect_pii", fake)
         monkeypatch.setattr(detector, "get_nlp", lambda allow_download=True: None)
+        monkeypatch.setattr(detector, "count_tokens", lambda text: 1)
 
     @pytest.mark.parametrize("fn", [core.check_text, core.redact_text])
     def test_exactly_at_cap_is_accepted(self, fn):
@@ -202,6 +203,7 @@ class TestRedactRoundTrip:
         )
         monkeypatch.setattr(detector, "detect_pii", lambda t, d="auto": [])
         monkeypatch.setattr(detector, "get_nlp", lambda allow_download=True: None)
+        monkeypatch.setattr(detector, "count_tokens", lambda text: 1)
         with pytest.raises(core.CoreError) as e:
             core.redact_text("hello", audit=False)
         assert e.value.code == "invalid_mapping"
@@ -378,12 +380,12 @@ class TestRestoreText:
             with pytest.raises(core.CoreError):
                 core.restore_text("x", bad)
 
-    def test_trusted_skips_size_caps_but_not_types(self):
+    def test_unchecked_skips_size_caps_but_not_types(self):
         big_text = "<<EMAIL_1>>" * 100_000
-        out = core.restore_text(big_text, {"<<EMAIL_1>>": "v"}, trusted=True)
+        out = core._restore_unchecked(big_text, {"<<EMAIL_1>>": "v"})
         assert out == "v" * 100_000
         with pytest.raises(core.CoreError):
-            core.restore_text("x", {"<<EMAIL_1>>": 1}, trusted=True)
+            core._restore_unchecked("x", {"<<EMAIL_1>>": 1})
 
 
 # --------------------------------------------------------- no I/O, no echo
@@ -457,8 +459,14 @@ class FakeNlp:
         self.active = 0
         self.max_active = 0
         self.delay = 0.0
+        self.lock_held = []
+
+    def make_doc(self, text):
+        self.lock_held.append(detector._nlp_lock.locked())
+        return self.inner.make_doc(text)
 
     def __call__(self, text):
+        self.lock_held.append(detector._nlp_lock.locked())
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         self.events.append("enter")

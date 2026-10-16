@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping
 
 from . import audit as _audit
@@ -22,6 +22,15 @@ MAX_RESTORE_OUTPUT_CHARS = 1_000_000
 MAX_MAPPING_ENTRIES = 10_000
 MAX_VALUE_CHARS = MAX_TEXT_CHARS
 MAX_TAG_CHARS = 128
+
+# spaCy NER and the tokenizer are what bound latency, not characters. Measured
+# on the dev machine (en_core_web_md): NER + detection is ~0.14-0.18 ms per
+# token for every token-dense shape, so 16_000 tokens is <= ~3 s worst case.
+# The tokenizer itself is quadratic in whitespace-free chunks that split into
+# many tokens, so detector.tokenizer_cost() is checked first; 4_000_000 units
+# is ~1 s of tokenizer work (~250 ns per unit worst case).
+MAX_TOKENS = 16_000
+MAX_TOKENIZER_COST = 4_000_000
 
 DOCUMENT_TYPES = frozenset({"auto", "general", "resume", "transcript"})
 
@@ -70,8 +79,8 @@ class CheckResult:
 
 @dataclass(frozen=True)
 class RedactResult:
-    redacted_text: str
-    mapping: dict
+    redacted_text: str = field(repr=False)
+    mapping: dict = field(repr=False)
     findings: tuple
     entity_counts: dict
     audit_additions: int
@@ -95,6 +104,10 @@ def _check_input(text, document_type):
         )
     if document_type not in DOCUMENT_TYPES:
         raise CoreError("invalid_document_type", "unknown document_type")
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise CoreError("invalid_text", "text is not valid unicode") from None
 
 
 def _detect(text, document_type):
@@ -104,6 +117,11 @@ def _detect(text, document_type):
         raise CoreError(
             "model_unavailable", "no spaCy model is installed"
         ) from None
+    if (
+        detector.tokenizer_cost(text) > MAX_TOKENIZER_COST
+        or detector.count_tokens(text) > MAX_TOKENS
+    ):
+        raise CoreError("payload_too_large", "text has too many tokens")
     return detector.detect_pii(text, document_type)
 
 
@@ -134,7 +152,7 @@ def redact_text(
         redacted, mapping = _audit.audit_redacted(redacted, mapping)
     tags = dict(mapping["tags"])
     # A tag restore_text would refuse must fail here, not at restore time.
-    _validate_mapping(tags, trusted=False)
+    _validate_mapping(tags)
     return RedactResult(
         redacted_text=redacted,
         mapping=tags,
@@ -144,44 +162,38 @@ def redact_text(
     )
 
 
-def _validate_mapping(mapping, trusted: bool) -> None:
+def _check_mapping_types(mapping) -> None:
     if not isinstance(mapping, dict):
         raise CoreError("invalid_mapping", "mapping must be an object")
-    if not trusted and len(mapping) > MAX_MAPPING_ENTRIES:
-        raise CoreError("invalid_mapping", "mapping has too many entries")
     for tag, value in mapping.items():
         if not isinstance(tag, str) or not isinstance(value, str):
             raise CoreError("invalid_mapping", "mapping must map strings to strings")
-        if trusted:
-            continue
+
+
+def _validate_mapping(mapping) -> None:
+    _check_mapping_types(mapping)
+    if len(mapping) > MAX_MAPPING_ENTRIES:
+        raise CoreError("invalid_mapping", "mapping has too many entries")
+    for tag, value in mapping.items():
         if len(tag) > MAX_TAG_CHARS or TAG_RE.fullmatch(tag) is None:
             raise CoreError("invalid_mapping", "mapping key is not a tag")
         if len(value) > MAX_VALUE_CHARS:
             raise CoreError("invalid_mapping", "mapping value is too long")
 
 
-def restore_text(
-    redacted_text: str, mapping: Mapping[str, str], *, trusted: bool = False
-) -> str:
+def restore_text(redacted_text: str, mapping: Mapping[str, str]) -> str:
     """Swap tags back for their originals in one pass (restored text is never rescanned).
 
-    `mapping` must be a plain dict, never a path. `trusted=True` is for the
-    caller's own mapping file (restorer.restore): it drops the size caps and
-    the tag-shape check, keeping the type check.
+    `mapping` must be a plain dict, never a path. Always validates: size caps,
+    tag-shaped keys only, bounded output.
     """
     if not isinstance(redacted_text, str):
         raise CoreError("invalid_text", "text must be a string")
-    if not trusted and len(redacted_text) > MAX_RESTORE_TEXT_CHARS:
+    if len(redacted_text) > MAX_RESTORE_TEXT_CHARS:
         raise CoreError("payload_too_large", "text is too large")
-    _validate_mapping(mapping, trusted)
+    _validate_mapping(mapping)
     if not mapping:
         return redacted_text
-
-    if trusted:
-        pattern = re.compile(
-            "|".join(re.escape(t) for t in sorted(mapping, key=len, reverse=True))
-        )
-        return pattern.sub(lambda m: mapping[m.group()], redacted_text)
 
     pieces = []
     pos = 0
@@ -198,3 +210,20 @@ def restore_text(
         pos = m.end()
     pieces.append(redacted_text[pos:])
     return "".join(pieces)
+
+
+def _restore_unchecked(redacted_text: str, mapping: dict) -> str:
+    """Restore from the caller's own mapping file (imported only by restorer.py).
+
+    No size caps and no tag-shape check, so hand-edited keys and large
+    mappings keep working; the type check stays and empty keys are ignored.
+    Never expose this to API input: it has no output bound.
+    """
+    if not isinstance(redacted_text, str):
+        raise CoreError("invalid_text", "text must be a string")
+    _check_mapping_types(mapping)
+    keys = [t for t in mapping if t]
+    if not keys:
+        return redacted_text
+    pattern = re.compile("|".join(re.escape(t) for t in sorted(keys, key=len, reverse=True)))
+    return pattern.sub(lambda m: mapping[m.group()], redacted_text)

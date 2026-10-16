@@ -18,4 +18,4 @@ def restore(redacted_text: str, mapping_path: Path) -> str:
     if not tags:
         return redacted_text
 
-    return core.restore_text(redacted_text, tags, trusted=True)
+    return core._restore_unchecked(redacted_text, tags)
