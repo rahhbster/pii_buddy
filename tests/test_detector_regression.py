@@ -230,7 +230,7 @@ def test_round3_mid_word_at_is_not_a_handle(text):
 
 @pytest.mark.parametrize("handle", [
     "@josé", "@renée", "@жane", "@" + "a" * 40, "@" + "j" * 200,
-])
+], ids=["jose", "renee", "cyrillic", "a-x40", "j-x200"])
 def test_round3_unicode_and_long_handles_redacted_whole(handle):
     text = f"ping {handle} now"
     assert [t for t, l in _ents(text) if l == "HANDLE"] == [handle]

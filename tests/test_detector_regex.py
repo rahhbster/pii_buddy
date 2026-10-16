@@ -1,11 +1,10 @@
 """Regex coverage and false-positive guards for the structured-PII detectors."""
 
-import time
-
 import pytest
 
 from pii_buddy import detector
 from pii_buddy.detector import detect_pii
+from tests._scaling import assert_scales_linearly
 
 
 def _hits(text, label):
@@ -160,24 +159,34 @@ def test_existing_us_phone_forms_still_work():
         assert _hits(f"Call {number} now", "PHONE") == [number]
 
 
-@pytest.mark.parametrize("text", [
-    "a." * 100_000,
-    "a-" * 100_000,
-    "1 " * 100_000,
-    "1" * 200_000,
-    "a@" * 100_000,
-    "@a" * 100_000,
-])
-def test_regexes_are_linear_on_adversarial_input(text):
-    start = time.perf_counter()
-    for pattern, _label in detector.REGEX_PATTERNS:
-        for _ in pattern.finditer(text):
-            pass
-    assert time.perf_counter() - start < 1.0
+_LINEAR_UNITS = [
+    ("a-dot", "a."),
+    ("a-dash", "a-"),
+    ("digit-space", "1 "),
+    ("digit-run", "1"),
+    ("a-at", "a@"),
+    ("at-a", "@a"),
+]
+
+
+@pytest.mark.parametrize(
+    "unit", [u for _, u in _LINEAR_UNITS], ids=[n for n, _ in _LINEAR_UNITS]
+)
+def test_regexes_are_linear_on_adversarial_input(unit):
+    def run(text):
+        for pattern, _label in detector.REGEX_PATTERNS:
+            for _ in pattern.finditer(text):
+                pass
+
+    assert_scales_linearly(
+        run, lambda size: unit * (size // len(unit)), repr(unit),
+        backstop_size=200_000,
+    )
 
 
 def test_email_regex_linear_on_dotted_run():
-    text = "a." * 100_000
-    start = time.perf_counter()
-    assert detector.EMAIL_RE.search(text) is None
-    assert time.perf_counter() - start < 1.0
+    found = assert_scales_linearly(
+        lambda text: detector.EMAIL_RE.search(text),
+        lambda size: "a." * (size // 2), "email-dotted", backstop_size=200_000,
+    )
+    assert found is None

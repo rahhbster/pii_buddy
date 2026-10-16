@@ -1,11 +1,11 @@
 """Every detector regex and the overlap resolver must stay linear on
-adversarial 400 KB single-line input (one second each, no loosened limits)."""
-
-import time
+adversarial single-line input: t(100 KB) / t(50 KB) must stay near 2 (a
+machine-independent check) with one generous absolute backstop at 400 KB."""
 
 import pytest
 
 from pii_buddy import detector
+from tests._scaling import assert_scales_linearly
 
 SIZE = 400_000
 
@@ -34,22 +34,19 @@ def _patterns():
     return pats
 
 
-@pytest.mark.parametrize("unit", _UNITS, ids=[repr(u)[:24] for u in _UNITS])
-def test_every_pattern_and_resolver_linear_at_400kb(unit):
-    text = unit * (SIZE // len(unit))
-    slow = []
+def _work(text):
     for pat, overlapping in _patterns():
         check = detector._SPAN_CHECKS.get(pat)
-        t0 = time.perf_counter()
         for m in detector._iter_matches(pat, text, overlapping):
             if check:
                 check(m, text)
-        dt = time.perf_counter() - t0
-        if dt >= 1.0:
-            slow.append((pat.pattern[:40], round(dt, 2)))
-    assert not slow, slow
     ents = detector._regex_entities(text)
-    t0 = time.perf_counter()
     detector._resolve_overlaps(ents, text)
-    dt = time.perf_counter() - t0
-    assert dt < 1.0, f"resolver {dt:.2f}s"
+
+
+@pytest.mark.parametrize("unit", _UNITS, ids=[repr(u)[:24] for u in _UNITS])
+def test_every_pattern_and_resolver_linear_at_400kb(unit):
+    assert_scales_linearly(
+        _work, lambda size: unit * max(1, size // len(unit)), repr(unit)[:24],
+        small=25_000, backstop_size=SIZE,
+    )

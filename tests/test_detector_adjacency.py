@@ -7,13 +7,13 @@ trimmed, never dropped. The seeded invariant test below is the guard.
 
 import json
 import random
-import time
 from pathlib import Path
 
 import pytest
 
 from pii_buddy import detector
 from pii_buddy.detector import detect_pii
+from tests._scaling import assert_scales_linearly
 
 
 def _ents(text):
@@ -86,27 +86,28 @@ def test_intl_phone_fallback_keeps_old_coverage():
 
 # --- _check_handle must be linear -------------------------------------------
 
-@pytest.mark.parametrize("size", [400_000])
-def test_handle_check_is_linear_on_single_line_input(size):
-    text = "@override " * (size // 10)
-    t0 = time.perf_counter()
-    n = 0
-    for m in detector.HANDLE_RE.finditer(text):
-        detector._check_handle(m, text)
-        n += 1
-    elapsed = time.perf_counter() - t0
-    assert n == size // 10
-    assert elapsed < 1.0, f"{elapsed:.2f}s for {size} chars"
+def _repeat(unit):
+    return lambda size: unit * (size // len(unit))
+
+
+def test_handle_check_is_linear_on_single_line_input():
+    def run(text):
+        n = 0
+        for m in detector.HANDLE_RE.finditer(text):
+            detector._check_handle(m, text)
+            n += 1
+        return n
+
+    n = assert_scales_linearly(run, _repeat("@override "), "handle-check")
+    assert n == 40_000
 
 
 def test_regex_and_overlap_stages_are_fast_on_400kb_single_line():
-    text = "@override " * 40_000
-    t0 = time.perf_counter()
-    ents = detector._regex_entities(text)
-    kept = detector._resolve_overlaps(ents, text)
-    elapsed = time.perf_counter() - t0
+    def run(text):
+        return detector._resolve_overlaps(detector._regex_entities(text), text)
+
+    kept = assert_scales_linearly(run, _repeat("@override "), "regex+overlap")
     assert len(kept) == 40_000
-    assert elapsed < 1.0, f"{elapsed:.2f}s"
 
 
 def test_handle_decorator_still_skipped_at_line_start():
@@ -139,18 +140,22 @@ def test_card_next_to_dash_or_unicode_separator_is_fully_covered(text, secret):
             assert i in covered, (text, i, text[i])
 
 
-@pytest.mark.parametrize("name,text", [
-    ("email x url", "a@b.co http://x.com/p " * 18000),
-    ("handles", "@override " * 40000),
-    ("ips", "1.2.3.4 " * 50000),
-    ("cards", "4111 1111 1111 1111 " * 20000),
-])
-def test_pipeline_stages_are_fast_at_400kb(name, text):
-    t0 = time.perf_counter()
-    ents = detector._regex_entities(text)
-    detector._resolve_overlaps(ents, text)
-    elapsed = time.perf_counter() - t0
-    assert elapsed < 1.0, f"{name}: {elapsed:.2f}s for {len(text)} chars"
+_STAGE_SHAPES = [
+    ("email-x-url", "a@b.co http://x.com/p "),
+    ("handles", "@override "),
+    ("ips", "1.2.3.4 "),
+    ("cards", "4111 1111 1111 1111 "),
+]
+
+
+@pytest.mark.parametrize(
+    "unit", [u for _, u in _STAGE_SHAPES], ids=[n for n, _ in _STAGE_SHAPES]
+)
+def test_pipeline_stages_are_fast_at_400kb(unit):
+    def run(text):
+        detector._resolve_overlaps(detector._regex_entities(text), text)
+
+    assert_scales_linearly(run, _repeat(unit), repr(unit))
 
 
 # --- seeded adjacency invariant ----------------------------------------------
