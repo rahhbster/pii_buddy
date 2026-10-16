@@ -84,7 +84,7 @@ CARD_RE = re.compile(
 _CARD_SHAPES = (
     ((4, 4, 4, 4), True), ((4, 4, 4, 4, 3), True), ((4, 6, 5), True), ((4, 6, 4), True),
     ((4, 4, 8), True), ((8, 8), True),
-    ((4, 4, 4, 3), False), ((4, 4, 4, 2), False), ((4, 4, 4, 1), False),
+    ((4, 4, 4, 3), True), ((4, 4, 4, 2), True), ((4, 4, 4, 1), True),
 )
 
 # Separators: hyphen, en/em dash, minus, and any whitespace (tab, NBSP from PDF
@@ -253,7 +253,8 @@ _SHAPES_BY_SECOND: dict[int, list] = {}
 for _shape, _glue in _CARD_SHAPES:
     # Keyed by the second group's length; 9 stands for "longer than 8" (the
     # glued last group of 8-8).
-    _SHAPES_BY_SECOND.setdefault(_shape[1], []).append((_shape, _glue))
+    _SHAPES_BY_SECOND.setdefault(_shape[1], []).append(
+        (_shape, _glue, list(_shape[1:-1])))
 _SHAPES_BY_SECOND[9] = [s for s in _SHAPES_BY_SECOND[8] if len(s[0]) == 2]
 
 
@@ -285,16 +286,21 @@ def _check_card(m: re.Match, text: str):
     if 13 <= lens[0] <= 19:
         best = _card_reach(groups, lens, 0, g0, True)
     second = lens[1]
-    for shape, glue in _SHAPES_BY_SECOND.get(second if second <= 8 else 9, ()):
+    for shape, glue, mid in _SHAPES_BY_SECOND.get(second if second <= 8 else 9, ()):
         k = len(shape)
         if k > n or lens[0] < shape[0]:
             continue
         last = lens[k - 1]
         if last < shape[-1] or (last > shape[-1] and not glue):
             continue
-        if any(lens[i] != shape[i] for i in range(1, k - 1)):
+        if lens[1:k - 1] != mid:
             continue
         head = g0[-shape[0]:] + "".join(groups[1:k - 1])
+        if last > shape[-1] and shape != (4, 4, 4, 4):
+            # glued digits close the card at group k-1; nothing follows
+            if best < k - 1 and _luhn_ok(head + groups[k - 1][:shape[-1]]):
+                best = k - 1
+            continue
         # A group that carries glued digits closes the card (no tail after it),
         # except 4-4-4-4 with up to three glued digits, where a trailing group
         # was always absorbed ("4111 1111 1111 1111078 12").

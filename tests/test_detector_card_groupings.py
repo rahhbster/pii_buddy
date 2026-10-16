@@ -24,12 +24,15 @@ def _cards(text):
     "ref 91-4066-4944-80939-07",
     "INV-8552-80387294-1242",
     "PO-0033-22453832-3640",
-    # 4-4-8 is a Luhn-gated card grouping now (see test_detector_card_leaks.py);
-    # the 4-4-5 form of such an ID stays a non-card.
     "ref 5744-7621-68275",
+    "ref 5744-7621-68275218",
 ])
 def test_arbitrary_hyphenated_ids_are_not_cards(text):
     assert _cards(text) == []
+
+
+def test_hyphenated_4_4_8_luhn_valid_is_card():
+    assert _cards("ref 5744-7621-68275217") == ["5744-7621-68275217"]
 
 
 _NUMBERS = [
