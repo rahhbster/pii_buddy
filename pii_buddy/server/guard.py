@@ -7,7 +7,6 @@ never contain request data.
 
 import hashlib
 import hmac
-import itertools
 import re
 from dataclasses import dataclass
 
@@ -17,13 +16,16 @@ READ_TIMEOUT = 10
 MAX_INFLIGHT = 4
 
 MAX_PORTS = 8
+_MAX_PORT_ITEMS = 10_000
 MAX_HEADERS = 100
 MAX_HEADER_VALUE = 8192
 MAX_TARGET = 2048
 
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _HOST = re.compile(r"(?:127\.0\.0\.1|localhost):([1-9][0-9]{0,4})")
-_BEARER = re.compile(r"(?i:bearer) ([\x21-\x7e]{1,512})")
+_BEARER = re.compile(r"(?ai:bearer) ([\x21-\x7e]{1,512})")
 _CONTENT_LENGTH = re.compile(r"[0-9]{1,10}")
 _CONTENT_TYPE = re.compile(
     r"application/json(?:[ \t]*;[ \t]*charset=utf-8)?", re.IGNORECASE | re.ASCII
@@ -80,19 +82,28 @@ def parse_bearer(header_value):
 
 
 def _normalize_ports(expected_ports):
+    """Frozenset of valid ports; anything doubtful is the empty set (deny all).
+
+    An iterator is its own iterator and can be consumed only once, so it would
+    silently change the answer between calls; it is refused rather than drained.
+    """
     if isinstance(expected_ports, int) and not isinstance(expected_ports, bool):
         expected_ports = (expected_ports,)
-    if isinstance(expected_ports, (str, bytes)):
+    if isinstance(expected_ports, (str, bytes, bytearray, memoryview)):
         return frozenset()
     try:
-        # One extra element is enough to know the set is over the cap.
-        ports = list(itertools.islice(expected_ports, MAX_PORTS + 1))
+        if iter(expected_ports) is expected_ports:
+            return frozenset()
+        ports = set()
+        for n, p in enumerate(expected_ports):
+            if n >= _MAX_PORT_ITEMS:
+                return frozenset()
+            if not isinstance(p, int) or isinstance(p, bool) or not 1 <= p <= 65535:
+                return frozenset()
+            ports.add(p)
+            if len(ports) > MAX_PORTS:
+                return frozenset()
     except TypeError:
-        return frozenset()
-    if len(ports) > MAX_PORTS:
-        return frozenset()
-    if not all(isinstance(p, int) and not isinstance(p, bool) and 1 <= p <= 65535
-               for p in ports):
         return frozenset()
     return frozenset(ports)
 
@@ -102,7 +113,7 @@ def host_allowed(host_header, expected_ports):
         return False
     if not host_header.isascii():
         return False
-    m = _HOST.fullmatch(host_header.lower())
+    m = _HOST.fullmatch(host_header.translate(_ASCII_LOWER))
     if not m:
         return False
     port = int(m.group(1))
@@ -139,14 +150,19 @@ def _clean_headers(headers):
             return None
         if any((ord(c) < 0x20 and c != "\t") or ord(c) == 0x7F for c in value):
             return None
-        out.setdefault(name.lower(), []).append(value)
+        out.setdefault(name.translate(_ASCII_LOWER), []).append(value)
     return out
 
 
+def _token(value):
+    # HTTP trims only space and tab; str.strip()/lower() would also act on Unicode.
+    return value.strip(" \t").translate(_ASCII_LOWER)
+
+
 def _fetch_metadata_bad(h):
-    if any(v.strip().lower() != "none" for v in h.get("sec-fetch-site", ())):
+    if any(_token(v) != "none" for v in h.get("sec-fetch-site", ())):
         return True
-    return any(v.strip().lower() in ("cors", "no-cors") for v in h.get("sec-fetch-mode", ()))
+    return any(_token(v) in ("cors", "no-cors") for v in h.get("sec-fetch-mode", ()))
 
 
 def _check_body_headers(h):
