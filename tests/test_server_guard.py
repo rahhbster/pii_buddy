@@ -385,12 +385,12 @@ class TestFetchMetadata:
         h = base() + [("Sec-Fetch-Site", "none"), ("sec-fetch-site", "cross-site")]
         denied(run(headers=h), 403, "forbidden_fetch_site")
 
-    @pytest.mark.parametrize("v", ["cors", "no-cors", "CORS", "No-Cors"])
-    def test_mode_403(self, v):
+    @pytest.mark.parametrize("v", ["no-cors", "No-Cors", "navigate", "same-origin", "websocket"])
+    def test_mode_without_site_403_unless_cors(self, v):
         denied(run(headers=base() + [("Sec-Fetch-Mode", v)]), 403, "forbidden_fetch_site")
 
-    @pytest.mark.parametrize("v", ["navigate", "same-origin", "websocket"])
-    def test_other_modes_not_blocked_here(self, v):
+    @pytest.mark.parametrize("v", ["cors", "CORS", " cors\t"])
+    def test_mode_cors_without_site_is_a_non_browser_client(self, v):
         assert run(headers=base() + [("Sec-Fetch-Mode", v)]).allowed is True
 
     def test_fetch_checks_apply_to_health(self):
