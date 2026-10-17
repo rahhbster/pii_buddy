@@ -5,6 +5,7 @@ from __future__ import annotations
 import bisect
 import re
 import threading
+import unicodedata
 from dataclasses import dataclass, field
 
 from .validation import validate_entities
@@ -491,25 +492,77 @@ def preflight():
             _warmed = True
 
 
-def tokenizer_cost(text: str) -> int:
-    """Linear-time upper-bound proxy for spaCy tokenizer work on `text`.
+# Cost model for spaCy's English tokenizer, calibrated by timing the real
+# tokenizer in subprocesses (units x templates x body families, then re-timed
+# at the size where the estimate reaches the budget). Only three things are
+# super-linear, all in whitespace-free chunks:
+#  1. The affix loop. Each iteration strips one prefix and/or suffix and costs
+#     a regex scan of the whole remaining chunk (~250-660 ns/char, digit-rich
+#     bodies are slowest). Iterations = the leading run of prefix characters
+#     plus the trailing run of suffix characters, including the letter-bearing
+#     literals "US$" "C$" "A$" (prefix) and "'s" "'S" (suffix). Punctuation in
+#     the middle of a chunk (fullwidth commas, URL and base64 punctuation) is
+#     never stripped and costs nothing extra.
+#  2. url_match's userinfo group "\S+(?::\S*)?@": backtracking costs about one
+#     scan of the chunk per ":" (~6-12 ns/char), and about one host attempt per
+#     ":" x "@" pair (~70 ns).
+#  3. Nothing else: infix matching, lexeme creation and everything else is
+#     linear (at most ~3 us/char measured, ~5 us/char budgeted).
+# The constants below carry a 1.5-2x margin over the worst measurement.
+_AFFIX_CATEGORIES = frozenset(("Pc", "Pd", "Pe", "Pf", "Pi", "Po", "Ps", "Sc", "Sk", "Sm", "So"))
+_NOT_AFFIX_CHARS = frozenset("@|\\")  # empirically never split from a chunk edge
+_PREFIX_LITERALS = ("US$", "C$", "A$")
+_SUFFIX_LITERALS = ("'s", "'S", "\u2019s", "\u2019S")
+_NS_PER_CHAR = 5000
+_NS_PER_CHAR_PER_STRIP = 1000
+_NS_PER_CHAR_PER_COLON = 20
+_NS_PER_COLON_PER_AT = 120
 
-    The tokenizer is quadratic in the length of a whitespace-free chunk that
-    splits into many tokens (e.g. "$" * 4000 takes seconds on first sight;
-    measured <= ~250 ns per unit), and its cache hides that on repeat calls.
-    Each split-off token costs about one chunk length, and a chunk yields at
-    most (non-alphanumeric characters + 1) tokens, so cost is the sum of
-    length * (non-alphanumerics + 1) per chunk. Alphanumeric-only blobs are one
-    token and cost their length only. Never calls the tokenizer.
+
+def _is_affix_char(ch: str) -> bool:
+    return ch not in _NOT_AFFIX_CHARS and unicodedata.category(ch) in _AFFIX_CATEGORIES
+
+
+def _affix_strips(chunk: str) -> int:
+    """Upper bound on affix-loop iterations for a whitespace-free chunk."""
+    n = len(chunk)
+    strips = 0
+    i = 0
+    while i < n:
+        if chunk.startswith(_PREFIX_LITERALS, i):
+            i += 3 if chunk.startswith("US$", i) else 2
+        elif _is_affix_char(chunk[i]):
+            i += 1
+        else:
+            break
+        strips += 1
+    j = n
+    while j > i:
+        if chunk.endswith(_SUFFIX_LITERALS, i, j):
+            j -= 2
+        elif _is_affix_char(chunk[j - 1]):
+            j -= 1
+        else:
+            break
+        strips += 1
+    return min(strips, n)
+
+
+def tokenizer_cost(text: str) -> int:
+    """Upper-bound estimate, in microseconds, of the time spaCy's English
+    tokenizer needs for `text` on a typical laptop core.
+
+    Linear time, never calls the tokenizer. See the cost-model comment above
+    for what is and is not charged; callers compare the result with a budget.
     """
-    total = 0
+    total = _NS_PER_CHAR * len(text)
     for chunk in text.split():
         n = len(chunk)
-        if chunk.isalnum():
-            total += n
-        else:
-            total += n * (sum(1 for ch in chunk if not ch.isalnum()) + 1)
-    return total
+        total += n * _NS_PER_CHAR_PER_STRIP * _affix_strips(chunk)
+        colons = chunk.count(":")
+        if colons:
+            total += colons * (n * _NS_PER_CHAR_PER_COLON + chunk.count("@") * _NS_PER_COLON_PER_AT)
+    return total // 1000
 
 
 def count_tokens(text: str) -> int:

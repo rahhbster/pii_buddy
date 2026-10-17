@@ -76,7 +76,7 @@ class TestTokenGuard:
         with pytest.raises(core.CoreError) as e:
             fn(CANARY_TEXT)
         assert e.value.code == "payload_too_large"
-        assert e.value.message == "text has too many tokens"
+        assert e.value.message == core.TOO_COMPLEX_MESSAGE
         _assert_no_canary(str(e.value))
         _assert_no_canary(repr(e.value))
         assert self.detected == []
@@ -165,13 +165,15 @@ class TestTokenGuard:
 
     @pytest.mark.parametrize("text,cost", [
         ("", 0),
-        ("hello world", 5 * 1 + 5 * 1),
-        ("a,b", 3 * 2),
-        ("a" * 50_000, 50_000),
-        ("$" * 10, 10 * 11),
-        ("$$ $$", 2 * 3 + 2 * 3),
-        ("  a \n\t b  ", 1 + 1),
-        ("x y", 1 + 1),
+        ("hello world", 55),
+        ("a,b", 15),
+        ("a" * 50_000, 250_000),
+        ("$" * 10, 150),
+        ("$$ $$", 33),
+        ("  a \n\t b  ", 50),
+        ("x y", 15),
+        ("a:b", 15),
+        ("A$A$x", 35),
     ])
     def test_tokenizer_cost_values(self, text, cost):
         assert detector.tokenizer_cost(text) == cost
@@ -188,7 +190,7 @@ class TestTokenGuard:
             start = time.perf_counter()
             nlp.make_doc(text)
             elapsed = time.perf_counter() - start
-            assert elapsed <= 3e-7 * cost + 0.05, (i, cost, elapsed)
+            assert elapsed <= cost / 1e6 + 0.05, (i, cost, elapsed)
 
 
 class TestInputEdgeCases:

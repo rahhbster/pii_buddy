@@ -23,16 +23,24 @@ MAX_MAPPING_ENTRIES = 10_000
 MAX_VALUE_CHARS = MAX_TEXT_CHARS
 MAX_TAG_CHARS = 128
 
-# spaCy NER and the tokenizer are what bound latency, not characters. Measured
-# on the dev machine (en_core_web_md): NER + detection is ~0.14-0.18 ms per
-# token for every token-dense shape, so 16_000 tokens is <= ~3 s worst case.
-# The tokenizer itself is quadratic in whitespace-free chunks that split into
-# many tokens, so detector.tokenizer_cost() is checked first; 4_000_000 units
-# is ~1 s of tokenizer work (~250 ns per unit worst case).
+# Latency guards. The spaCy tokenizer is quadratic in some whitespace-free
+# shapes (long affix chains, ":"-dense chunks), so detector.tokenizer_cost()
+# (estimated microseconds, see the cost model in detector.py) is checked first
+# and the tokenizer only runs on text under MAX_TOKENIZER_COST (1.5 s of
+# estimated work; the slowest accepted input measured ~1 s). NER and detection
+# then cost ~0.14-0.18 ms per token, so MAX_TOKENS bounds them to a few seconds.
+# This latency bound holds for the tokenizer and NER only, NOT for validation:
+# name-dense text such as "Sam, " * 7999 still takes ~16 s in
+# validation.score_person_entity (entities x tokens), which is being fixed
+# separately. The subprocess watchdog in front of --serve is the real timeout.
 MAX_TOKENS = 16_000
-MAX_TOKENIZER_COST = 4_000_000
+MAX_TOKENIZER_COST = 1_500_000
+
+TOO_COMPLEX_MESSAGE = "text is too complex to process safely"
 
 DOCUMENT_TYPES = frozenset({"auto", "general", "resume", "transcript"})
+
+_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 
 # Bounded and '<'-free inside NAME tags so scanning stays linear and a tag
 # can never swallow a following one.
@@ -104,24 +112,25 @@ def _check_input(text, document_type):
         )
     if document_type not in DOCUMENT_TYPES:
         raise CoreError("invalid_document_type", "unknown document_type")
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:
-        raise CoreError("invalid_text", "text is not valid unicode") from None
+    # A regex search, not text.encode(): a UnicodeEncodeError carries the whole
+    # input in .object and would stay reachable as CoreError.__context__.
+    if _SURROGATE_RE.search(text) is not None:
+        raise CoreError("invalid_text", "text is not valid unicode")
 
 
 def _detect(text, document_type):
     try:
         detector.get_nlp(allow_download=False)
+        model_ready = True
     except detector.ModelNotInstalledError:
-        raise CoreError(
-            "model_unavailable", "no spaCy model is installed"
-        ) from None
+        model_ready = False
+    if not model_ready:
+        raise CoreError("model_unavailable", "no spaCy model is installed")
     if (
         detector.tokenizer_cost(text) > MAX_TOKENIZER_COST
         or detector.count_tokens(text) > MAX_TOKENS
     ):
-        raise CoreError("payload_too_large", "text has too many tokens")
+        raise CoreError("payload_too_large", TOO_COMPLEX_MESSAGE)
     return detector.detect_pii(text, document_type)
 
 
