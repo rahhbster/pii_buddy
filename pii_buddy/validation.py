@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -63,6 +64,7 @@ class ValidationContext:
     text: str
     spacy_doc: object
     non_person_labels: set = field(default_factory=set)
+    token_starts: list | None = None
 
 
 def _load_blocklist(filepath: Path) -> set[str]:
@@ -184,7 +186,10 @@ def score_person_entity(entity, context: ValidationContext) -> float:
     # POS tag analysis — proper nouns (NNP) are a good sign
     try:
         doc = context.spacy_doc
-        tokens = [t for t in doc if entity.start <= t.idx < entity.end]
+        if context.token_starts is None:
+            context.token_starts = [t.idx for t in doc]
+        starts = context.token_starts
+        tokens = doc[bisect_left(starts, entity.start):bisect_left(starts, entity.end)]
         if tokens:
             nnp_ratio = sum(1 for t in tokens if t.tag_ in ('NNP', 'NNPS')) / len(tokens)
             if nnp_ratio > 0.8:
