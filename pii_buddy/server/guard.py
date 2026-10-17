@@ -7,6 +7,7 @@ never contain request data.
 
 import hashlib
 import hmac
+import itertools
 import re
 from dataclasses import dataclass
 
@@ -15,6 +16,7 @@ TEXT_CAP = 50_000
 READ_TIMEOUT = 10
 MAX_INFLIGHT = 4
 
+MAX_PORTS = 8
 MAX_HEADERS = 100
 MAX_HEADER_VALUE = 8192
 MAX_TARGET = 2048
@@ -24,7 +26,7 @@ _HOST = re.compile(r"(?:127\.0\.0\.1|localhost):([1-9][0-9]{0,4})")
 _BEARER = re.compile(r"(?i:bearer) ([\x21-\x7e]{1,512})")
 _CONTENT_LENGTH = re.compile(r"[0-9]{1,10}")
 _CONTENT_TYPE = re.compile(
-    r"application/json(?:[ \t]*;[ \t]*charset=utf-8)?", re.IGNORECASE
+    r"application/json(?:[ \t]*;[ \t]*charset=utf-8)?", re.IGNORECASE | re.ASCII
 )
 
 _ROUTES = {
@@ -83,8 +85,11 @@ def _normalize_ports(expected_ports):
     if isinstance(expected_ports, (str, bytes)):
         return frozenset()
     try:
-        ports = list(expected_ports)
+        # One extra element is enough to know the set is over the cap.
+        ports = list(itertools.islice(expected_ports, MAX_PORTS + 1))
     except TypeError:
+        return frozenset()
+    if len(ports) > MAX_PORTS:
         return frozenset()
     if not all(isinstance(p, int) and not isinstance(p, bool) and 1 <= p <= 65535
                for p in ports):
