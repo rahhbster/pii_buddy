@@ -1,0 +1,9836 @@
+[
+{
+"text": "",
+"validated": []
+},
+{
+"text": " ",
+"validated": []
+},
+{
+"text": "\n\n",
+"validated": []
+},
+{
+"text": "No names here at all.",
+"validated": []
+},
+{
+"text": "x",
+"validated": []
+},
+{
+"text": "...",
+"validated": []
+},
+{
+"text": "A",
+"validated": []
+},
+{
+"text": "Mr. Smith arrived early. Mr. Smith left late.",
+"validated": []
+},
+{
+"text": "I spoke with Mr. Smith, who agreed.",
+"validated": []
+},
+{
+"text": "Mr. Okafor arrived early. Mr. Okafor left late.",
+"validated": []
+},
+{
+"text": "I spoke with Mr. Okafor, who agreed.",
+"validated": []
+},
+{
+"text": "Mr. Testperson arrived early. Mr. Testperson left late.",
+"validated": []
+},
+{
+"text": "I spoke with Mr. Testperson, who agreed.",
+"validated": []
+},
+{
+"text": "Mrs. Smith arrived early. Mrs. Smith left late.",
+"validated": []
+},
+{
+"text": "I spoke with Mrs. Smith, who agreed.",
+"validated": []
+},
+{
+"text": "Mrs. Okafor arrived early. Mrs. Okafor left late.",
+"validated": []
+},
+{
+"text": "I spoke with Mrs. Okafor, who agreed.",
+"validated": []
+},
+{
+"text": "Mrs. Testperson arrived early. Mrs. Testperson left late.",
+"validated": []
+},
+{
+"text": "I spoke with Mrs. Testperson, who agreed.",
+"validated": []
+},
+{
+"text": "Ms. Smith arrived early. Ms. Smith left late.",
+"validated": []
+},
+{
+"text": "I spoke with Ms. Smith, who agreed.",
+"validated": []
+},
+{
+"text": "Ms. Okafor arrived early. Ms. Okafor left late.",
+"validated": []
+},
+{
+"text": "I spoke with Ms. Okafor, who agreed.",
+"validated": []
+},
+{
+"text": "Ms. Testperson arrived early. Ms. Testperson left late.",
+"validated": []
+},
+{
+"text": "I spoke with Ms. Testperson, who agreed.",
+"validated": []
+},
+{
+"text": "Dr. Smith arrived early. Dr. Smith left late.",
+"validated": []
+},
+{
+"text": "I spoke with Dr. Smith, who agreed.",
+"validated": []
+},
+{
+"text": "Dr. Okafor arrived early. Dr. Okafor left late.",
+"validated": []
+},
+{
+"text": "I spoke with Dr. Okafor, who agreed.",
+"validated": []
+},
+{
+"text": "Dr. Testperson arrived early. Dr. Testperson left late.",
+"validated": []
+},
+{
+"text": "I spoke with Dr. Testperson, who agreed.",
+"validated": []
+},
+{
+"text": "Prof. Smith arrived early. Prof. Smith left late.",
+"validated": []
+},
+{
+"text": "I spoke with Prof. Smith, who agreed.",
+"validated": []
+},
+{
+"text": "Prof. Okafor arrived early. Prof. Okafor left late.",
+"validated": []
+},
+{
+"text": "I spoke with Prof. Okafor, who agreed.",
+"validated": []
+},
+{
+"text": "Prof. Testperson arrived early. Prof. Testperson left late.",
+"validated": []
+},
+{
+"text": "I spoke with Prof. Testperson, who agreed.",
+"validated": []
+},
+{
+"text": "Sir Smith arrived early. Sir Smith left late.",
+"validated": []
+},
+{
+"text": "I spoke with Sir Smith, who agreed.",
+"validated": []
+},
+{
+"text": "Sir Okafor arrived early. Sir Okafor left late.",
+"validated": []
+},
+{
+"text": "I spoke with Sir Okafor, who agreed.",
+"validated": []
+},
+{
+"text": "Sir Testperson arrived early. Sir Testperson left late.",
+"validated": []
+},
+{
+"text": "I spoke with Sir Testperson, who agreed.",
+"validated": []
+},
+{
+"text": "Ines Testperson replied to Farid Placeholder on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Ines Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Zed Smith-Jones interviewed Sam Nobody on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Zed Smith-Jones",
+"PERSON",
+0,
+15,
+0.75
+],
+[
+"Sam Nobody",
+"PERSON",
+28,
+38,
+0.95
+]
+]
+},
+{
+"text": "Quinn McDonald called Farid Nobody on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Quinn McDonald",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "Ines Quillfeather replied to Yara Examplar on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Ines Quillfeather",
+"PERSON",
+0,
+17,
+0.95
+],
+[
+"Yara Examplar",
+"PERSON",
+29,
+42,
+0.95
+]
+]
+},
+{
+"text": "Kira Nobody met Rosa Faker on Monday. Lunch will be served in the main hall.",
+"validated": [
+[
+"Rosa Faker",
+"PERSON",
+16,
+26,
+0.95
+]
+]
+},
+{
+"text": "Kira McDonald interviewed Priya McDonald on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Kira McDonald",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Priya McDonald",
+"PERSON",
+26,
+40,
+0.95
+]
+]
+},
+{
+"text": "Hiro Marlowe interviewed Liam McDonald on Monday. Lunch will be served in the main hall.",
+"validated": [
+[
+"Hiro Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Liam McDonald",
+"PERSON",
+25,
+38,
+0.95
+]
+]
+},
+{
+"text": "Noor Marlowe interviewed Carla Examplar on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Noor Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Carla Examplar",
+"PERSON",
+25,
+39,
+0.95
+]
+]
+},
+{
+"text": "Farid Brightwater introduced Mina Roe on Monday. Lunch will be served in the main hall.",
+"validated": [
+[
+"Farid Brightwater",
+"PERSON",
+0,
+17,
+0.95
+],
+[
+"Mina Roe",
+"PERSON",
+29,
+37,
+0.95
+]
+]
+},
+{
+"text": "Uma Marlowe hired Farid Marlowe on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Farid Marlowe",
+"PERSON",
+18,
+31,
+0.95
+]
+]
+},
+{
+"text": "Yara Van Der Berg called Elena O'Neil on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Yara Van Der Berg",
+"PERSON",
+0,
+17,
+0.7
+],
+[
+"Elena O'Neil",
+"PERSON",
+25,
+37,
+0.95
+]
+]
+},
+{
+"text": "Jonas De La Cruz replied to Zed Brightwater on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Jonas De La Cruz",
+"PERSON",
+0,
+16,
+0.7
+],
+[
+"Zed Brightwater",
+"PERSON",
+28,
+43,
+0.95
+]
+]
+},
+{
+"text": "Carla Placeholder introduced Farid Quillfeather on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Carla Placeholder",
+"PERSON",
+0,
+17,
+0.95
+],
+[
+"Farid Quillfeather",
+"PERSON",
+29,
+47,
+0.95
+]
+]
+},
+{
+"text": "Uma De La Cruz emailed Bob Smith on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Bob Smith",
+"PERSON",
+23,
+32,
+0.95
+]
+]
+},
+{
+"text": "Priya Examplar met Mina Faker on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Priya Examplar",
+"PERSON",
+0,
+14,
+0.95
+],
+[
+"Mina Faker",
+"PERSON",
+19,
+29,
+0.95
+]
+]
+},
+{
+"text": "Carla Nobody replied to Wren McDonald on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Carla Nobody",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+24,
+37,
+0.95
+]
+]
+},
+{
+"text": "Carla Placeholder thanked Yara Marlowe on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Carla Placeholder",
+"PERSON",
+0,
+17,
+0.95
+],
+[
+"Yara Marlowe",
+"PERSON",
+26,
+38,
+0.95
+]
+]
+},
+{
+"text": "Rosa Testperson met Uma Placeholder on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Rosa Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Dev Testperson called Quinn Van Der Berg on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Dev Testperson",
+"PERSON",
+0,
+14,
+0.75
+]
+]
+},
+{
+"text": "Jonas Okafor interviewed Priya Brightwater on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Jonas Okafor",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Priya Brightwater",
+"PERSON",
+25,
+42,
+0.95
+]
+]
+},
+{
+"text": "Ann Van Der Berg replied to Liam O'Neil on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Ann Van Der Berg",
+"PERSON",
+0,
+16,
+0.7
+],
+[
+"Liam O'Neil",
+"PERSON",
+28,
+39,
+0.95
+]
+]
+},
+{
+"text": "Jonas Placeholder met Rosa De La Cruz on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Jonas Placeholder",
+"PERSON",
+0,
+17,
+0.95
+],
+[
+"Rosa De La Cruz",
+"PERSON",
+22,
+37,
+0.7
+]
+]
+},
+{
+"text": "Elena Examplar thanked Omar Marlowe on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Elena Examplar",
+"PERSON",
+0,
+14,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+23,
+35,
+0.95
+]
+]
+},
+{
+"text": "Sam Roe met Yara Van Der Berg on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Sam Roe",
+"PERSON",
+0,
+7,
+0.95
+],
+[
+"Yara Van Der Berg",
+"PERSON",
+12,
+29,
+0.7
+]
+]
+},
+{
+"text": "Jonas Van Der Berg introduced Zed Testperson on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Jonas Van Der Berg",
+"PERSON",
+0,
+18,
+0.7
+],
+[
+"Zed Testperson",
+"PERSON",
+30,
+44,
+0.95
+]
+]
+},
+{
+"text": "Bob McDonald interviewed Priya Okafor on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Bob McDonald",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Priya Okafor",
+"PERSON",
+25,
+37,
+0.95
+]
+]
+},
+{
+"text": "Gwen De La Cruz called Yara Brightwater on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Gwen De La Cruz",
+"PERSON",
+0,
+15,
+0.7
+],
+[
+"Yara Brightwater",
+"PERSON",
+23,
+39,
+0.95
+]
+]
+},
+{
+"text": "Liam O'Neil replied to Sam O'Neil on Monday. Lunch will be served in the main hall.",
+"validated": [
+[
+"Liam O'Neil",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Sam O'Neil",
+"PERSON",
+23,
+33,
+0.95
+]
+]
+},
+{
+"text": "Priya De La Cruz replied to Priya Examplar on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Priya De La Cruz",
+"PERSON",
+0,
+16,
+0.7
+],
+[
+"Priya Examplar",
+"PERSON",
+28,
+42,
+0.95
+]
+]
+},
+{
+"text": "Liam Smith-Jones replied to Quinn Testperson on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Liam Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "Quinn Marlowe called Ann Smith-Jones on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Quinn Marlowe",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Ann Smith-Jones",
+"PERSON",
+21,
+36,
+0.75
+]
+]
+},
+{
+"text": "Liam Marlowe interviewed Xavi Brightwater on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Liam Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Xavi Brightwater",
+"PERSON",
+25,
+41,
+0.95
+]
+]
+},
+{
+"text": "Quinn McDonald introduced Xavi De La Cruz on Monday. Lunch will be served in the main hall.",
+"validated": [
+[
+"Quinn McDonald",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "Dev Examplar thanked Jonas Smith-Jones on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Dev Examplar",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Jonas Smith-Jones",
+"PERSON",
+21,
+38,
+0.75
+]
+]
+},
+{
+"text": "Dev Smith-Jones introduced Noor Quillfeather on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Dev Smith-Jones",
+"PERSON",
+0,
+15,
+0.75
+],
+[
+"Noor Quillfeather",
+"PERSON",
+27,
+44,
+0.95
+]
+]
+},
+{
+"text": "Omar Lindqvist called Omar Van Der Berg on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Omar Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+],
+[
+"Omar Van Der Berg",
+"PERSON",
+22,
+39,
+0.7
+]
+]
+},
+{
+"text": "Mina McDonald replied to Ines O'Neil on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Mina McDonald",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Ines O'Neil",
+"PERSON",
+25,
+36,
+0.95
+]
+]
+},
+{
+"text": "Noor Okafor called Kira Okafor on Monday. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Noor Okafor",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Kira Okafor",
+"PERSON",
+19,
+30,
+0.95
+]
+]
+},
+{
+"text": "Yara Van Der Berg thanked Zed Okafor on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Yara Van Der Berg",
+"PERSON",
+0,
+17,
+0.7
+],
+[
+"Zed Okafor",
+"PERSON",
+26,
+36,
+0.95
+]
+]
+},
+{
+"text": "Wren Marlowe emailed Mina O'Neil on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Wren Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Mina O'Neil",
+"PERSON",
+21,
+32,
+0.95
+]
+]
+},
+{
+"text": "Xavi Okafor introduced Liam Quillfeather on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Liam Quillfeather",
+"PERSON",
+23,
+40,
+0.95
+]
+]
+},
+{
+"text": "Liam Faker replied to Jonas McDonald on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Liam Faker",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"Jonas McDonald",
+"PERSON",
+22,
+36,
+0.95
+]
+]
+},
+{
+"text": "Omar Faker thanked Priya Smith-Jones on Monday. The quarterly report was delivered on time.",
+"validated": [
+[
+"Omar Faker",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"Priya Smith-Jones",
+"PERSON",
+19,
+36,
+0.75
+]
+]
+},
+{
+"text": "Omar Roe introduced Ann O'Neil on Monday. The system was restarted after the update.",
+"validated": [
+[
+"Omar Roe",
+"PERSON",
+0,
+8,
+0.95
+],
+[
+"Ann O'Neil",
+"PERSON",
+20,
+30,
+0.95
+]
+]
+},
+{
+"text": "Wren Brightwater thanked Vik Testperson on Monday. Please review the attached notes before Friday.",
+"validated": [
+[
+"Wren Brightwater",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"Vik Testperson",
+"PERSON",
+25,
+39,
+0.95
+]
+]
+},
+{
+"text": "Rosa McDonald\nCloud Architect\n\nSkills\nThe system was restarted after the update.",
+"validated": []
+},
+{
+"text": "Quinn Placeholder Data Analyst at Umbrella Labs.",
+"validated": []
+},
+{
+"text": "Zed O'Neil\nTechnical Lead\n\nLanguages\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Zed O'Neil",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Uma Nobody Managing Director at Springfield.",
+"validated": []
+},
+{
+"text": "Xavi Quillfeather\nLead Frontend Developer\n\nSkills\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Priya Smith Lead Frontend Developer at Paris.",
+"validated": [
+[
+"Priya Smith",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Priya Roe\nManaging Director\n\nEducation\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Priya Roe",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "Priya Brightwater Cloud Architect at Umbrella Labs.",
+"validated": [
+[
+"Priya Brightwater",
+"PERSON",
+0,
+17,
+0.95
+]
+]
+},
+{
+"text": "Sam Roe\nScrum Master\n\nSkills\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Mina Placeholder Data Analyst at Springfield.",
+"validated": []
+},
+{
+"text": "Kira Quillfeather\nTechnical Lead\n\nProfessional Summary\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Jonas Nobody Security Administrator at Paris.",
+"validated": [
+[
+"Jonas Nobody Security",
+"PERSON",
+0,
+21,
+0.95
+]
+]
+},
+{
+"text": "Dev Faker\nProduct Manager\n\nProjects\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Dev Faker",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "Gwen Smith Scrum Master at Springfield.",
+"validated": [
+[
+"Gwen Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Mina O'Neil\nTechnical Lead\n\nWork Experience\nThe system was restarted after the update.",
+"validated": [
+[
+"Mina O'Neil",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Wren Faker Senior Software Engineer at Initech.",
+"validated": []
+},
+{
+"text": "Bob Placeholder\nSenior Software Engineer\n\nLanguages\nThe system was restarted after the update.",
+"validated": []
+},
+{
+"text": "Ines Brightwater Lead Frontend Developer at Initech.",
+"validated": [
+[
+"Ines Brightwater Lead Frontend",
+"PERSON",
+0,
+30,
+0.7
+]
+]
+},
+{
+"text": "Sam Brightwater\nManaging Director\n\nProfessional Summary\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Mina Quillfeather Vice President at Initech.",
+"validated": []
+},
+{
+"text": "Elena McDonald\nLead Frontend Developer\n\nSkills\nThe system was restarted after the update.",
+"validated": [
+[
+"Elena McDonald",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "Liam Lindqvist Product Manager at Initech.",
+"validated": [
+[
+"Liam Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "Rosa Testperson\nProduct Manager\n\nSkills\nThe system was restarted after the update.",
+"validated": [
+[
+"Rosa Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Vik Van Der Berg Senior Software Engineer at Umbrella Labs.",
+"validated": [
+[
+"Vik Van Der Berg Senior",
+"PERSON",
+0,
+23,
+0.7
+]
+]
+},
+{
+"text": "Gwen Marlowe\nManaging Director\n\nWork Experience\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Wren Quillfeather Product Manager at Initech.",
+"validated": []
+},
+{
+"text": "Bob De La Cruz\nManaging Director\n\nReferences\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Bob De La Cruz",
+"PERSON",
+0,
+14,
+0.7
+]
+]
+},
+{
+"text": "Bob Brightwater Technical Lead at Berlin.",
+"validated": []
+},
+{
+"text": "Farid Okafor\nVice President\n\nLanguages\nThe system was restarted after the update.",
+"validated": [
+[
+"Farid Okafor",
+"PERSON",
+0,
+12,
+0.95
+]
+]
+},
+{
+"text": "Sam Van Der Berg Scrum Master at Initech.",
+"validated": [
+[
+"Sam Van Der Berg",
+"PERSON",
+0,
+16,
+0.7
+]
+]
+},
+{
+"text": "Wren Testperson\nSenior Software Engineer\n\nProfessional Summary\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Wren Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Kira Faker Security Administrator at Berlin.",
+"validated": []
+},
+{
+"text": "Wren Placeholder\nManaging Director\n\nEducation\nThe quarterly report was delivered on time.",
+"validated": []
+},
+{
+"text": "Elena Smith Product Manager at Umbrella Labs.",
+"validated": [
+[
+"Elena Smith",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Gwen Smith-Jones\nVice President\n\nEducation\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Gwen Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "Zed Okafor Technical Lead at Mount Testmore.",
+"validated": []
+},
+{
+"text": "Rosa Smith\nLead Frontend Developer\n\nReferences\nThe system was restarted after the update.",
+"validated": [
+[
+"Rosa Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Priya Van Der Berg Security Administrator at Initech.",
+"validated": [
+[
+"Priya Van Der Berg Security",
+"PERSON",
+0,
+27,
+0.7
+]
+]
+},
+{
+"text": "Mina Van Der Berg\nLead Frontend Developer\n\nProjects\nThe system was restarted after the update.",
+"validated": [
+[
+"Mina Van Der Berg",
+"PERSON",
+0,
+17,
+0.7
+]
+]
+},
+{
+"text": "Mina Testperson Cloud Architect at Initech.",
+"validated": []
+},
+{
+"text": "Jonas Okafor\nManaging Director\n\nWork Experience\nThe system was restarted after the update.",
+"validated": [
+[
+"Jonas Okafor",
+"PERSON",
+0,
+12,
+0.95
+]
+]
+},
+{
+"text": "Ann Nobody Managing Director at Mount Testmore.",
+"validated": []
+},
+{
+"text": "Omar Smith\nSecurity Administrator\n\nProjects\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Omar Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Sam Testperson Data Analyst at Acme Widgets Inc..",
+"validated": [
+[
+"Sam Testperson Data",
+"PERSON",
+0,
+19,
+0.95
+]
+]
+},
+{
+"text": "Hiro Smith\nVice President\n\nReferences\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Hiro Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Vik Van Der Berg Vice President at Umbrella Labs.",
+"validated": [
+[
+"Vik Van Der Berg",
+"PERSON",
+0,
+16,
+0.7
+]
+]
+},
+{
+"text": "Vik Okafor\nScrum Master\n\nReferences\nThe system was restarted after the update.",
+"validated": []
+},
+{
+"text": "Ines Testperson Senior Software Engineer at Springfield.",
+"validated": [
+[
+"Ines Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Gwen Lindqvist\nManaging Director\n\nEducation\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Elena Van Der Berg Security Administrator at Initech.",
+"validated": []
+},
+{
+"text": "Jonas O'Neil\nData Analyst\n\nReferences\nThe quarterly report was delivered on time.",
+"validated": []
+},
+{
+"text": "Farid McDonald Managing Director at Springfield.",
+"validated": []
+},
+{
+"text": "Zed Placeholder\nSecurity Administrator\n\nLanguages\nThe system was restarted after the update.",
+"validated": [
+[
+"Zed Placeholder",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Mina Okafor Cloud Architect at Globex Corporation.",
+"validated": []
+},
+{
+"text": "Uma Okafor\nManaging Director\n\nCertifications\nThe quarterly report was delivered on time.",
+"validated": []
+},
+{
+"text": "Gwen Nobody Technical Lead at Berlin.",
+"validated": []
+},
+{
+"text": "Uma Lindqvist\nCloud Architect\n\nLanguages\nThe system was restarted after the update.",
+"validated": []
+},
+{
+"text": "Hiro Examplar Security Administrator at Springfield.",
+"validated": []
+},
+{
+"text": "Kira Lindqvist\nData Analyst\n\nEducation\nThe quarterly report was delivered on time.",
+"validated": []
+},
+{
+"text": "Wren Quillfeather Lead Frontend Developer at Berlin.",
+"validated": []
+},
+{
+"text": "Ines O'Neil\nTechnical Lead\n\nProfessional Summary\nThe quarterly report was delivered on time.",
+"validated": []
+},
+{
+"text": "Wren Roe Product Manager at Mount Testmore.",
+"validated": []
+},
+{
+"text": "Ann Quillfeather\nProduct Manager\n\nCertifications\nThe system was restarted after the update.",
+"validated": [
+[
+"Ann Quillfeather",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "Kira Van Der Berg Product Manager at Paris.",
+"validated": [
+[
+"Kira Van Der Berg",
+"PERSON",
+0,
+17,
+0.7
+]
+]
+},
+{
+"text": "Ines O'Neil\nSecurity Administrator\n\nCertifications\nTraffic was heavy on the bridge this morning.",
+"validated": []
+},
+{
+"text": "Ann Faker Lead Frontend Developer at Paris.",
+"validated": [
+[
+"Ann Faker Lead Frontend",
+"PERSON",
+0,
+23,
+0.7
+]
+]
+},
+{
+"text": "Wren Smith\nTechnical Lead\n\nEducation\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Wren Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Hiro Smith-Jones Senior Software Engineer at Initech.",
+"validated": [
+[
+"Hiro Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "Uma Okafor\nCloud Architect\n\nEducation\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Tara O'Neil Cloud Architect at Berlin.",
+"validated": [
+[
+"Tara O'Neil",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Education\nElena McDonald worked at Globex Corporation.\nEducation\nNone.",
+"validated": [
+[
+"Elena McDonald",
+"PERSON",
+10,
+24,
+0.95
+]
+]
+},
+{
+"text": "Skills\nHiro Lindqvist worked at Globex Corporation.\nSkills\nNone.",
+"validated": [
+[
+"Hiro Lindqvist",
+"PERSON",
+7,
+21,
+0.95
+]
+]
+},
+{
+"text": "Work Experience\nZed Examplar worked at Springfield.\nWork Experience\nNone.",
+"validated": [
+[
+"Zed Examplar",
+"PERSON",
+16,
+28,
+0.95
+]
+]
+},
+{
+"text": "Professional Summary\nMina Van Der Berg worked at Globex Corporation.\nProfessional Summary\nNone.",
+"validated": [
+[
+"Van Der Berg",
+"PERSON",
+26,
+38,
+0.95
+]
+]
+},
+{
+"text": "References\nRosa Marlowe worked at Globex Corporation.\nReferences\nNone.",
+"validated": [
+[
+"Rosa Marlowe",
+"PERSON",
+11,
+23,
+0.95
+]
+]
+},
+{
+"text": "Certifications\nNoor Testperson worked at Globex Corporation.\nCertifications\nNone.",
+"validated": [
+[
+"Noor Testperson",
+"PERSON",
+15,
+30,
+0.95
+]
+]
+},
+{
+"text": "Projects\nBob Placeholder worked at Acme Widgets Inc..\nProjects\nNone.",
+"validated": []
+},
+{
+"text": "Languages\nInes Brightwater worked at Berlin.\nLanguages\nNone.",
+"validated": [
+[
+"Ines Brightwater",
+"PERSON",
+10,
+26,
+0.95
+]
+]
+},
+{
+"text": "Hiro Faker\nAWS Certified Solutions Architect\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Hiro Faker",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Certified: AWS Certified Solutions Architect and Mina Lindqvist.",
+"validated": [
+[
+"Mina Lindqvist",
+"PERSON",
+49,
+63,
+0.95
+]
+]
+},
+{
+"text": "Ann Van Der Berg\nPMP\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Ann Van Der Berg",
+"PERSON",
+0,
+16,
+0.7
+]
+]
+},
+{
+"text": "Certified: PMP and Mina Marlowe.",
+"validated": [
+[
+"Mina Marlowe",
+"PERSON",
+19,
+31,
+0.95
+]
+]
+},
+{
+"text": "Rosa Smith\nGoogle Cloud\nThe system was restarted after the update.",
+"validated": [
+[
+"Rosa Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Certified: Google Cloud and Rosa De La Cruz.",
+"validated": [
+[
+"Rosa De La Cruz",
+"PERSON",
+28,
+43,
+0.7
+]
+]
+},
+{
+"text": "Yara Brightwater\nSix Sigma\nLunch will be served in the main hall.",
+"validated": [
+[
+"Yara Brightwater",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "Certified: Six Sigma and Quinn Quillfeather.",
+"validated": []
+},
+{
+"text": "Elena Testperson wrote the memo. Later, Elena Testperson sent it. Elena Testperson's desk is clean. Then Elena left.",
+"validated": [
+[
+"Elena Testperson",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"Elena Testperson",
+"PERSON",
+40,
+56,
+0.95
+],
+[
+"Elena Testperson's",
+"PERSON",
+66,
+84,
+0.75
+]
+]
+},
+{
+"text": "Farid Examplar wrote the memo. Later, Farid Examplar sent it. Farid Examplar's desk is clean. Then Farid left.",
+"validated": []
+},
+{
+"text": "Uma O'Neil wrote the memo. Later, Uma O'Neil sent it. Uma O'Neil's desk is clean. Then Uma left.",
+"validated": []
+},
+{
+"text": "Dev O'Neil wrote the memo. Later, Dev O'Neil sent it. Dev O'Neil's desk is clean. Then Dev left.",
+"validated": [
+[
+"Dev O'Neil",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"Dev O'Neil",
+"PERSON",
+34,
+44,
+0.95
+],
+[
+"Dev O'Neil's",
+"PERSON",
+54,
+66,
+0.75
+]
+]
+},
+{
+"text": "Uma Smith wrote the memo. Later, Uma Smith sent it. Uma Smith's desk is clean. Then Uma left.",
+"validated": []
+},
+{
+"text": "Gwen O'Neil wrote the memo. Later, Gwen O'Neil sent it. Gwen O'Neil's desk is clean. Then Gwen left.",
+"validated": [
+[
+"Gwen O'Neil",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Gwen O'Neil",
+"PERSON",
+35,
+46,
+0.95
+],
+[
+"Gwen O'Neil's",
+"PERSON",
+56,
+69,
+0.75
+]
+]
+},
+{
+"text": "Sam Testperson wrote the memo. Later, Sam Testperson sent it. Sam Testperson's desk is clean. Then Sam left.",
+"validated": [
+[
+"Sam Testperson",
+"PERSON",
+0,
+14,
+0.95
+],
+[
+"Sam Testperson",
+"PERSON",
+38,
+52,
+0.95
+],
+[
+"Sam Testperson's",
+"PERSON",
+62,
+78,
+0.75
+]
+]
+},
+{
+"text": "Ines Testperson wrote the memo. Later, Ines Testperson sent it. Ines Testperson's desk is clean. Then Ines left.",
+"validated": [
+[
+"Ines Testperson",
+"PERSON",
+0,
+15,
+0.95
+],
+[
+"Ines Testperson",
+"PERSON",
+39,
+54,
+0.95
+],
+[
+"Ines Testperson's",
+"PERSON",
+64,
+81,
+0.75
+]
+]
+},
+{
+"text": "Zed Lindqvist wrote the memo. Later, Zed Lindqvist sent it. Zed Lindqvist's desk is clean. Then Zed left.",
+"validated": [
+[
+"Zed Lindqvist",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Zed Lindqvist",
+"PERSON",
+37,
+50,
+0.95
+],
+[
+"Zed Lindqvist's",
+"PERSON",
+60,
+75,
+0.75
+]
+]
+},
+{
+"text": "Ann Examplar wrote the memo. Later, Ann Examplar sent it. Ann Examplar's desk is clean. Then Ann left.",
+"validated": [
+[
+"Ann Examplar",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Ann Examplar",
+"PERSON",
+36,
+48,
+0.95
+],
+[
+"Ann Examplar's",
+"PERSON",
+58,
+72,
+0.75
+]
+]
+},
+{
+"text": "Carla Quillfeather wrote the memo. Later, Carla Quillfeather sent it. Carla Quillfeather's desk is clean. Then Carla left.",
+"validated": [
+[
+"Carla Quillfeather",
+"PERSON",
+0,
+18,
+0.95
+],
+[
+"Carla Quillfeather",
+"PERSON",
+42,
+60,
+0.95
+],
+[
+"Carla Quillfeather's",
+"PERSON",
+70,
+90,
+0.75
+]
+]
+},
+{
+"text": "Quinn O'Neil wrote the memo. Later, Quinn O'Neil sent it. Quinn O'Neil's desk is clean. Then Quinn left.",
+"validated": [
+[
+"Quinn O'Neil",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Quinn O'Neil",
+"PERSON",
+36,
+48,
+0.95
+],
+[
+"Quinn O'Neil's",
+"PERSON",
+58,
+72,
+0.75
+]
+]
+},
+{
+"text": "Jonas Nobody wrote the memo. Later, Jonas Nobody sent it. Jonas Nobody's desk is clean. Then Jonas left.",
+"validated": [
+[
+"Jonas Nobody",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Jonas Nobody",
+"PERSON",
+36,
+48,
+0.75
+],
+[
+"Jonas Nobody's",
+"PERSON",
+58,
+72,
+0.75
+]
+]
+},
+{
+"text": "Noor Roe wrote the memo. Later, Noor Roe sent it. Noor Roe's desk is clean. Then Noor left.",
+"validated": [
+[
+"Noor Roe",
+"PERSON",
+0,
+8,
+0.95
+],
+[
+"Noor Roe",
+"PERSON",
+32,
+40,
+0.95
+],
+[
+"Noor Roe's",
+"PERSON",
+50,
+60,
+0.75
+]
+]
+},
+{
+"text": "Ann McDonald wrote the memo. Later, Ann McDonald sent it. Ann McDonald's desk is clean. Then Ann left.",
+"validated": [
+[
+"Ann McDonald",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Ann McDonald",
+"PERSON",
+36,
+48,
+0.95
+],
+[
+"Ann McDonald's",
+"PERSON",
+58,
+72,
+0.75
+]
+]
+},
+{
+"text": "Bob Okafor wrote the memo. Later, Bob Okafor sent it. Bob Okafor's desk is clean. Then Bob left.",
+"validated": [
+[
+"Bob Okafor",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"Bob Okafor",
+"PERSON",
+34,
+44,
+0.95
+],
+[
+"Bob Okafor's",
+"PERSON",
+54,
+66,
+0.75
+]
+]
+},
+{
+"text": "Dev Lindqvist wrote the memo. Later, Dev Lindqvist sent it. Dev Lindqvist's desk is clean. Then Dev left.",
+"validated": [
+[
+"Dev Lindqvist",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Dev Lindqvist",
+"PERSON",
+37,
+50,
+0.95
+],
+[
+"Dev Lindqvist's",
+"PERSON",
+60,
+75,
+0.75
+]
+]
+},
+{
+"text": "Jonas Testperson wrote the memo. Later, Jonas Testperson sent it. Jonas Testperson's desk is clean. Then Jonas left.",
+"validated": [
+[
+"Jonas Testperson",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"Jonas Testperson",
+"PERSON",
+40,
+56,
+0.95
+],
+[
+"Jonas Testperson's",
+"PERSON",
+66,
+84,
+0.75
+]
+]
+},
+{
+"text": "Dev Quillfeather wrote the memo. Later, Dev Quillfeather sent it. Dev Quillfeather's desk is clean. Then Dev left.",
+"validated": [
+[
+"Dev Quillfeather's",
+"PERSON",
+66,
+84,
+0.75
+]
+]
+},
+{
+"text": "Yara Smith-Jones wrote the memo. Later, Yara Smith-Jones sent it. Yara Smith-Jones's desk is clean. Then Yara left.",
+"validated": [
+[
+"Yara Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+],
+[
+"Yara Smith-Jones",
+"PERSON",
+40,
+56,
+0.75
+],
+[
+"Yara Smith-Jones's",
+"PERSON",
+66,
+84,
+0.75
+]
+]
+},
+{
+"text": "Uma De La Cruz wrote the memo. Later, Uma De La Cruz sent it. Uma De La Cruz's desk is clean. Then Uma left.",
+"validated": []
+},
+{
+"text": "Tara Okafor wrote the memo. Later, Tara Okafor sent it. Tara Okafor's desk is clean. Then Tara left.",
+"validated": [
+[
+"Tara Okafor",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Tara Okafor",
+"PERSON",
+35,
+46,
+0.95
+],
+[
+"Tara Okafor's",
+"PERSON",
+56,
+69,
+0.75
+]
+]
+},
+{
+"text": "Zed Brightwater wrote the memo. Later, Zed Brightwater sent it. Zed Brightwater's desk is clean. Then Zed left.",
+"validated": [
+[
+"Zed Brightwater",
+"PERSON",
+0,
+15,
+0.95
+],
+[
+"Zed Brightwater",
+"PERSON",
+39,
+54,
+0.95
+],
+[
+"Zed Brightwater's",
+"PERSON",
+64,
+81,
+0.75
+]
+]
+},
+{
+"text": "Carla O'Neil wrote the memo. Later, Carla O'Neil sent it. Carla O'Neil's desk is clean. Then Carla left.",
+"validated": [
+[
+"Carla O'Neil",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Carla O'Neil",
+"PERSON",
+36,
+48,
+0.95
+],
+[
+"Carla O'Neil's",
+"PERSON",
+58,
+72,
+0.75
+]
+]
+},
+{
+"text": "Rosa Examplar wrote the memo. Later, Rosa Examplar sent it. Rosa Examplar's desk is clean. Then Rosa left.",
+"validated": []
+},
+{
+"text": "Noor Okafor replied to Tara Placeholder. Noor Okafor interviewed Yara McDonald. Noor Okafor called Tara O'Neil. Noor Okafor met Carla Nobody. Noor Okafor hired Hiro Smith. Noor Okafor met Ann Quillfeather. Noor Okafor met Jonas Marlowe. Noor Okafor emailed Noor Smith-Jones.",
+"validated": [
+[
+"Noor Okafor",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Tara Placeholder",
+"PERSON",
+23,
+39,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+41,
+52,
+0.95
+],
+[
+"Yara McDonald",
+"PERSON",
+65,
+78,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+80,
+91,
+0.95
+],
+[
+"Tara O'Neil",
+"PERSON",
+99,
+110,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+112,
+123,
+0.95
+],
+[
+"Carla Nobody",
+"PERSON",
+128,
+140,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+142,
+153,
+0.95
+],
+[
+"Hiro Smith",
+"PERSON",
+160,
+170,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+172,
+183,
+0.95
+],
+[
+"Ann Quillfeather",
+"PERSON",
+188,
+204,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+206,
+217,
+0.95
+],
+[
+"Jonas Marlowe",
+"PERSON",
+222,
+235,
+0.95
+],
+[
+"Noor Okafor",
+"PERSON",
+237,
+248,
+0.95
+],
+[
+"Noor Smith-Jones",
+"PERSON",
+257,
+273,
+0.75
+]
+]
+},
+{
+"text": "Kira Smith-Jones emailed Priya Smith-Jones. Kira Smith-Jones met Zed Faker. Kira Smith-Jones replied to Hiro Testperson. Kira Smith-Jones called Rosa Examplar. Kira Smith-Jones called Uma Examplar. Kira Smith-Jones interviewed Mina Placeholder. Kira Smith-Jones thanked Priya O'Neil. Kira Smith-Jones interviewed Zed Faker.",
+"validated": [
+[
+"Kira Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+],
+[
+"Priya Smith-Jones",
+"PERSON",
+25,
+42,
+0.75
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+44,
+60,
+0.75
+],
+[
+"Zed Faker",
+"PERSON",
+65,
+74,
+0.95
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+76,
+92,
+0.75
+],
+[
+"Hiro Testperson",
+"PERSON",
+104,
+119,
+0.95
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+121,
+137,
+0.75
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+160,
+176,
+0.75
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+198,
+214,
+0.75
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+245,
+261,
+0.75
+],
+[
+"Priya O'Neil",
+"PERSON",
+270,
+282,
+0.95
+],
+[
+"Kira Smith-Jones",
+"PERSON",
+284,
+300,
+0.75
+],
+[
+"Zed Faker",
+"PERSON",
+313,
+322,
+0.95
+]
+]
+},
+{
+"text": "Ines McDonald hired Bob Nobody. Ines McDonald called Omar Lindqvist. Ines McDonald introduced Gwen Nobody. Ines McDonald introduced Mina Examplar. Ines McDonald thanked Uma Van Der Berg. Ines McDonald met Uma O'Neil. Ines McDonald thanked Elena Examplar. Ines McDonald met Bob McDonald.",
+"validated": [
+[
+"Ines McDonald",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Bob Nobody",
+"PERSON",
+20,
+30,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+32,
+45,
+0.95
+],
+[
+"Omar Lindqvist",
+"PERSON",
+53,
+67,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+69,
+82,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+107,
+120,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+147,
+160,
+0.95
+],
+[
+"Van Der Berg",
+"PERSON",
+173,
+185,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+187,
+200,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+217,
+230,
+0.95
+],
+[
+"Elena Examplar",
+"PERSON",
+239,
+253,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+255,
+268,
+0.95
+],
+[
+"Bob McDonald",
+"PERSON",
+273,
+285,
+0.95
+]
+]
+},
+{
+"text": "Bob Smith-Jones called Kira Faker. Bob Smith-Jones called Uma Lindqvist. Bob Smith-Jones replied to Farid Testperson. Bob Smith-Jones thanked Ines De La Cruz. Bob Smith-Jones thanked Xavi Okafor. Bob Smith-Jones thanked Xavi Quillfeather. Bob Smith-Jones emailed Zed McDonald. Bob Smith-Jones met Sam Marlowe.",
+"validated": [
+[
+"Bob Smith-Jones",
+"PERSON",
+0,
+15,
+0.75
+],
+[
+"Kira Faker",
+"PERSON",
+23,
+33,
+0.95
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+35,
+50,
+0.75
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+73,
+88,
+0.75
+],
+[
+"Farid Testperson",
+"PERSON",
+100,
+116,
+0.95
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+118,
+133,
+0.75
+],
+[
+"Ines De La Cruz",
+"PERSON",
+142,
+157,
+0.7
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+159,
+174,
+0.75
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+196,
+211,
+0.75
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+239,
+254,
+0.75
+],
+[
+"Zed McDonald",
+"PERSON",
+263,
+275,
+0.95
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+277,
+292,
+0.75
+],
+[
+"Sam Marlowe",
+"PERSON",
+297,
+308,
+0.95
+]
+]
+},
+{
+"text": "Yara Roe introduced Farid Smith. Yara Roe called Xavi Van Der Berg. Yara Roe replied to Sam Examplar. Yara Roe emailed Tara Examplar. Yara Roe met Jonas O'Neil. Yara Roe introduced Wren Smith-Jones. Yara Roe introduced Bob Testperson. Yara Roe interviewed Bob Nobody.",
+"validated": [
+[
+"Yara Roe",
+"PERSON",
+0,
+8,
+0.95
+],
+[
+"Farid Smith",
+"PERSON",
+20,
+31,
+0.95
+],
+[
+"Yara Roe",
+"PERSON",
+33,
+41,
+0.95
+],
+[
+"Yara Roe",
+"PERSON",
+68,
+76,
+0.95
+],
+[
+"Sam Examplar",
+"PERSON",
+88,
+100,
+0.95
+],
+[
+"Yara Roe",
+"PERSON",
+102,
+110,
+0.95
+],
+[
+"Tara Examplar",
+"PERSON",
+119,
+132,
+0.95
+],
+[
+"Yara Roe",
+"PERSON",
+134,
+142,
+0.95
+],
+[
+"Jonas O'Neil",
+"PERSON",
+147,
+159,
+0.95
+],
+[
+"Yara Roe",
+"PERSON",
+161,
+169,
+0.95
+],
+[
+"Wren Smith-Jones",
+"PERSON",
+181,
+197,
+0.75
+],
+[
+"Yara Roe",
+"PERSON",
+199,
+207,
+0.95
+],
+[
+"Bob Testperson",
+"PERSON",
+219,
+233,
+0.95
+],
+[
+"Yara Roe",
+"PERSON",
+235,
+243,
+0.95
+],
+[
+"Bob Nobody",
+"PERSON",
+256,
+266,
+0.95
+]
+]
+},
+{
+"text": "Jonas Van Der Berg interviewed Dev De La Cruz. Jonas Van Der Berg hired Elena Nobody. Jonas Van Der Berg hired Quinn Quillfeather. Jonas Van Der Berg interviewed Dev McDonald. Jonas Van Der Berg introduced Ines Smith. Jonas Van Der Berg hired Elena Van Der Berg. Jonas Van Der Berg hired Yara Testperson. Jonas Van Der Berg met Uma Brightwater.",
+"validated": [
+[
+"Jonas Van Der Berg",
+"PERSON",
+0,
+18,
+0.7
+],
+[
+"Dev De La Cruz",
+"PERSON",
+31,
+45,
+0.7
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+47,
+65,
+0.7
+],
+[
+"Elena Nobody",
+"PERSON",
+72,
+84,
+0.95
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+86,
+104,
+0.7
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+131,
+149,
+0.7
+],
+[
+"Dev McDonald",
+"PERSON",
+162,
+174,
+0.95
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+176,
+194,
+0.7
+],
+[
+"Ines Smith",
+"PERSON",
+206,
+216,
+0.95
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+218,
+236,
+0.7
+],
+[
+"Elena Van Der Berg",
+"PERSON",
+243,
+261,
+0.7
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+263,
+281,
+0.7
+],
+[
+"Yara Testperson",
+"PERSON",
+288,
+303,
+0.95
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+305,
+323,
+0.7
+],
+[
+"Uma Brightwater",
+"PERSON",
+328,
+343,
+0.95
+]
+]
+},
+{
+"text": "Omar Marlowe hired Tara Marlowe. Omar Marlowe emailed Jonas Brightwater. Omar Marlowe met Liam Lindqvist. Omar Marlowe introduced Sam O'Neil. Omar Marlowe met Xavi Lindqvist. Omar Marlowe interviewed Rosa Marlowe. Omar Marlowe replied to Rosa Quillfeather. Omar Marlowe interviewed Ann Marlowe.",
+"validated": [
+[
+"Omar Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+19,
+31,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+33,
+45,
+0.95
+],
+[
+"Jonas Brightwater",
+"PERSON",
+54,
+71,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+73,
+85,
+0.95
+],
+[
+"Liam Lindqvist",
+"PERSON",
+90,
+104,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+106,
+118,
+0.95
+],
+[
+"Sam O'Neil",
+"PERSON",
+130,
+140,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+142,
+154,
+0.95
+],
+[
+"Xavi Lindqvist",
+"PERSON",
+159,
+173,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+175,
+187,
+0.95
+],
+[
+"Rosa Marlowe",
+"PERSON",
+200,
+212,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+214,
+226,
+0.95
+],
+[
+"Rosa Quillfeather",
+"PERSON",
+238,
+255,
+0.95
+],
+[
+"Omar Marlowe",
+"PERSON",
+257,
+269,
+0.95
+],
+[
+"Ann Marlowe",
+"PERSON",
+282,
+293,
+0.95
+]
+]
+},
+{
+"text": "Ann Faker hired Dev Brightwater. Ann Faker interviewed Kira McDonald. Ann Faker thanked Quinn Quillfeather. Ann Faker called Priya Roe. Ann Faker emailed Priya McDonald. Ann Faker called Farid Smith-Jones. Ann Faker called Ines Nobody. Ann Faker called Wren Quillfeather.",
+"validated": [
+[
+"Ann Faker",
+"PERSON",
+0,
+9,
+0.95
+],
+[
+"Dev Brightwater",
+"PERSON",
+16,
+31,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+33,
+42,
+0.95
+],
+[
+"Kira McDonald",
+"PERSON",
+55,
+68,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+70,
+79,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+108,
+117,
+0.95
+],
+[
+"Priya Roe",
+"PERSON",
+125,
+134,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+136,
+145,
+0.95
+],
+[
+"Priya McDonald",
+"PERSON",
+154,
+168,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+170,
+179,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+206,
+215,
+0.95
+],
+[
+"Ann Faker",
+"PERSON",
+236,
+245,
+0.95
+]
+]
+},
+{
+"text": "Sam Faker called Omar Placeholder. Sam Faker replied to Priya McDonald. Sam Faker interviewed Yara Quillfeather. Sam Faker called Ann Smith. Sam Faker thanked Priya Lindqvist. Sam Faker met Quinn O'Neil. Sam Faker replied to Xavi Faker. Sam Faker interviewed Uma Placeholder.",
+"validated": [
+[
+"Sam Faker",
+"PERSON",
+0,
+9,
+0.95
+],
+[
+"Omar Placeholder",
+"PERSON",
+17,
+33,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+35,
+44,
+0.95
+],
+[
+"Priya McDonald",
+"PERSON",
+56,
+70,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+72,
+81,
+0.95
+],
+[
+"Yara Quillfeather",
+"PERSON",
+94,
+111,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+113,
+122,
+0.95
+],
+[
+"Ann Smith",
+"PERSON",
+130,
+139,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+141,
+150,
+0.95
+],
+[
+"Priya Lindqvist",
+"PERSON",
+159,
+174,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+176,
+185,
+0.95
+],
+[
+"Quinn O'Neil",
+"PERSON",
+190,
+202,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+204,
+213,
+0.95
+],
+[
+"Sam Faker",
+"PERSON",
+237,
+246,
+0.95
+]
+]
+},
+{
+"text": "Wren Faker introduced Quinn De La Cruz. Wren Faker replied to Jonas Quillfeather. Wren Faker emailed Omar Testperson. Wren Faker introduced Mina Roe. Wren Faker emailed Bob Faker. Wren Faker met Kira Van Der Berg. Wren Faker met Hiro Okafor. Wren Faker replied to Ines McDonald.",
+"validated": [
+[
+"Jonas Quillfeather",
+"PERSON",
+62,
+80,
+0.95
+],
+[
+"Omar Testperson",
+"PERSON",
+101,
+116,
+0.95
+],
+[
+"Mina Roe",
+"PERSON",
+140,
+148,
+0.95
+],
+[
+"Bob Faker",
+"PERSON",
+169,
+178,
+0.95
+],
+[
+"Kira Van Der Berg",
+"PERSON",
+195,
+212,
+0.7
+],
+[
+"Hiro Okafor",
+"PERSON",
+229,
+240,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+264,
+277,
+0.95
+]
+]
+},
+{
+"text": "Gwen Examplar emailed Wren Smith. Gwen Examplar replied to Ann Brightwater. Gwen Examplar hired Bob Placeholder. Gwen Examplar replied to Sam Nobody. Gwen Examplar hired Uma Examplar. Gwen Examplar replied to Quinn Nobody. Gwen Examplar replied to Quinn McDonald. Gwen Examplar interviewed Tara Smith.",
+"validated": [
+[
+"Wren Smith",
+"PERSON",
+22,
+32,
+0.95
+],
+[
+"Ann Brightwater",
+"PERSON",
+59,
+74,
+0.95
+],
+[
+"Bob Placeholder",
+"PERSON",
+96,
+111,
+0.95
+],
+[
+"Sam Nobody",
+"PERSON",
+138,
+148,
+0.95
+],
+[
+"Quinn McDonald",
+"PERSON",
+248,
+262,
+0.95
+],
+[
+"Tara Smith",
+"PERSON",
+290,
+300,
+0.95
+]
+]
+},
+{
+"text": "Tara De La Cruz thanked Uma Lindqvist. Tara De La Cruz met Quinn Smith. Tara De La Cruz met Hiro Nobody. Tara De La Cruz hired Noor Marlowe. Tara De La Cruz thanked Ines Okafor. Tara De La Cruz called Ann Smith. Tara De La Cruz emailed Xavi O'Neil. Tara De La Cruz introduced Dev Brightwater.",
+"validated": [
+[
+"Tara De La Cruz",
+"PERSON",
+0,
+15,
+0.7
+],
+[
+"Tara De La Cruz",
+"PERSON",
+39,
+54,
+0.7
+],
+[
+"Quinn Smith",
+"PERSON",
+59,
+70,
+0.95
+],
+[
+"Tara De La Cruz",
+"PERSON",
+72,
+87,
+0.7
+],
+[
+"Hiro Nobody",
+"PERSON",
+92,
+103,
+0.95
+],
+[
+"Tara De La Cruz",
+"PERSON",
+105,
+120,
+0.7
+],
+[
+"Noor Marlowe",
+"PERSON",
+127,
+139,
+0.95
+],
+[
+"Tara De La Cruz",
+"PERSON",
+141,
+156,
+0.7
+],
+[
+"Ines Okafor",
+"PERSON",
+165,
+176,
+0.95
+],
+[
+"Tara De La Cruz",
+"PERSON",
+178,
+193,
+0.7
+],
+[
+"Ann Smith",
+"PERSON",
+201,
+210,
+0.95
+],
+[
+"Tara De La Cruz",
+"PERSON",
+212,
+227,
+0.7
+],
+[
+"Xavi O'Neil",
+"PERSON",
+236,
+247,
+0.95
+],
+[
+"Tara De La Cruz",
+"PERSON",
+249,
+264,
+0.7
+],
+[
+"Dev Brightwater",
+"PERSON",
+276,
+291,
+0.95
+]
+]
+},
+{
+"text": "Wren McDonald hired Hiro Brightwater. Wren McDonald hired Gwen Examplar. Wren McDonald introduced Tara Roe. Wren McDonald introduced Jonas Van Der Berg. Wren McDonald interviewed Gwen Lindqvist. Wren McDonald introduced Farid De La Cruz. Wren McDonald met Tara Testperson. Wren McDonald hired Elena Okafor.",
+"validated": [
+[
+"Wren McDonald",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"Hiro Brightwater",
+"PERSON",
+20,
+36,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+38,
+51,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+73,
+86,
+0.95
+],
+[
+"Tara Roe",
+"PERSON",
+98,
+106,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+108,
+121,
+0.95
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+133,
+151,
+0.7
+],
+[
+"Wren McDonald",
+"PERSON",
+153,
+166,
+0.95
+],
+[
+"Gwen Lindqvist",
+"PERSON",
+179,
+193,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+195,
+208,
+0.95
+],
+[
+"De La Cruz",
+"PERSON",
+226,
+236,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+238,
+251,
+0.95
+],
+[
+"Tara Testperson",
+"PERSON",
+256,
+271,
+0.95
+],
+[
+"Wren McDonald",
+"PERSON",
+273,
+286,
+0.95
+],
+[
+"Elena Okafor",
+"PERSON",
+293,
+305,
+0.95
+]
+]
+},
+{
+"text": "Tara Marlowe hired Hiro Okafor. Tara Marlowe interviewed Jonas Brightwater. Tara Marlowe thanked Omar Smith. Tara Marlowe introduced Quinn Examplar. Tara Marlowe replied to Xavi Placeholder. Tara Marlowe emailed Priya Nobody. Tara Marlowe thanked Hiro Testperson. Tara Marlowe called Sam Smith-Jones.",
+"validated": [
+[
+"Tara Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Hiro Okafor",
+"PERSON",
+19,
+30,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+32,
+44,
+0.95
+],
+[
+"Jonas Brightwater",
+"PERSON",
+57,
+74,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+76,
+88,
+0.95
+],
+[
+"Omar Smith",
+"PERSON",
+97,
+107,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+109,
+121,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+149,
+161,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+191,
+203,
+0.95
+],
+[
+"Priya Nobody",
+"PERSON",
+212,
+224,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+226,
+238,
+0.95
+],
+[
+"Hiro Testperson",
+"PERSON",
+247,
+262,
+0.95
+],
+[
+"Tara Marlowe",
+"PERSON",
+264,
+276,
+0.95
+],
+[
+"Sam Smith-Jones",
+"PERSON",
+284,
+299,
+0.75
+]
+]
+},
+{
+"text": "Jonas Brightwater called Bob Van Der Berg. Jonas Brightwater called Elena Faker. Jonas Brightwater interviewed Yara De La Cruz. Jonas Brightwater called Liam Nobody. Jonas Brightwater interviewed Ann Smith. Jonas Brightwater interviewed Hiro Examplar. Jonas Brightwater thanked Noor Smith-Jones. Jonas Brightwater called Liam O'Neil.",
+"validated": [
+[
+"Jonas Brightwater",
+"PERSON",
+0,
+17,
+0.95
+],
+[
+"Bob Van Der Berg",
+"PERSON",
+25,
+41,
+0.7
+],
+[
+"Jonas Brightwater",
+"PERSON",
+43,
+60,
+0.95
+],
+[
+"Elena Faker",
+"PERSON",
+68,
+79,
+0.95
+],
+[
+"Jonas Brightwater",
+"PERSON",
+81,
+98,
+0.95
+],
+[
+"Yara De La Cruz",
+"PERSON",
+111,
+126,
+0.7
+],
+[
+"Jonas Brightwater",
+"PERSON",
+128,
+145,
+0.95
+],
+[
+"Liam Nobody",
+"PERSON",
+153,
+164,
+0.95
+],
+[
+"Jonas Brightwater",
+"PERSON",
+166,
+183,
+0.95
+],
+[
+"Ann Smith",
+"PERSON",
+196,
+205,
+0.95
+],
+[
+"Jonas Brightwater",
+"PERSON",
+207,
+224,
+0.95
+],
+[
+"Hiro Examplar",
+"PERSON",
+237,
+250,
+0.95
+],
+[
+"Jonas Brightwater",
+"PERSON",
+252,
+269,
+0.95
+],
+[
+"Noor Smith-Jones",
+"PERSON",
+278,
+294,
+0.75
+],
+[
+"Jonas Brightwater",
+"PERSON",
+296,
+313,
+0.95
+],
+[
+"Liam O'Neil",
+"PERSON",
+321,
+332,
+0.95
+]
+]
+},
+{
+"text": "MINA LINDQVIST\nProduct Manager\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Mina Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "MINA LINDQVIST - Product Manager\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"MINA LINDQVIST",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "XAVI TESTPERSON\nManaging Director\nThe system was restarted after the update.",
+"validated": [
+[
+"Xavi Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "XAVI TESTPERSON - Managing Director\n\nSUMMARY\nPlease review the attached notes before Friday.",
+"validated": []
+},
+{
+"text": "PRIYA TESTPERSON\nProduct Manager\nThe system was restarted after the update.",
+"validated": [
+[
+"Priya Testperson",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "PRIYA TESTPERSON - Security Administrator\n\nSUMMARY\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"PRIYA TESTPERSON",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "QUINN NOBODY\nLead Frontend Developer\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Quinn Nobody",
+"PERSON",
+0,
+12,
+0.95
+]
+]
+},
+{
+"text": "QUINN NOBODY - Vice President\n\nSUMMARY\nThe system was restarted after the update.",
+"validated": [
+[
+"QUINN NOBODY",
+"PERSON",
+0,
+12,
+0.75
+]
+]
+},
+{
+"text": "GWEN LINDQVIST\nLead Frontend Developer\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Gwen Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "GWEN LINDQVIST - Vice President\n\nSUMMARY\nThe system was restarted after the update.",
+"validated": [
+[
+"GWEN LINDQVIST",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "FARID O'NEIL\nData Analyst\nLunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "FARID O'NEIL - Vice President\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": []
+},
+{
+"text": "ELENA VAN DER BERG\nTechnical Lead\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Elena Van Der Berg",
+"PERSON",
+0,
+18,
+0.7
+]
+]
+},
+{
+"text": "ELENA VAN DER BERG - Security Administrator\n\nSUMMARY\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"ELENA VAN DER BERG",
+"PERSON",
+0,
+18,
+0.7
+]
+]
+},
+{
+"text": "INES BRIGHTWATER\nLead Frontend Developer\nLunch will be served in the main hall.",
+"validated": [
+[
+"Ines Brightwater",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "INES BRIGHTWATER - Security Administrator\n\nSUMMARY\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"INES BRIGHTWATER",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"INES BRIGHTWATER",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "INES NOBODY\nProduct Manager\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Ines Nobody",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "INES NOBODY - Lead Frontend Developer\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"INES NOBODY",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "QUINN QUILLFEATHER\nTechnical Lead\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Quinn Quillfeather",
+"PERSON",
+0,
+18,
+0.95
+]
+]
+},
+{
+"text": "QUINN QUILLFEATHER - Vice President\n\nSUMMARY\nThe quarterly report was delivered on time.",
+"validated": []
+},
+{
+"text": "DEV OKAFOR\nCloud Architect\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Dev Okafor",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "DEV OKAFOR - Security Administrator\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"DEV OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "KIRA SMITH\nData Analyst\nThe system was restarted after the update.",
+"validated": [
+[
+"Kira Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "KIRA SMITH - Security Administrator\n\nSUMMARY\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"KIRA SMITH",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"KIRA SMITH",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "ANN BRIGHTWATER\nTechnical Lead\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Ann Brightwater",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "ANN BRIGHTWATER - Product Manager\n\nSUMMARY\nLunch will be served in the main hall.",
+"validated": [
+[
+"ANN BRIGHTWATER",
+"PERSON",
+0,
+15,
+0.95
+],
+[
+"ANN BRIGHTWATER",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "ZED DE LA CRUZ\nManaging Director\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"ZED DE LA CRUZ",
+"PERSON",
+0,
+14,
+0.7
+],
+[
+"Zed De La Cruz",
+"PERSON",
+0,
+14,
+0.7
+]
+]
+},
+{
+"text": "ZED DE LA CRUZ - Product Manager\n\nSUMMARY\nLunch will be served in the main hall.",
+"validated": [
+[
+"ZED DE LA",
+"PERSON",
+0,
+9,
+0.95
+],
+[
+"ZED DE LA CRUZ",
+"PERSON",
+0,
+14,
+0.7
+]
+]
+},
+{
+"text": "NOOR MCDONALD\nManaging Director\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Noor Mcdonald",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "NOOR MCDONALD - Security Administrator\n\nSUMMARY\nThe system was restarted after the update.",
+"validated": [
+[
+"NOOR MCDONALD",
+"PERSON",
+0,
+13,
+0.95
+],
+[
+"NOOR MCDONALD",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "BOB OKAFOR\nData Analyst\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"BOB OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"Bob Okafor",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "BOB OKAFOR - Lead Frontend Developer\n\nSUMMARY\nLunch will be served in the main hall.",
+"validated": [
+[
+"BOB OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"BOB OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "FARID TESTPERSON\nCloud Architect\nThe system was restarted after the update.",
+"validated": [
+[
+"FARID TESTPERSON",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"Farid Testperson",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "FARID TESTPERSON - Product Manager\n\nSUMMARY\nThe system was restarted after the update.",
+"validated": [
+[
+"FARID TESTPERSON",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"FARID TESTPERSON",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "PRIYA DE LA CRUZ\nLead Frontend Developer\nLunch will be served in the main hall.",
+"validated": [
+[
+"DE LA",
+"PERSON",
+6,
+11,
+0.95
+],
+[
+"Priya De La Cruz",
+"PERSON",
+0,
+16,
+0.7
+]
+]
+},
+{
+"text": "PRIYA DE LA CRUZ - Technical Lead\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"DE LA",
+"PERSON",
+6,
+11,
+0.95
+],
+[
+"PRIYA DE LA CRUZ",
+"PERSON",
+0,
+16,
+0.7
+]
+]
+},
+{
+"text": "ELENA QUILLFEATHER\nSecurity Administrator\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Elena Quillfeather",
+"PERSON",
+0,
+18,
+0.95
+]
+]
+},
+{
+"text": "ELENA QUILLFEATHER - Cloud Architect\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"ELENA QUILLFEATHER",
+"PERSON",
+0,
+18,
+0.95
+]
+]
+},
+{
+"text": "ROSA LINDQVIST\nVice President\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"ROSA LINDQVIST",
+"PERSON",
+0,
+14,
+0.95
+],
+[
+"Rosa Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "ROSA LINDQVIST - Managing Director\n\nSUMMARY\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"ROSA LINDQVIST",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "GWEN QUILLFEATHER\nData Analyst\nThe system was restarted after the update.",
+"validated": [
+[
+"Gwen Quillfeather",
+"PERSON",
+0,
+17,
+0.95
+]
+]
+},
+{
+"text": "GWEN QUILLFEATHER - Cloud Architect\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"GWEN QUILLFEATHER",
+"PERSON",
+0,
+17,
+0.95
+]
+]
+},
+{
+"text": "ZED OKAFOR\nData Analyst\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"ZED OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"Zed Okafor",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "ZED OKAFOR - Lead Frontend Developer\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"ZED OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"ZED OKAFOR",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "LIAM SMITH\nData Analyst\nThe system was restarted after the update.",
+"validated": [
+[
+"Liam Smith",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "LIAM SMITH - Senior Software Engineer\n\nSUMMARY\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"LIAM SMITH",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"LIAM SMITH",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "YARA PLACEHOLDER\nTechnical Lead\nLunch will be served in the main hall.",
+"validated": [
+[
+"Yara Placeholder",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "YARA PLACEHOLDER - Product Manager\n\nSUMMARY\nLunch will be served in the main hall.",
+"validated": [
+[
+"YARA PLACEHOLDER",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "YARA SMITH-JONES\nProduct Manager\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"YARA SMITH-JONES",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "YARA SMITH-JONES - Lead Frontend Developer\n\nSUMMARY\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"YARA SMITH-JONES",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "SAM TESTPERSON\nSAM TESTPERSON SAM TESTPERSON",
+"validated": [
+[
+"Sam Testperson",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "# Noor De La Cruz and Kira Roe - Managing Director\n\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Noor De La Cruz",
+"PERSON",
+2,
+17,
+0.7
+],
+[
+"Kira Roe",
+"PERSON",
+22,
+30,
+0.95
+],
+[
+"Noor De La Cruz",
+"PERSON",
+2,
+17,
+0.7
+],
+[
+"Kira Roe",
+"PERSON",
+22,
+30,
+0.95
+]
+]
+},
+{
+"text": "Noor De La Cruz - Cloud Architect\nThe system was restarted after the update.",
+"validated": [
+[
+"Noor De La Cruz",
+"PERSON",
+0,
+15,
+0.7
+],
+[
+"Noor De La Cruz",
+"PERSON",
+0,
+15,
+0.7
+]
+]
+},
+{
+"text": "# Kira Marlowe and Elena Faker - Vice President\n\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Kira Marlowe",
+"PERSON",
+2,
+14,
+0.95
+],
+[
+"Elena Faker",
+"PERSON",
+19,
+30,
+0.95
+],
+[
+"Kira Marlowe",
+"PERSON",
+2,
+14,
+0.95
+],
+[
+"Elena Faker",
+"PERSON",
+19,
+30,
+0.95
+]
+]
+},
+{
+"text": "Kira Marlowe - Managing Director\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Kira Marlowe",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Kira Marlowe",
+"PERSON",
+0,
+12,
+0.95
+]
+]
+},
+{
+"text": "# Yara Smith-Jones and Noor Testperson - Data Analyst\n\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Yara Smith-Jones",
+"PERSON",
+2,
+18,
+0.75
+],
+[
+"Noor Testperson",
+"PERSON",
+23,
+38,
+0.95
+],
+[
+"Noor Testperson",
+"PERSON",
+23,
+38,
+0.95
+]
+]
+},
+{
+"text": "Yara Smith-Jones - Data Analyst\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Yara Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "# Ines Nobody and Hiro Lindqvist - Scrum Master\n\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Hiro Lindqvist",
+"PERSON",
+18,
+32,
+0.95
+],
+[
+"Ines Nobody",
+"PERSON",
+2,
+13,
+0.95
+],
+[
+"Hiro Lindqvist",
+"PERSON",
+18,
+32,
+0.95
+]
+]
+},
+{
+"text": "Ines Nobody - Cloud Architect\nLunch will be served in the main hall.",
+"validated": [
+[
+"Ines Nobody",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Ines Nobody",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "# Priya Van Der Berg and Liam Nobody - Vice President\n\nLunch will be served in the main hall.",
+"validated": [
+[
+"Van Der Berg",
+"PERSON",
+8,
+20,
+0.95
+],
+[
+"Liam Nobody",
+"PERSON",
+25,
+36,
+0.95
+],
+[
+"Priya Van Der Berg",
+"PERSON",
+2,
+20,
+0.7
+],
+[
+"Liam Nobody",
+"PERSON",
+25,
+36,
+0.95
+]
+]
+},
+{
+"text": "Priya Van Der Berg - Cloud Architect\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Priya Van Der Berg",
+"PERSON",
+0,
+18,
+0.7
+]
+]
+},
+{
+"text": "# Bob Brightwater and Uma Van Der Berg - Scrum Master\n\nThe system was restarted after the update.",
+"validated": [
+[
+"Bob Brightwater",
+"PERSON",
+2,
+17,
+0.95
+],
+[
+"Van Der Berg",
+"PERSON",
+26,
+38,
+0.95
+],
+[
+"Bob Brightwater",
+"PERSON",
+2,
+17,
+0.95
+],
+[
+"Uma Van Der Berg",
+"PERSON",
+22,
+38,
+0.7
+]
+]
+},
+{
+"text": "Bob Brightwater - Managing Director\nLunch will be served in the main hall.",
+"validated": [
+[
+"Bob Brightwater",
+"PERSON",
+0,
+15,
+0.95
+],
+[
+"Bob Brightwater",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "# Liam Placeholder and Noor Roe - Managing Director\n\nLunch will be served in the main hall.",
+"validated": [
+[
+"Noor Roe",
+"PERSON",
+23,
+31,
+0.95
+],
+[
+"Liam Placeholder",
+"PERSON",
+2,
+18,
+0.95
+],
+[
+"Noor Roe",
+"PERSON",
+23,
+31,
+0.95
+]
+]
+},
+{
+"text": "Liam Placeholder - Vice President\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Liam Placeholder",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"Liam Placeholder",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "# Jonas Nobody and Ines McDonald - Product Manager\n\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Ines McDonald",
+"PERSON",
+19,
+32,
+0.95
+],
+[
+"Jonas Nobody",
+"PERSON",
+2,
+14,
+0.95
+],
+[
+"Ines McDonald",
+"PERSON",
+19,
+32,
+0.95
+]
+]
+},
+{
+"text": "Jonas Nobody - Vice President\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Jonas Nobody",
+"PERSON",
+0,
+12,
+0.95
+],
+[
+"Jonas Nobody",
+"PERSON",
+0,
+12,
+0.95
+]
+]
+},
+{
+"text": "# Quinn Lindqvist and Jonas Testperson - Product Manager\n\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Quinn Lindqvist",
+"PERSON",
+2,
+17,
+0.95
+],
+[
+"Jonas Testperson",
+"PERSON",
+22,
+38,
+0.95
+],
+[
+"Quinn Lindqvist",
+"PERSON",
+2,
+17,
+0.95
+],
+[
+"Jonas Testperson",
+"PERSON",
+22,
+38,
+0.95
+]
+]
+},
+{
+"text": "Quinn Lindqvist - Data Analyst\nLunch will be served in the main hall.",
+"validated": [
+[
+"Quinn Lindqvist",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "# Zed Faker and Vik De La Cruz - Scrum Master\n\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Zed Faker",
+"PERSON",
+2,
+11,
+0.95
+],
+[
+"Vik De La Cruz",
+"PERSON",
+16,
+30,
+0.7
+]
+]
+},
+{
+"text": "Zed Faker - Scrum Master\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Zed Faker",
+"PERSON",
+0,
+9,
+0.95
+],
+[
+"Zed Faker",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "# Dev Marlowe and Yara Nobody - Product Manager\n\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Dev Marlowe",
+"PERSON",
+2,
+13,
+0.95
+],
+[
+"Yara Nobody",
+"PERSON",
+18,
+29,
+0.95
+],
+[
+"Dev Marlowe",
+"PERSON",
+2,
+13,
+0.95
+],
+[
+"Yara Nobody",
+"PERSON",
+18,
+29,
+0.95
+]
+]
+},
+{
+"text": "Dev Marlowe - Senior Software Engineer\nThe system was restarted after the update.",
+"validated": [
+[
+"Dev Marlowe",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Dev Marlowe",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "# Uma Faker and Tara Lindqvist - Cloud Architect\n\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Tara Lindqvist",
+"PERSON",
+16,
+30,
+0.95
+],
+[
+"Uma Faker",
+"PERSON",
+2,
+11,
+0.95
+],
+[
+"Tara Lindqvist",
+"PERSON",
+16,
+30,
+0.95
+]
+]
+},
+{
+"text": "Uma Faker - Vice President\nLunch will be served in the main hall.",
+"validated": [
+[
+"Uma Faker",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "# Vik Faker and Vik Nobody - Security Administrator\n\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Vik Faker",
+"PERSON",
+2,
+11,
+0.95
+],
+[
+"Vik Nobody",
+"PERSON",
+16,
+26,
+0.75
+],
+[
+"Vik Faker",
+"PERSON",
+2,
+11,
+0.95
+],
+[
+"Vik Nobody",
+"PERSON",
+16,
+26,
+0.75
+]
+]
+},
+{
+"text": "Vik Faker - Senior Software Engineer\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Vik Faker",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "# Ines Smith-Jones and Tara Smith - Technical Lead\n\nLunch will be served in the main hall.",
+"validated": [
+[
+"Ines Smith-Jones",
+"PERSON",
+2,
+18,
+0.75
+],
+[
+"Tara Smith",
+"PERSON",
+23,
+33,
+0.95
+],
+[
+"Tara Smith",
+"PERSON",
+23,
+33,
+0.95
+]
+]
+},
+{
+"text": "Ines Smith-Jones - Senior Software Engineer\nThe system was restarted after the update.",
+"validated": [
+[
+"Ines Smith-Jones",
+"PERSON",
+0,
+16,
+0.75
+]
+]
+},
+{
+"text": "# Jonas Faker and Quinn Quillfeather - Security Administrator\n\nThe system was restarted after the update.",
+"validated": [
+[
+"Jonas Faker",
+"PERSON",
+2,
+13,
+0.95
+],
+[
+"Jonas Faker",
+"PERSON",
+2,
+13,
+0.95
+],
+[
+"Quinn Quillfeather",
+"PERSON",
+18,
+36,
+0.95
+]
+]
+},
+{
+"text": "Jonas Faker - Cloud Architect\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Jonas Faker",
+"PERSON",
+0,
+11,
+0.95
+],
+[
+"Jonas Faker",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "# Mina Van Der Berg and Jonas Quillfeather - Security Administrator\n\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Van Der Berg",
+"PERSON",
+7,
+19,
+0.95
+],
+[
+"Jonas Quillfeather",
+"PERSON",
+24,
+42,
+0.95
+],
+[
+"Mina Van Der Berg",
+"PERSON",
+2,
+19,
+0.7
+],
+[
+"Jonas Quillfeather",
+"PERSON",
+24,
+42,
+0.95
+]
+]
+},
+{
+"text": "Mina Van Der Berg - Vice President\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Mina Van Der Berg",
+"PERSON",
+0,
+17,
+0.7
+]
+]
+},
+{
+"text": "# Uma Lindqvist and Yara Faker - Vice President\n\nLunch will be served in the main hall.",
+"validated": [
+[
+"Yara Faker",
+"PERSON",
+20,
+30,
+0.95
+],
+[
+"Uma Lindqvist",
+"PERSON",
+2,
+15,
+0.95
+],
+[
+"Yara Faker",
+"PERSON",
+20,
+30,
+0.95
+]
+]
+},
+{
+"text": "Uma Lindqvist - Data Analyst\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Uma Lindqvist",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "# Ann Roe and Rosa Quillfeather - Technical Lead\n\nThe quarterly report was delivered on time.",
+"validated": [
+[
+"Ann Roe",
+"PERSON",
+2,
+9,
+0.95
+],
+[
+"Ann Roe",
+"PERSON",
+2,
+9,
+0.95
+],
+[
+"Rosa Quillfeather",
+"PERSON",
+14,
+31,
+0.95
+]
+]
+},
+{
+"text": "Ann Roe - Vice President\nThe system was restarted after the update.",
+"validated": [
+[
+"Ann Roe",
+"PERSON",
+0,
+7,
+0.95
+],
+[
+"Ann Roe",
+"PERSON",
+0,
+7,
+0.95
+]
+]
+},
+{
+"text": "# Elena Quillfeather and Noor Lindqvist - Lead Frontend Developer\n\nThe system was restarted after the update.",
+"validated": [
+[
+"Elena Quillfeather",
+"PERSON",
+2,
+20,
+0.95
+],
+[
+"Noor Lindqvist",
+"PERSON",
+25,
+39,
+0.95
+],
+[
+"Elena Quillfeather",
+"PERSON",
+2,
+20,
+0.95
+],
+[
+"Noor Lindqvist",
+"PERSON",
+25,
+39,
+0.95
+]
+]
+},
+{
+"text": "Elena Quillfeather - Managing Director\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Elena Quillfeather",
+"PERSON",
+0,
+18,
+0.95
+],
+[
+"Elena Quillfeather",
+"PERSON",
+0,
+18,
+0.95
+]
+]
+},
+{
+"text": "# Yara Van Der Berg and Zed Marlowe - Data Analyst\n\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Yara Van Der Berg",
+"PERSON",
+2,
+19,
+0.7
+],
+[
+"Zed Marlowe",
+"PERSON",
+24,
+35,
+0.95
+],
+[
+"Yara Van Der Berg",
+"PERSON",
+2,
+19,
+0.7
+],
+[
+"Zed Marlowe",
+"PERSON",
+24,
+35,
+0.95
+]
+]
+},
+{
+"text": "Yara Van Der Berg - Managing Director\nThe system was restarted after the update.",
+"validated": [
+[
+"Yara Van Der Berg",
+"PERSON",
+0,
+17,
+0.7
+]
+]
+},
+{
+"text": "# Quinn McDonald and Quinn Nobody - Vice President\n\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Quinn McDonald",
+"PERSON",
+2,
+16,
+0.95
+],
+[
+"Quinn Nobody",
+"PERSON",
+21,
+33,
+0.95
+]
+]
+},
+{
+"text": "Quinn McDonald - Lead Frontend Developer\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Quinn McDonald",
+"PERSON",
+0,
+14,
+0.95
+],
+[
+"Quinn McDonald",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "# Ines Testperson and Zed Roe - Lead Frontend Developer\n\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Ines Testperson",
+"PERSON",
+2,
+17,
+0.95
+],
+[
+"Zed Roe",
+"PERSON",
+22,
+29,
+0.95
+],
+[
+"Ines Testperson",
+"PERSON",
+2,
+17,
+0.95
+],
+[
+"Zed Roe",
+"PERSON",
+22,
+29,
+0.95
+]
+]
+},
+{
+"text": "Ines Testperson - Scrum Master\nThe system was restarted after the update.",
+"validated": [
+[
+"Ines Testperson",
+"PERSON",
+0,
+15,
+0.95
+],
+[
+"Ines Testperson",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "# Vik Quillfeather and Bob Placeholder - Managing Director\n\nTraffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Vik Quillfeather",
+"PERSON",
+2,
+18,
+0.95
+],
+[
+"Bob Placeholder",
+"PERSON",
+23,
+38,
+0.95
+],
+[
+"Vik Quillfeather",
+"PERSON",
+2,
+18,
+0.95
+],
+[
+"Bob Placeholder",
+"PERSON",
+23,
+38,
+0.95
+]
+]
+},
+{
+"text": "Vik Quillfeather - Lead Frontend Developer\nLunch will be served in the main hall.",
+"validated": [
+[
+"Vik Quillfeather",
+"PERSON",
+0,
+16,
+0.95
+],
+[
+"Vik Quillfeather",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "# Wren Faker and Uma McDonald - Vice President\n\nLunch will be served in the main hall.",
+"validated": [
+[
+"Wren Faker",
+"PERSON",
+2,
+12,
+0.95
+],
+[
+"Uma McDonald",
+"PERSON",
+17,
+29,
+0.95
+]
+]
+},
+{
+"text": "Wren Faker - Lead Frontend Developer\nPlease review the attached notes before Friday.",
+"validated": [
+[
+"Wren Faker",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "# Ann Smith-Jones and Tara Quillfeather - Vice President\n\nLunch will be served in the main hall.",
+"validated": [
+[
+"Ann Smith-Jones",
+"PERSON",
+2,
+17,
+0.75
+],
+[
+"Tara Quillfeather",
+"PERSON",
+22,
+39,
+0.95
+],
+[
+"Tara Quillfeather",
+"PERSON",
+22,
+39,
+0.95
+]
+]
+},
+{
+"text": "Ann Smith-Jones - Managing Director\nThe system was restarted after the update.",
+"validated": [
+[
+"Ann Smith-Jones",
+"PERSON",
+0,
+15,
+0.75
+]
+]
+},
+{
+"text": "Bob Placeholder bob@example.com (566) 555-1784",
+"validated": [
+[
+"bob@example.com",
+"EMAIL",
+16,
+31,
+1.0
+],
+[
+"(566) 555-1784",
+"PHONE",
+32,
+46,
+1.0
+]
+]
+},
+{
+"text": "Contact: Bob Placeholder, bob@example.com, (566) 555-1784. The system was restarted after the update.",
+"validated": [
+[
+"bob@example.com",
+"EMAIL",
+26,
+41,
+1.0
+],
+[
+"(566) 555-1784",
+"PHONE",
+43,
+57,
+1.0
+],
+[
+"Bob Placeholder",
+"PERSON",
+9,
+24,
+0.95
+]
+]
+},
+{
+"text": "bob@example.com Bob Placeholder 4111 1111 1111 1111 Sam McDonald",
+"validated": [
+[
+"bob@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+32,
+51,
+1.0
+],
+[
+"Sam McDonald",
+"PERSON",
+52,
+64,
+0.95
+]
+]
+},
+{
+"text": "Bob Placeholderbob@example.com (566) 555-1784Carla Nobody",
+"validated": [
+[
+"Placeholderbob@example.com",
+"EMAIL",
+4,
+30,
+1.0
+],
+[
+"(566) 555-1784",
+"PHONE",
+31,
+45,
+1.0
+]
+]
+},
+{
+"text": "Mina Roe mina@example.com (500) 555-2642",
+"validated": [
+[
+"mina@example.com",
+"EMAIL",
+9,
+25,
+1.0
+],
+[
+"(500) 555-2642",
+"PHONE",
+26,
+40,
+1.0
+]
+]
+},
+{
+"text": "Contact: Mina Roe, mina@example.com, (500) 555-2642. The system was restarted after the update.",
+"validated": [
+[
+"mina@example.com",
+"EMAIL",
+19,
+35,
+1.0
+],
+[
+"(500) 555-2642",
+"PHONE",
+37,
+51,
+1.0
+]
+]
+},
+{
+"text": "mina@example.com Mina Roe 4111 1111 1111 1111 Carla Roe",
+"validated": [
+[
+"mina@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+26,
+45,
+1.0
+],
+[
+"Mina Roe",
+"PERSON",
+17,
+25,
+0.95
+],
+[
+"Carla Roe",
+"PERSON",
+46,
+55,
+0.95
+]
+]
+},
+{
+"text": "Mina Roemina@example.com (500) 555-2642Wren Testperson",
+"validated": [
+[
+"Roemina@example.com",
+"EMAIL",
+5,
+24,
+1.0
+],
+[
+"(500) 555-2642",
+"PHONE",
+25,
+39,
+1.0
+]
+]
+},
+{
+"text": "Omar Examplar omar@example.com (327) 555-5323",
+"validated": [
+[
+"omar@example.com",
+"EMAIL",
+14,
+30,
+1.0
+],
+[
+"(327) 555-5323",
+"PHONE",
+31,
+45,
+1.0
+],
+[
+"Omar Examplar",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "Contact: Omar Examplar, omar@example.com, (327) 555-5323. The quarterly report was delivered on time.",
+"validated": [
+[
+"omar@example.com",
+"EMAIL",
+24,
+40,
+1.0
+],
+[
+"(327) 555-5323",
+"PHONE",
+42,
+56,
+1.0
+],
+[
+"Omar Examplar",
+"PERSON",
+9,
+22,
+0.95
+]
+]
+},
+{
+"text": "omar@example.com Omar Examplar 4111 1111 1111 1111 Dev Roe",
+"validated": [
+[
+"omar@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+31,
+50,
+1.0
+],
+[
+"Omar Examplar",
+"PERSON",
+17,
+30,
+0.95
+]
+]
+},
+{
+"text": "Omar Examplaromar@example.com (327) 555-5323Omar Smith",
+"validated": [
+[
+"Examplaromar@example.com",
+"EMAIL",
+5,
+29,
+1.0
+],
+[
+"(327) 555-5323",
+"PHONE",
+30,
+44,
+1.0
+]
+]
+},
+{
+"text": "Gwen De La Cruz gwen@example.com (219) 555-6519",
+"validated": [
+[
+"gwen@example.com",
+"EMAIL",
+16,
+32,
+1.0
+],
+[
+"(219) 555-6519",
+"PHONE",
+33,
+47,
+1.0
+],
+[
+"Gwen De La Cruz",
+"PERSON",
+0,
+15,
+0.7
+]
+]
+},
+{
+"text": "Contact: Gwen De La Cruz, gwen@example.com, (219) 555-6519. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"gwen@example.com",
+"EMAIL",
+26,
+42,
+1.0
+],
+[
+"(219) 555-6519",
+"PHONE",
+44,
+58,
+1.0
+],
+[
+"Gwen De La Cruz",
+"PERSON",
+9,
+24,
+0.7
+]
+]
+},
+{
+"text": "gwen@example.com Gwen De La Cruz 4111 1111 1111 1111 Ann De La Cruz",
+"validated": [
+[
+"gwen@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+33,
+52,
+1.0
+],
+[
+"Gwen De La Cruz",
+"PERSON",
+17,
+32,
+0.7
+],
+[
+"Ann De La Cruz",
+"PERSON",
+53,
+67,
+0.7
+]
+]
+},
+{
+"text": "Gwen De La Cruzgwen@example.com (219) 555-6519Farid Roe",
+"validated": [
+[
+"Cruzgwen@example.com",
+"EMAIL",
+11,
+31,
+1.0
+],
+[
+"(219) 555-6519",
+"PHONE",
+32,
+46,
+1.0
+],
+[
+"Gwen De La",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Elena Smith-Jones elena@example.com (296) 555-1128",
+"validated": [
+[
+"elena@example.com",
+"EMAIL",
+18,
+35,
+1.0
+],
+[
+"(296) 555-1128",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Elena Smith-Jones",
+"PERSON",
+0,
+17,
+0.75
+]
+]
+},
+{
+"text": "Contact: Elena Smith-Jones, elena@example.com, (296) 555-1128. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"elena@example.com",
+"EMAIL",
+28,
+45,
+1.0
+],
+[
+"(296) 555-1128",
+"PHONE",
+47,
+61,
+1.0
+],
+[
+"Elena Smith-Jones",
+"PERSON",
+9,
+26,
+0.75
+]
+]
+},
+{
+"text": "elena@example.com Elena Smith-Jones 4111 1111 1111 1111 Xavi Testperson",
+"validated": [
+[
+"elena@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+36,
+55,
+1.0
+],
+[
+"Elena Smith-Jones",
+"PERSON",
+18,
+35,
+0.75
+]
+]
+},
+{
+"text": "Elena Smith-Joneselena@example.com (296) 555-1128Mina Nobody",
+"validated": [
+[
+"Smith-Joneselena@example.com",
+"EMAIL",
+6,
+34,
+1.0
+],
+[
+"(296) 555-1128",
+"PHONE",
+35,
+49,
+1.0
+]
+]
+},
+{
+"text": "Vik O'Neil vik@example.com (354) 555-6929",
+"validated": [
+[
+"vik@example.com",
+"EMAIL",
+11,
+26,
+1.0
+],
+[
+"(354) 555-6929",
+"PHONE",
+27,
+41,
+1.0
+],
+[
+"Vik O'Neil",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Contact: Vik O'Neil, vik@example.com, (354) 555-6929. Please review the attached notes before Friday.",
+"validated": [
+[
+"vik@example.com",
+"EMAIL",
+21,
+36,
+1.0
+],
+[
+"(354) 555-6929",
+"PHONE",
+38,
+52,
+1.0
+],
+[
+"Vik O'Neil",
+"PERSON",
+9,
+19,
+0.95
+]
+]
+},
+{
+"text": "vik@example.com Vik O'Neil 4111 1111 1111 1111 Tara Roe",
+"validated": [
+[
+"vik@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+27,
+46,
+1.0
+],
+[
+"Vik O'Neil",
+"PERSON",
+16,
+26,
+0.95
+],
+[
+"Tara Roe",
+"PERSON",
+47,
+55,
+0.95
+]
+]
+},
+{
+"text": "Vik O'Neilvik@example.com (354) 555-6929Yara Placeholder",
+"validated": [
+[
+"Neilvik@example.com",
+"EMAIL",
+6,
+25,
+1.0
+],
+[
+"(354) 555-6929",
+"PHONE",
+26,
+40,
+1.0
+],
+[
+"Vik O'",
+"PERSON",
+0,
+6,
+0.75
+]
+]
+},
+{
+"text": "Tara Roe tara@example.com (602) 555-5148",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+9,
+25,
+1.0
+],
+[
+"(602) 555-5148",
+"PHONE",
+26,
+40,
+1.0
+],
+[
+"Tara Roe",
+"PERSON",
+0,
+8,
+0.95
+]
+]
+},
+{
+"text": "Contact: Tara Roe, tara@example.com, (602) 555-5148. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+19,
+35,
+1.0
+],
+[
+"(602) 555-5148",
+"PHONE",
+37,
+51,
+1.0
+],
+[
+"Tara Roe",
+"PERSON",
+9,
+17,
+0.95
+]
+]
+},
+{
+"text": "tara@example.com Tara Roe 4111 1111 1111 1111 Mina Roe",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+26,
+45,
+1.0
+],
+[
+"Tara Roe",
+"PERSON",
+17,
+25,
+0.95
+]
+]
+},
+{
+"text": "Tara Roetara@example.com (602) 555-5148Omar Testperson",
+"validated": [
+[
+"Roetara@example.com",
+"EMAIL",
+5,
+24,
+1.0
+],
+[
+"(602) 555-5148",
+"PHONE",
+25,
+39,
+1.0
+]
+]
+},
+{
+"text": "Carla Roe carla@example.com (805) 555-4178",
+"validated": [
+[
+"carla@example.com",
+"EMAIL",
+10,
+27,
+1.0
+],
+[
+"(805) 555-4178",
+"PHONE",
+28,
+42,
+1.0
+],
+[
+"Carla Roe",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "Contact: Carla Roe, carla@example.com, (805) 555-4178. Lunch will be served in the main hall.",
+"validated": [
+[
+"carla@example.com",
+"EMAIL",
+20,
+37,
+1.0
+],
+[
+"(805) 555-4178",
+"PHONE",
+39,
+53,
+1.0
+],
+[
+"Carla Roe",
+"PERSON",
+9,
+18,
+0.95
+]
+]
+},
+{
+"text": "carla@example.com Carla Roe 4111 1111 1111 1111 Farid Brightwater",
+"validated": [
+[
+"carla@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+28,
+47,
+1.0
+],
+[
+"Carla Roe",
+"PERSON",
+18,
+27,
+0.95
+]
+]
+},
+{
+"text": "Carla Roecarla@example.com (805) 555-4178Dev Testperson",
+"validated": [
+[
+"Roecarla@example.com",
+"EMAIL",
+6,
+26,
+1.0
+],
+[
+"(805) 555-4178",
+"PHONE",
+27,
+41,
+1.0
+]
+]
+},
+{
+"text": "Farid Lindqvist farid@example.com (633) 555-5268",
+"validated": [
+[
+"farid@example.com",
+"EMAIL",
+16,
+33,
+1.0
+],
+[
+"(633) 555-5268",
+"PHONE",
+34,
+48,
+1.0
+],
+[
+"Farid Lindqvist",
+"PERSON",
+0,
+15,
+0.95
+]
+]
+},
+{
+"text": "Contact: Farid Lindqvist, farid@example.com, (633) 555-5268. Lunch will be served in the main hall.",
+"validated": [
+[
+"farid@example.com",
+"EMAIL",
+26,
+43,
+1.0
+],
+[
+"(633) 555-5268",
+"PHONE",
+45,
+59,
+1.0
+],
+[
+"Farid Lindqvist",
+"PERSON",
+9,
+24,
+0.95
+]
+]
+},
+{
+"text": "farid@example.com Farid Lindqvist 4111 1111 1111 1111 Bob Quillfeather",
+"validated": [
+[
+"farid@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+34,
+53,
+1.0
+]
+]
+},
+{
+"text": "Farid Lindqvistfarid@example.com (633) 555-5268Liam Smith",
+"validated": [
+[
+"Lindqvistfarid@example.com",
+"EMAIL",
+6,
+32,
+1.0
+],
+[
+"(633) 555-5268",
+"PHONE",
+33,
+47,
+1.0
+]
+]
+},
+{
+"text": "Quinn Smith-Jones quinn@example.com (347) 555-9103",
+"validated": [
+[
+"quinn@example.com",
+"EMAIL",
+18,
+35,
+1.0
+],
+[
+"(347) 555-9103",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Quinn Smith-Jones",
+"PERSON",
+0,
+17,
+0.75
+]
+]
+},
+{
+"text": "Contact: Quinn Smith-Jones, quinn@example.com, (347) 555-9103. The quarterly report was delivered on time.",
+"validated": [
+[
+"quinn@example.com",
+"EMAIL",
+28,
+45,
+1.0
+],
+[
+"(347) 555-9103",
+"PHONE",
+47,
+61,
+1.0
+],
+[
+"Quinn Smith-Jones",
+"PERSON",
+9,
+26,
+0.75
+]
+]
+},
+{
+"text": "quinn@example.com Quinn Smith-Jones 4111 1111 1111 1111 Uma Lindqvist",
+"validated": [
+[
+"quinn@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+36,
+55,
+1.0
+],
+[
+"Quinn Smith-Jones",
+"PERSON",
+18,
+35,
+0.75
+]
+]
+},
+{
+"text": "Quinn Smith-Jonesquinn@example.com (347) 555-9103Ines Marlowe",
+"validated": [
+[
+"Smith-Jonesquinn@example.com",
+"EMAIL",
+6,
+34,
+1.0
+],
+[
+"(347) 555-9103",
+"PHONE",
+35,
+49,
+1.0
+]
+]
+},
+{
+"text": "Hiro McDonald hiro@example.com (845) 555-3899",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+14,
+30,
+1.0
+],
+[
+"(845) 555-3899",
+"PHONE",
+31,
+45,
+1.0
+],
+[
+"Hiro McDonald",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "Contact: Hiro McDonald, hiro@example.com, (845) 555-3899. The quarterly report was delivered on time.",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+24,
+40,
+1.0
+],
+[
+"(845) 555-3899",
+"PHONE",
+42,
+56,
+1.0
+],
+[
+"Hiro McDonald",
+"PERSON",
+9,
+22,
+0.95
+]
+]
+},
+{
+"text": "hiro@example.com Hiro McDonald 4111 1111 1111 1111 Yara Brightwater",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+31,
+50,
+1.0
+],
+[
+"Hiro McDonald",
+"PERSON",
+17,
+30,
+0.95
+],
+[
+"Yara Brightwater",
+"PERSON",
+51,
+67,
+0.95
+]
+]
+},
+{
+"text": "Hiro McDonaldhiro@example.com (845) 555-3899Farid Okafor",
+"validated": [
+[
+"McDonaldhiro@example.com",
+"EMAIL",
+5,
+29,
+1.0
+],
+[
+"(845) 555-3899",
+"PHONE",
+30,
+44,
+1.0
+]
+]
+},
+{
+"text": "Ann Faker ann@example.com (864) 555-5221",
+"validated": [
+[
+"ann@example.com",
+"EMAIL",
+10,
+25,
+1.0
+],
+[
+"(864) 555-5221",
+"PHONE",
+26,
+40,
+1.0
+],
+[
+"Ann Faker",
+"PERSON",
+0,
+9,
+0.95
+]
+]
+},
+{
+"text": "Contact: Ann Faker, ann@example.com, (864) 555-5221. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"ann@example.com",
+"EMAIL",
+20,
+35,
+1.0
+],
+[
+"(864) 555-5221",
+"PHONE",
+37,
+51,
+1.0
+],
+[
+"Ann Faker",
+"PERSON",
+9,
+18,
+0.95
+]
+]
+},
+{
+"text": "ann@example.com Ann Faker 4111 1111 1111 1111 Sam Van Der Berg",
+"validated": [
+[
+"ann@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+26,
+45,
+1.0
+],
+[
+"Ann Faker",
+"PERSON",
+16,
+25,
+0.95
+],
+[
+"Sam Van Der Berg",
+"PERSON",
+46,
+62,
+0.7
+]
+]
+},
+{
+"text": "Ann Fakerann@example.com (864) 555-5221Priya Roe",
+"validated": [
+[
+"Fakerann@example.com",
+"EMAIL",
+4,
+24,
+1.0
+],
+[
+"(864) 555-5221",
+"PHONE",
+25,
+39,
+1.0
+]
+]
+},
+{
+"text": "Jonas Smith jonas@example.com (282) 555-6903",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+12,
+29,
+1.0
+],
+[
+"(282) 555-6903",
+"PHONE",
+30,
+44,
+1.0
+],
+[
+"Jonas Smith",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Contact: Jonas Smith, jonas@example.com, (282) 555-6903. The system was restarted after the update.",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+22,
+39,
+1.0
+],
+[
+"(282) 555-6903",
+"PHONE",
+41,
+55,
+1.0
+],
+[
+"Jonas Smith",
+"PERSON",
+9,
+20,
+0.95
+]
+]
+},
+{
+"text": "jonas@example.com Jonas Smith 4111 1111 1111 1111 Priya De La Cruz",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+30,
+49,
+1.0
+],
+[
+"Jonas Smith",
+"PERSON",
+18,
+29,
+0.95
+]
+]
+},
+{
+"text": "Jonas Smithjonas@example.com (282) 555-6903Uma De La Cruz",
+"validated": [
+[
+"Smithjonas@example.com",
+"EMAIL",
+6,
+28,
+1.0
+],
+[
+"(282) 555-6903",
+"PHONE",
+29,
+43,
+1.0
+]
+]
+},
+{
+"text": "Jonas Placeholder jonas@example.com (253) 555-5209",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+18,
+35,
+1.0
+],
+[
+"(253) 555-5209",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Jonas Placeholder",
+"PERSON",
+0,
+17,
+0.95
+]
+]
+},
+{
+"text": "Contact: Jonas Placeholder, jonas@example.com, (253) 555-5209. The system was restarted after the update.",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+28,
+45,
+1.0
+],
+[
+"(253) 555-5209",
+"PHONE",
+47,
+61,
+1.0
+],
+[
+"Jonas Placeholder",
+"PERSON",
+9,
+26,
+0.95
+]
+]
+},
+{
+"text": "jonas@example.com Jonas Placeholder 4111 1111 1111 1111 Zed De La Cruz",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+36,
+55,
+1.0
+],
+[
+"Jonas Placeholder",
+"PERSON",
+18,
+35,
+0.95
+],
+[
+"Zed De La Cruz",
+"PERSON",
+56,
+70,
+0.7
+]
+]
+},
+{
+"text": "Jonas Placeholderjonas@example.com (253) 555-5209Hiro Van Der Berg",
+"validated": [
+[
+"Placeholderjonas@example.com",
+"EMAIL",
+6,
+34,
+1.0
+],
+[
+"(253) 555-5209",
+"PHONE",
+35,
+49,
+1.0
+],
+[
+"Van Der Berg",
+"PERSON",
+54,
+66,
+0.95
+]
+]
+},
+{
+"text": "Kira Quillfeather kira@example.com (712) 555-3355",
+"validated": [
+[
+"kira@example.com",
+"EMAIL",
+18,
+34,
+1.0
+],
+[
+"(712) 555-3355",
+"PHONE",
+35,
+49,
+1.0
+],
+[
+"Kira Quillfeather",
+"PERSON",
+0,
+17,
+0.95
+]
+]
+},
+{
+"text": "Contact: Kira Quillfeather, kira@example.com, (712) 555-3355. The system was restarted after the update.",
+"validated": [
+[
+"kira@example.com",
+"EMAIL",
+28,
+44,
+1.0
+],
+[
+"(712) 555-3355",
+"PHONE",
+46,
+60,
+1.0
+],
+[
+"Kira Quillfeather",
+"PERSON",
+9,
+26,
+0.95
+]
+]
+},
+{
+"text": "kira@example.com Kira Quillfeather 4111 1111 1111 1111 Liam Examplar",
+"validated": [
+[
+"kira@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+35,
+54,
+1.0
+],
+[
+"Kira Quillfeather",
+"PERSON",
+17,
+34,
+0.95
+]
+]
+},
+{
+"text": "Kira Quillfeatherkira@example.com (712) 555-3355Uma Nobody",
+"validated": [
+[
+"Quillfeatherkira@example.com",
+"EMAIL",
+5,
+33,
+1.0
+],
+[
+"(712) 555-3355",
+"PHONE",
+34,
+48,
+1.0
+]
+]
+},
+{
+"text": "Hiro Nobody hiro@example.com (498) 555-1521",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+12,
+28,
+1.0
+],
+[
+"(498) 555-1521",
+"PHONE",
+29,
+43,
+1.0
+],
+[
+"Hiro Nobody",
+"PERSON",
+0,
+11,
+0.75
+]
+]
+},
+{
+"text": "Contact: Hiro Nobody, hiro@example.com, (498) 555-1521. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+22,
+38,
+1.0
+],
+[
+"(498) 555-1521",
+"PHONE",
+40,
+54,
+1.0
+],
+[
+"Hiro Nobody",
+"PERSON",
+9,
+20,
+0.95
+]
+]
+},
+{
+"text": "hiro@example.com Hiro Nobody 4111 1111 1111 1111 Yara Quillfeather",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+29,
+48,
+1.0
+],
+[
+"Yara Quillfeather",
+"PERSON",
+49,
+66,
+0.95
+]
+]
+},
+{
+"text": "Hiro Nobodyhiro@example.com (498) 555-1521Mina Smith-Jones",
+"validated": [
+[
+"Nobodyhiro@example.com",
+"EMAIL",
+5,
+27,
+1.0
+],
+[
+"(498) 555-1521",
+"PHONE",
+28,
+42,
+1.0
+]
+]
+},
+{
+"text": "Uma Faker uma@example.com (993) 555-9328",
+"validated": [
+[
+"uma@example.com",
+"EMAIL",
+10,
+25,
+1.0
+],
+[
+"(993) 555-9328",
+"PHONE",
+26,
+40,
+1.0
+]
+]
+},
+{
+"text": "Contact: Uma Faker, uma@example.com, (993) 555-9328. The system was restarted after the update.",
+"validated": [
+[
+"uma@example.com",
+"EMAIL",
+20,
+35,
+1.0
+],
+[
+"(993) 555-9328",
+"PHONE",
+37,
+51,
+1.0
+]
+]
+},
+{
+"text": "uma@example.com Uma Faker 4111 1111 1111 1111 Mina Marlowe",
+"validated": [
+[
+"uma@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+26,
+45,
+1.0
+]
+]
+},
+{
+"text": "Uma Fakeruma@example.com (993) 555-9328Uma Nobody",
+"validated": [
+[
+"Fakeruma@example.com",
+"EMAIL",
+4,
+24,
+1.0
+],
+[
+"(993) 555-9328",
+"PHONE",
+25,
+39,
+1.0
+]
+]
+},
+{
+"text": "Hiro Faker hiro@example.com (388) 555-6332",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+11,
+27,
+1.0
+],
+[
+"(388) 555-6332",
+"PHONE",
+28,
+42,
+1.0
+],
+[
+"Hiro Faker",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Contact: Hiro Faker, hiro@example.com, (388) 555-6332. Lunch will be served in the main hall.",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+21,
+37,
+1.0
+],
+[
+"(388) 555-6332",
+"PHONE",
+39,
+53,
+1.0
+],
+[
+"Hiro Faker",
+"PERSON",
+9,
+19,
+0.95
+]
+]
+},
+{
+"text": "hiro@example.com Hiro Faker 4111 1111 1111 1111 Wren Testperson",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+28,
+47,
+1.0
+],
+[
+"Hiro Faker",
+"PERSON",
+17,
+27,
+0.95
+]
+]
+},
+{
+"text": "Hiro Fakerhiro@example.com (388) 555-6332Sam De La Cruz",
+"validated": [
+[
+"Fakerhiro@example.com",
+"EMAIL",
+5,
+26,
+1.0
+],
+[
+"(388) 555-6332",
+"PHONE",
+27,
+41,
+1.0
+]
+]
+},
+{
+"text": "Hiro Faker hiro@example.com (452) 555-1383",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+11,
+27,
+1.0
+],
+[
+"(452) 555-1383",
+"PHONE",
+28,
+42,
+1.0
+],
+[
+"Hiro Faker",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Contact: Hiro Faker, hiro@example.com, (452) 555-1383. The system was restarted after the update.",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+21,
+37,
+1.0
+],
+[
+"(452) 555-1383",
+"PHONE",
+39,
+53,
+1.0
+],
+[
+"Hiro Faker",
+"PERSON",
+9,
+19,
+0.95
+]
+]
+},
+{
+"text": "hiro@example.com Hiro Faker 4111 1111 1111 1111 Jonas Smith-Jones",
+"validated": [
+[
+"hiro@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+28,
+47,
+1.0
+],
+[
+"Hiro Faker",
+"PERSON",
+17,
+27,
+0.95
+],
+[
+"Jonas Smith-Jones",
+"PERSON",
+48,
+65,
+0.75
+]
+]
+},
+{
+"text": "Hiro Fakerhiro@example.com (452) 555-1383Priya Okafor",
+"validated": [
+[
+"Fakerhiro@example.com",
+"EMAIL",
+5,
+26,
+1.0
+],
+[
+"(452) 555-1383",
+"PHONE",
+27,
+41,
+1.0
+]
+]
+},
+{
+"text": "Tara Placeholder tara@example.com (346) 555-3469",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+17,
+33,
+1.0
+],
+[
+"(346) 555-3469",
+"PHONE",
+34,
+48,
+1.0
+],
+[
+"Tara Placeholder",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "Contact: Tara Placeholder, tara@example.com, (346) 555-3469. The quarterly report was delivered on time.",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+27,
+43,
+1.0
+],
+[
+"(346) 555-3469",
+"PHONE",
+45,
+59,
+1.0
+],
+[
+"Tara Placeholder",
+"PERSON",
+9,
+25,
+0.95
+]
+]
+},
+{
+"text": "tara@example.com Tara Placeholder 4111 1111 1111 1111 Elena Marlowe",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+34,
+53,
+1.0
+],
+[
+"Tara Placeholder",
+"PERSON",
+17,
+33,
+0.95
+],
+[
+"Elena Marlowe",
+"PERSON",
+54,
+67,
+0.95
+]
+]
+},
+{
+"text": "Tara Placeholdertara@example.com (346) 555-3469Sam Quillfeather",
+"validated": [
+[
+"Placeholdertara@example.com",
+"EMAIL",
+5,
+32,
+1.0
+],
+[
+"(346) 555-3469",
+"PHONE",
+33,
+47,
+1.0
+]
+]
+},
+{
+"text": "Jonas Testperson jonas@example.com (400) 555-2798",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+17,
+34,
+1.0
+],
+[
+"(400) 555-2798",
+"PHONE",
+35,
+49,
+1.0
+],
+[
+"Jonas Testperson",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "Contact: Jonas Testperson, jonas@example.com, (400) 555-2798. Lunch will be served in the main hall.",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+27,
+44,
+1.0
+],
+[
+"(400) 555-2798",
+"PHONE",
+46,
+60,
+1.0
+],
+[
+"Jonas Testperson",
+"PERSON",
+9,
+25,
+0.95
+]
+]
+},
+{
+"text": "jonas@example.com Jonas Testperson 4111 1111 1111 1111 Elena Brightwater",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+35,
+54,
+1.0
+],
+[
+"Jonas Testperson",
+"PERSON",
+18,
+34,
+0.95
+],
+[
+"Elena Brightwater",
+"PERSON",
+55,
+72,
+0.95
+]
+]
+},
+{
+"text": "Jonas Testpersonjonas@example.com (400) 555-2798Dev Nobody",
+"validated": [
+[
+"Testpersonjonas@example.com",
+"EMAIL",
+6,
+33,
+1.0
+],
+[
+"(400) 555-2798",
+"PHONE",
+34,
+48,
+1.0
+]
+]
+},
+{
+"text": "Jonas Van Der Berg jonas@example.com (503) 555-1686",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+19,
+36,
+1.0
+],
+[
+"(503) 555-1686",
+"PHONE",
+37,
+51,
+1.0
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+0,
+18,
+0.7
+]
+]
+},
+{
+"text": "Contact: Jonas Van Der Berg, jonas@example.com, (503) 555-1686. Lunch will be served in the main hall.",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+29,
+46,
+1.0
+],
+[
+"(503) 555-1686",
+"PHONE",
+48,
+62,
+1.0
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+9,
+27,
+0.7
+]
+]
+},
+{
+"text": "jonas@example.com Jonas Van Der Berg 4111 1111 1111 1111 Hiro Van Der Berg",
+"validated": [
+[
+"jonas@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+37,
+56,
+1.0
+],
+[
+"Jonas Van Der Berg",
+"PERSON",
+18,
+36,
+0.7
+],
+[
+"Hiro Van Der Berg",
+"PERSON",
+57,
+74,
+0.7
+]
+]
+},
+{
+"text": "Jonas Van Der Bergjonas@example.com (503) 555-1686Bob Marlowe",
+"validated": [
+[
+"Bergjonas@example.com",
+"EMAIL",
+14,
+35,
+1.0
+],
+[
+"(503) 555-1686",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Jonas Van Der",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "Quinn Van Der Berg quinn@example.com (267) 555-5578",
+"validated": [
+[
+"quinn@example.com",
+"EMAIL",
+19,
+36,
+1.0
+],
+[
+"(267) 555-5578",
+"PHONE",
+37,
+51,
+1.0
+],
+[
+"Quinn Van Der Berg",
+"PERSON",
+0,
+18,
+0.7
+]
+]
+},
+{
+"text": "Contact: Quinn Van Der Berg, quinn@example.com, (267) 555-5578. Lunch will be served in the main hall.",
+"validated": [
+[
+"quinn@example.com",
+"EMAIL",
+29,
+46,
+1.0
+],
+[
+"(267) 555-5578",
+"PHONE",
+48,
+62,
+1.0
+],
+[
+"Quinn Van Der Berg",
+"PERSON",
+9,
+27,
+0.7
+]
+]
+},
+{
+"text": "quinn@example.com Quinn Van Der Berg 4111 1111 1111 1111 Noor O'Neil",
+"validated": [
+[
+"quinn@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+37,
+56,
+1.0
+],
+[
+"Quinn Van Der Berg",
+"PERSON",
+18,
+36,
+0.7
+],
+[
+"Noor O'Neil",
+"PERSON",
+57,
+68,
+0.95
+]
+]
+},
+{
+"text": "Quinn Van Der Bergquinn@example.com (267) 555-5578Zed McDonald",
+"validated": [
+[
+"Bergquinn@example.com",
+"EMAIL",
+14,
+35,
+1.0
+],
+[
+"(267) 555-5578",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Quinn Van Der",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "Dev Smith-Jones dev@example.com (823) 555-8117",
+"validated": [
+[
+"dev@example.com",
+"EMAIL",
+16,
+31,
+1.0
+],
+[
+"(823) 555-8117",
+"PHONE",
+32,
+46,
+1.0
+],
+[
+"Dev Smith-Jones",
+"PERSON",
+0,
+15,
+0.75
+]
+]
+},
+{
+"text": "Contact: Dev Smith-Jones, dev@example.com, (823) 555-8117. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"dev@example.com",
+"EMAIL",
+26,
+41,
+1.0
+],
+[
+"(823) 555-8117",
+"PHONE",
+43,
+57,
+1.0
+],
+[
+"Dev Smith-Jones",
+"PERSON",
+9,
+24,
+0.75
+]
+]
+},
+{
+"text": "dev@example.com Dev Smith-Jones 4111 1111 1111 1111 Liam Smith",
+"validated": [
+[
+"dev@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+32,
+51,
+1.0
+],
+[
+"Dev Smith-Jones",
+"PERSON",
+16,
+31,
+0.75
+],
+[
+"Liam Smith",
+"PERSON",
+52,
+62,
+0.95
+]
+]
+},
+{
+"text": "Dev Smith-Jonesdev@example.com (823) 555-8117Liam Placeholder",
+"validated": [
+[
+"Smith-Jonesdev@example.com",
+"EMAIL",
+4,
+30,
+1.0
+],
+[
+"(823) 555-8117",
+"PHONE",
+31,
+45,
+1.0
+]
+]
+},
+{
+"text": "Rosa O'Neil rosa@example.com (701) 555-4449",
+"validated": [
+[
+"rosa@example.com",
+"EMAIL",
+12,
+28,
+1.0
+],
+[
+"(701) 555-4449",
+"PHONE",
+29,
+43,
+1.0
+],
+[
+"Rosa O'Neil",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Contact: Rosa O'Neil, rosa@example.com, (701) 555-4449. Lunch will be served in the main hall.",
+"validated": [
+[
+"rosa@example.com",
+"EMAIL",
+22,
+38,
+1.0
+],
+[
+"(701) 555-4449",
+"PHONE",
+40,
+54,
+1.0
+],
+[
+"Rosa O'Neil",
+"PERSON",
+9,
+20,
+0.95
+]
+]
+},
+{
+"text": "rosa@example.com Rosa O'Neil 4111 1111 1111 1111 Jonas Smith-Jones",
+"validated": [
+[
+"rosa@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+29,
+48,
+1.0
+],
+[
+"Rosa O'Neil",
+"PERSON",
+17,
+28,
+0.95
+],
+[
+"Jonas Smith-Jones",
+"PERSON",
+49,
+66,
+0.75
+]
+]
+},
+{
+"text": "Rosa O'Neilrosa@example.com (701) 555-4449Zed Nobody",
+"validated": [
+[
+"Neilrosa@example.com",
+"EMAIL",
+7,
+27,
+1.0
+],
+[
+"(701) 555-4449",
+"PHONE",
+28,
+42,
+1.0
+]
+]
+},
+{
+"text": "Carla Smith-Jones carla@example.com (894) 555-2227",
+"validated": [
+[
+"carla@example.com",
+"EMAIL",
+18,
+35,
+1.0
+],
+[
+"(894) 555-2227",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Carla Smith-Jones",
+"PERSON",
+0,
+17,
+0.75
+]
+]
+},
+{
+"text": "Contact: Carla Smith-Jones, carla@example.com, (894) 555-2227. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"carla@example.com",
+"EMAIL",
+28,
+45,
+1.0
+],
+[
+"(894) 555-2227",
+"PHONE",
+47,
+61,
+1.0
+],
+[
+"Carla Smith-Jones",
+"PERSON",
+9,
+26,
+0.75
+]
+]
+},
+{
+"text": "carla@example.com Carla Smith-Jones 4111 1111 1111 1111 Omar Lindqvist",
+"validated": [
+[
+"carla@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+36,
+55,
+1.0
+],
+[
+"Carla Smith-Jones",
+"PERSON",
+18,
+35,
+0.75
+],
+[
+"Omar Lindqvist",
+"PERSON",
+56,
+70,
+0.95
+]
+]
+},
+{
+"text": "Carla Smith-Jonescarla@example.com (894) 555-2227Noor Smith",
+"validated": [
+[
+"Smith-Jonescarla@example.com",
+"EMAIL",
+6,
+34,
+1.0
+],
+[
+"(894) 555-2227",
+"PHONE",
+35,
+49,
+1.0
+]
+]
+},
+{
+"text": "Ann Quillfeather ann@example.com (549) 555-4365",
+"validated": [
+[
+"ann@example.com",
+"EMAIL",
+17,
+32,
+1.0
+],
+[
+"(549) 555-4365",
+"PHONE",
+33,
+47,
+1.0
+],
+[
+"Ann Quillfeather",
+"PERSON",
+0,
+16,
+0.95
+]
+]
+},
+{
+"text": "Contact: Ann Quillfeather, ann@example.com, (549) 555-4365. Lunch will be served in the main hall.",
+"validated": [
+[
+"ann@example.com",
+"EMAIL",
+27,
+42,
+1.0
+],
+[
+"(549) 555-4365",
+"PHONE",
+44,
+58,
+1.0
+],
+[
+"Ann Quillfeather",
+"PERSON",
+9,
+25,
+0.95
+]
+]
+},
+{
+"text": "ann@example.com Ann Quillfeather 4111 1111 1111 1111 Rosa Faker",
+"validated": [
+[
+"ann@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+33,
+52,
+1.0
+],
+[
+"Ann Quillfeather",
+"PERSON",
+16,
+32,
+0.95
+]
+]
+},
+{
+"text": "Ann Quillfeatherann@example.com (549) 555-4365Ines Quillfeather",
+"validated": [
+[
+"Quillfeatherann@example.com",
+"EMAIL",
+4,
+31,
+1.0
+],
+[
+"(549) 555-4365",
+"PHONE",
+32,
+46,
+1.0
+]
+]
+},
+{
+"text": "Tara O'Neil tara@example.com (550) 555-8066",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+12,
+28,
+1.0
+],
+[
+"(550) 555-8066",
+"PHONE",
+29,
+43,
+1.0
+],
+[
+"Tara O'Neil",
+"PERSON",
+0,
+11,
+0.95
+]
+]
+},
+{
+"text": "Contact: Tara O'Neil, tara@example.com, (550) 555-8066. Lunch will be served in the main hall.",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+22,
+38,
+1.0
+],
+[
+"(550) 555-8066",
+"PHONE",
+40,
+54,
+1.0
+],
+[
+"Tara O'Neil",
+"PERSON",
+9,
+20,
+0.95
+]
+]
+},
+{
+"text": "tara@example.com Tara O'Neil 4111 1111 1111 1111 Omar Faker",
+"validated": [
+[
+"tara@example.com",
+"EMAIL",
+0,
+16,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+29,
+48,
+1.0
+],
+[
+"Tara O'Neil",
+"PERSON",
+17,
+28,
+0.95
+],
+[
+"Omar Faker",
+"PERSON",
+49,
+59,
+0.95
+]
+]
+},
+{
+"text": "Tara O'Neiltara@example.com (550) 555-8066Ann Faker",
+"validated": [
+[
+"Neiltara@example.com",
+"EMAIL",
+7,
+27,
+1.0
+],
+[
+"(550) 555-8066",
+"PHONE",
+28,
+42,
+1.0
+]
+]
+},
+{
+"text": "Farid Smith-Jones farid@example.com (397) 555-3781",
+"validated": [
+[
+"farid@example.com",
+"EMAIL",
+18,
+35,
+1.0
+],
+[
+"(397) 555-3781",
+"PHONE",
+36,
+50,
+1.0
+],
+[
+"Farid Smith-Jones",
+"PERSON",
+0,
+17,
+0.75
+]
+]
+},
+{
+"text": "Contact: Farid Smith-Jones, farid@example.com, (397) 555-3781. Please review the attached notes before Friday.",
+"validated": [
+[
+"farid@example.com",
+"EMAIL",
+28,
+45,
+1.0
+],
+[
+"(397) 555-3781",
+"PHONE",
+47,
+61,
+1.0
+],
+[
+"Farid Smith-Jones",
+"PERSON",
+9,
+26,
+0.75
+]
+]
+},
+{
+"text": "farid@example.com Farid Smith-Jones 4111 1111 1111 1111 Sam Van Der Berg",
+"validated": [
+[
+"farid@example.com",
+"EMAIL",
+0,
+17,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+36,
+55,
+1.0
+],
+[
+"Farid Smith-Jones",
+"PERSON",
+18,
+35,
+0.75
+],
+[
+"Sam Van Der Berg",
+"PERSON",
+56,
+72,
+0.7
+]
+]
+},
+{
+"text": "Farid Smith-Jonesfarid@example.com (397) 555-3781Xavi Smith-Jones",
+"validated": [
+[
+"Smith-Jonesfarid@example.com",
+"EMAIL",
+6,
+34,
+1.0
+],
+[
+"(397) 555-3781",
+"PHONE",
+35,
+49,
+1.0
+]
+]
+},
+{
+"text": "Uma Roe uma@example.com (309) 555-5483",
+"validated": [
+[
+"uma@example.com",
+"EMAIL",
+8,
+23,
+1.0
+],
+[
+"(309) 555-5483",
+"PHONE",
+24,
+38,
+1.0
+]
+]
+},
+{
+"text": "Contact: Uma Roe, uma@example.com, (309) 555-5483. The quarterly report was delivered on time.",
+"validated": [
+[
+"uma@example.com",
+"EMAIL",
+18,
+33,
+1.0
+],
+[
+"(309) 555-5483",
+"PHONE",
+35,
+49,
+1.0
+]
+]
+},
+{
+"text": "uma@example.com Uma Roe 4111 1111 1111 1111 Elena Van Der Berg",
+"validated": [
+[
+"uma@example.com",
+"EMAIL",
+0,
+15,
+1.0
+],
+[
+"4111 1111 1111 1111",
+"CARD",
+24,
+43,
+1.0
+],
+[
+"Elena Van Der Berg",
+"PERSON",
+44,
+62,
+0.7
+]
+]
+},
+{
+"text": "Uma Roeuma@example.com (309) 555-5483Carla Placeholder",
+"validated": [
+[
+"Roeuma@example.com",
+"EMAIL",
+4,
+22,
+1.0
+],
+[
+"(309) 555-5483",
+"PHONE",
+23,
+37,
+1.0
+]
+]
+},
+{
+"text": "Gwen Roe lives in Acme Widgets Inc. and works for Acme Widgets Inc.. The system was restarted after the update.",
+"validated": [
+[
+"Gwen Roe",
+"PERSON",
+0,
+8,
+0.95
+]
+]
+},
+{
+"text": "Umbrella Labs hired Bob Van Der Berg.",
+"validated": [
+[
+"Bob Van Der Berg",
+"PERSON",
+20,
+36,
+0.7
+]
+]
+},
+{
+"text": "Uma Nobody lives in Paris and works for Initech. Traffic was heavy on the bridge this morning.",
+"validated": []
+},
+{
+"text": "Springfield hired Sam McDonald.",
+"validated": [
+[
+"Sam McDonald",
+"PERSON",
+18,
+30,
+0.95
+]
+]
+},
+{
+"text": "Rosa McDonald lives in Acme Widgets Inc. and works for Springfield. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Rosa McDonald",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "Acme Widgets Inc. hired Elena Roe.",
+"validated": [
+[
+"Elena Roe",
+"PERSON",
+24,
+33,
+0.95
+]
+]
+},
+{
+"text": "Rosa Faker lives in Umbrella Labs and works for Mount Testmore. Please review the attached notes before Friday.",
+"validated": [
+[
+"Rosa Faker",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Springfield hired Quinn Quillfeather.",
+"validated": []
+},
+{
+"text": "Xavi Nobody lives in Springfield and works for Berlin. Lunch will be served in the main hall.",
+"validated": []
+},
+{
+"text": "Globex Corporation hired Farid Nobody.",
+"validated": []
+},
+{
+"text": "Sam Lindqvist lives in Springfield and works for Initech. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Sam Lindqvist",
+"PERSON",
+0,
+13,
+0.95
+]
+]
+},
+{
+"text": "Berlin hired Bob Smith.",
+"validated": [
+[
+"Bob Smith",
+"PERSON",
+13,
+22,
+0.95
+]
+]
+},
+{
+"text": "Tara Roe lives in Paris and works for Initech. Please review the attached notes before Friday.",
+"validated": [
+[
+"Tara Roe",
+"PERSON",
+0,
+8,
+0.95
+]
+]
+},
+{
+"text": "Acme Widgets Inc. hired Wren Roe.",
+"validated": [
+[
+"Wren Roe",
+"PERSON",
+24,
+32,
+0.95
+]
+]
+},
+{
+"text": "Uma Faker lives in Berlin and works for Acme Widgets Inc.. Traffic was heavy on the bridge this morning.",
+"validated": []
+},
+{
+"text": "Umbrella Labs hired Hiro Placeholder.",
+"validated": [
+[
+"Hiro Placeholder",
+"PERSON",
+20,
+36,
+0.95
+]
+]
+},
+{
+"text": "Zed Placeholder lives in Initech and works for Globex Corporation. Traffic was heavy on the bridge this morning.",
+"validated": []
+},
+{
+"text": "Globex Corporation hired Jonas Faker.",
+"validated": [
+[
+"Jonas Faker",
+"PERSON",
+25,
+36,
+0.95
+]
+]
+},
+{
+"text": "Yara Lindqvist lives in Paris and works for Globex Corporation. The quarterly report was delivered on time.",
+"validated": [
+[
+"Yara Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "Springfield hired Wren Van Der Berg.",
+"validated": [
+[
+"Wren Van Der Berg",
+"PERSON",
+18,
+35,
+0.7
+]
+]
+},
+{
+"text": "Dev O'Neil lives in Initech and works for Umbrella Labs. Lunch will be served in the main hall.",
+"validated": [
+[
+"Dev O'Neil",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Umbrella Labs hired Dev Smith-Jones.",
+"validated": [
+[
+"Dev Smith-Jones",
+"PERSON",
+20,
+35,
+0.75
+]
+]
+},
+{
+"text": "Sam Okafor lives in Berlin and works for Initech. Lunch will be served in the main hall.",
+"validated": [
+[
+"Sam Okafor",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Berlin hired Yara Testperson.",
+"validated": [
+[
+"Yara Testperson",
+"PERSON",
+13,
+28,
+0.95
+]
+]
+},
+{
+"text": "Sam Okafor lives in Springfield and works for Umbrella Labs. Traffic was heavy on the bridge this morning.",
+"validated": [
+[
+"Sam Okafor",
+"PERSON",
+0,
+10,
+0.95
+]
+]
+},
+{
+"text": "Globex Corporation hired Gwen Examplar.",
+"validated": []
+},
+{
+"text": "Farid Smith-Jones lives in Paris and works for Springfield. The quarterly report was delivered on time.",
+"validated": [
+[
+"Farid Smith-Jones",
+"PERSON",
+0,
+17,
+0.75
+]
+]
+},
+{
+"text": "Berlin hired Xavi Okafor.",
+"validated": []
+},
+{
+"text": "Liam Lindqvist lives in Berlin and works for Umbrella Labs. The system was restarted after the update.",
+"validated": [
+[
+"Liam Lindqvist",
+"PERSON",
+0,
+14,
+0.95
+]
+]
+},
+{
+"text": "Acme Widgets Inc. hired Uma Placeholder.",
+"validated": []
+},
+{
+"text": "Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, Sam, ",
+"validated": []
+},
+{
+"text": "John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, John Smith, ",
+"validated": [
+[
+"John Smith",
+"PERSON",
+0,
+10,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+12,
+22,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+24,
+34,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+36,
+46,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+48,
+58,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+60,
+70,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+72,
+82,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+84,
+94,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+96,
+106,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+108,
+118,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+120,
+130,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+132,
+142,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+144,
+154,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+156,
+166,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+168,
+178,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+180,
+190,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+192,
+202,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+204,
+214,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+216,
+226,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+228,
+238,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+240,
+250,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+252,
+262,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+264,
+274,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+276,
+286,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+288,
+298,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+300,
+310,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+312,
+322,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+324,
+334,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+336,
+346,
+0.95
+],
+[
+"John Smith",
+"PERSON",
+348,
+358,
+0.95
+]
+]
+},
+{
+"text": "Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, Mr. Smith, ",
+"validated": []
+},
+{
+"text": "Xavi De La Cruz, Priya Lindqvist, Carla McDonald, Noor Testperson, Dev Roe, Dev O'Neil, Omar De La Cruz, Bob Smith-Jones, Hiro Nobody, Uma Smith-Jones, Yara Marlowe, Tara O'Neil, Bob McDonald, Omar Brightwater, Omar Nobody, Quinn McDonald, Kira McDonald, Hiro Roe, Tara Quillfeather, Kira Marlowe, Kira Marlowe, Carla Testperson, Xavi Testperson, Quinn De La Cruz, Kira Van Der Berg, Zed Faker, Xavi Lindqvist, Kira Testperson, Kira Examplar, Dev McDonald, Noor O'Neil, Gwen Examplar, Bob Roe, Noor Van Der Berg, Hiro Smith, Bob Roe, Bob Placeholder, Liam Nobody, Rosa Faker, Hiro De La Cruz, Noor O'Neil, Omar Nobody, Rosa Smith, Quinn De La Cruz, Gwen Okafor, Rosa Testperson, Dev Nobody, Hiro McDonald, Gwen Lindqvist, Rosa Van Der Berg, Farid Faker, Farid Brightwater, Omar Examplar, Wren De La Cruz, Uma Testperson, Sam Roe, Tara Lindqvist, Liam Van Der Berg, Priya Nobody, Priya Quillfeather",
+"validated": [
+[
+"Xavi De La Cruz",
+"PERSON",
+0,
+15,
+0.7
+],
+[
+"Priya Lindqvist",
+"PERSON",
+17,
+32,
+0.95
+],
+[
+"Carla McDonald",
+"PERSON",
+34,
+48,
+0.95
+],
+[
+"Noor Testperson",
+"PERSON",
+50,
+65,
+0.95
+],
+[
+"Dev Roe",
+"PERSON",
+67,
+74,
+0.95
+],
+[
+"Dev O'Neil",
+"PERSON",
+76,
+86,
+0.95
+],
+[
+"Omar De La Cruz",
+"PERSON",
+88,
+103,
+0.7
+],
+[
+"Bob Smith-Jones",
+"PERSON",
+105,
+120,
+0.75
+],
+[
+"Hiro Nobody",
+"PERSON",
+122,
+133,
+0.95
+],
+[
+"Yara Marlowe",
+"PERSON",
+152,
+164,
+0.95
+],
+[
+"Tara O'Neil",
+"PERSON",
+166,
+177,
+0.95
+],
+[
+"Bob McDonald",
+"PERSON",
+179,
+191,
+0.95
+],
+[
+"Omar Brightwater",
+"PERSON",
+193,
+209,
+0.95
+],
+[
+"Omar Nobody",
+"PERSON",
+211,
+222,
+0.95
+],
+[
+"Quinn McDonald",
+"PERSON",
+224,
+238,
+0.95
+],
+[
+"Kira McDonald",
+"PERSON",
+240,
+253,
+0.95
+],
+[
+"Hiro Roe",
+"PERSON",
+255,
+263,
+0.95
+],
+[
+"Tara Quillfeather",
+"PERSON",
+265,
+282,
+0.95
+],
+[
+"Kira Marlowe",
+"PERSON",
+284,
+296,
+0.95
+],
+[
+"Kira Marlowe",
+"PERSON",
+298,
+310,
+0.95
+],
+[
+"Carla Testperson",
+"PERSON",
+312,
+328,
+0.95
+],
+[
+"Quinn De La Cruz",
+"PERSON",
+347,
+363,
+0.7
+],
+[
+"Kira Van Der Berg",
+"PERSON",
+365,
+382,
+0.7
+],
+[
+"Zed Faker",
+"PERSON",
+384,
+393,
+0.95
+],
+[
+"Xavi Lindqvist",
+"PERSON",
+395,
+409,
+0.95
+],
+[
+"Kira Testperson",
+"PERSON",
+411,
+426,
+0.95
+],
+[
+"Kira Examplar",
+"PERSON",
+428,
+441,
+0.95
+],
+[
+"Dev McDonald",
+"PERSON",
+443,
+455,
+0.95
+],
+[
+"Noor O'Neil",
+"PERSON",
+457,
+468,
+0.95
+],
+[
+"Gwen Examplar",
+"PERSON",
+470,
+483,
+0.95
+],
+[
+"Bob Roe",
+"PERSON",
+485,
+492,
+0.95
+],
+[
+"Noor Van Der Berg",
+"PERSON",
+494,
+511,
+0.7
+],
+[
+"Hiro Smith",
+"PERSON",
+513,
+523,
+0.95
+],
+[
+"Bob Roe",
+"PERSON",
+525,
+532,
+0.95
+],
+[
+"Bob Placeholder",
+"PERSON",
+534,
+549,
+0.95
+],
+[
+"Liam Nobody",
+"PERSON",
+551,
+562,
+0.95
+],
+[
+"Rosa Faker",
+"PERSON",
+564,
+574,
+0.95
+],
+[
+"Hiro De La Cruz",
+"PERSON",
+576,
+591,
+0.7
+],
+[
+"Noor O'Neil",
+"PERSON",
+593,
+604,
+0.95
+],
+[
+"Omar Nobody",
+"PERSON",
+606,
+617,
+0.95
+],
+[
+"Rosa Smith",
+"PERSON",
+619,
+629,
+0.95
+],
+[
+"Quinn De La Cruz",
+"PERSON",
+631,
+647,
+0.7
+],
+[
+"Gwen Okafor",
+"PERSON",
+649,
+660,
+0.95
+],
+[
+"Rosa Testperson",
+"PERSON",
+662,
+677,
+0.95
+],
+[
+"Dev Nobody",
+"PERSON",
+679,
+689,
+0.95
+],
+[
+"Hiro McDonald",
+"PERSON",
+691,
+704,
+0.95
+],
+[
+"Gwen Lindqvist",
+"PERSON",
+706,
+720,
+0.95
+],
+[
+"Rosa Van Der Berg",
+"PERSON",
+722,
+739,
+0.7
+],
+[
+"Farid Faker",
+"PERSON",
+741,
+752,
+0.95
+],
+[
+"Farid Brightwater",
+"PERSON",
+754,
+771,
+0.95
+],
+[
+"Omar Examplar",
+"PERSON",
+773,
+786,
+0.95
+],
+[
+"Wren De La Cruz",
+"PERSON",
+788,
+803,
+0.7
+],
+[
+"Sam Roe",
+"PERSON",
+821,
+828,
+0.95
+],
+[
+"Tara Lindqvist",
+"PERSON",
+830,
+844,
+0.95
+],
+[
+"Liam Van Der Berg",
+"PERSON",
+846,
+863,
+0.7
+],
+[
+"Priya Nobody",
+"PERSON",
+865,
+877,
+0.95
+],
+[
+"Priya Quillfeather",
+"PERSON",
+879,
+897,
+0.95
+]
+]
+},
+{
+"text": "Yara Lindqvist\nYara Faker\nXavi Roe\nOmar Testperson\nBob Testperson\nNoor Marlowe\nMina O'Neil\nVik Faker\nNoor Quillfeather\nCarla Van Der Berg\nInes O'Neil\nSam Quillfeather\nTara Nobody\nFarid Brightwater\nYara Nobody\nYara Nobody\nYara Lindqvist\nAnn Placeholder\nKira Quillfeather\nMina Lindqvist\nCarla Roe\nDev Testperson\nWren Smith-Jones\nBob Roe\nVik Examplar\nXavi Examplar\nRosa McDonald\nElena Roe\nOmar Marlowe\nHiro Roe\nWren Okafor\nGwen De La Cruz\nVik Okafor\nFarid O'Neil\nGwen Roe\nInes O'Neil\nKira Smith\nZed Roe\nUma De La Cruz\nMina Van Der Berg\nTara McDonald\nRosa Marlowe\nXavi Smith-Jones\nAnn Van Der Berg\nLiam Placeholder\nGwen McDonald\nDev Quillfeather\nXavi Faker\nDev Placeholder\nQuinn Testperson\nPriya McDonald\nXavi Smith\nElena Quillfeather\nRosa De La Cruz\nHiro Quillfeather\nUma Smith\nPriya Van Der Berg\nAnn Nobody\nJonas Examplar\nAnn Okafor",
+"validated": [
+[
+"Carla Van Der Berg",
+"PERSON",
+119,
+137,
+0.7
+],
+[
+"Yara Nobody",
+"PERSON",
+209,
+220,
+0.95
+],
+[
+"Kira Quillfeather",
+"PERSON",
+252,
+269,
+0.95
+],
+[
+"Vik Okafor",
+"PERSON",
+436,
+446,
+0.95
+],
+[
+"Farid O'Neil",
+"PERSON",
+447,
+459,
+0.95
+],
+[
+"Van Der Berg",
+"PERSON",
+520,
+532,
+0.95
+],
+[
+"Tara McDonald",
+"PERSON",
+533,
+546,
+0.95
+],
+[
+"Rosa Marlowe",
+"PERSON",
+547,
+559,
+0.95
+],
+[
+"Xavi Smith-Jones",
+"PERSON",
+560,
+576,
+0.75
+],
+[
+"Rosa De La Cruz",
+"PERSON",
+731,
+746,
+0.7
+]
+]
+},
+{
+"text": "Mrs. Lindqvist Sir Placeholder Prof. Smith-Jones Mr. Faker Dr. Van Der Berg Prof. Smith-Jones Mrs. Lindqvist Prof. Marlowe Mrs. Quillfeather Mrs. Marlowe Sir McDonald Mrs. Marlowe Mrs. Quillfeather Prof. Placeholder Prof. O'Neil Sir Faker Mrs. Lindqvist Sir Smith-Jones Mrs. Marlowe Mr. Testperson Prof. McDonald Prof. Testperson Sir Lindqvist Mrs. Examplar Mrs. Lindqvist Ms. Van Der Berg Mr. Smith-Jones Sir Roe Prof. Testperson Dr. Smith-Jones Sir Marlowe Dr. McDonald Dr. Faker Mrs. De La Cruz Mrs. De La Cruz Dr. Okafor Mr. Roe Sir Brightwater Prof. Smith-Jones Mr. Examplar Mrs. De La Cruz Sir Smith Mrs. Roe Dr. Nobody Mr. Nobody Mrs. O'Neil Prof. Roe Ms. Faker Dr. Testperson Mrs. Testperson",
+"validated": [
+[
+"Van Der Berg",
+"PERSON",
+63,
+75,
+0.95
+],
+[
+"Van Der Berg",
+"PERSON",
+377,
+389,
+0.95
+],
+[
+"De La Cruz",
+"PERSON",
+487,
+497,
+0.95
+],
+[
+"De La Cruz",
+"PERSON",
+503,
+513,
+0.95
+],
+[
+"De La Cruz",
+"PERSON",
+585,
+595,
+0.95
+]
+]
+},
+{
+"text": "Traffic was heavy on the bridge this morning. Priya Van Der Berg Lunch will be served in the main hall. Tara Faker The quarterly report was delivered on time. Omar Okafor Lunch will be served in the main hall. Bob Roe Lunch will be served in the main hall. Dev Testperson The system was restarted after the update. Yara Smith The system was restarted after the update. Rosa Smith The quarterly report was delivered on time. Ines McDonald Lunch will be served in the main hall. Zed Quillfeather The system was restarted after the update. Wren Smith Traffic was heavy on the bridge this morning. Sam Brightwater The quarterly report was delivered on time. Ann Van Der Berg Lunch will be served in the main hall. Farid Brightwater Please review the attached notes before Friday. Xavi Smith The system was restarted after the update. Tara Quillfeather The quarterly report was delivered on time. Kira Marlowe The system was restarted after the update. Ines Testperson The system was restarted after the update. Uma Quillfeather The quarterly report was delivered on time. Ann Smith Lunch will be served in the main hall. Zed Marlowe The system was restarted after the update. Mina Nobody Lunch will be served in the main hall. Jonas McDonald The system was restarted after the update. Tara Faker Please review the attached notes before Friday. Gwen Smith Lunch will be served in the main hall. Dev Nobody The system was restarted after the update. Ines Marlowe The system was restarted after the update. Jonas Smith Lunch will be served in the main hall. Farid Marlowe The quarterly report was delivered on time. Ann Examplar The system was restarted after the update. Elena Nobody The quarterly report was delivered on time. Gwen De La Cruz Lunch will be served in the main hall. Wren Smith-Jones The system was restarted after the update. Rosa Nobody Please review the attached notes before Friday. Noor O'Neil The quarterly report was delivered on time. Mina McDonald The system was restarted after the update. Tara Okafor The quarterly report was delivered on time. Zed Van Der Berg Please review the attached notes before Friday. Xavi McDonald Lunch will be served in the main hall. Yara McDonald Traffic was heavy on the bridge this morning. Quinn Van Der Berg",
+"validated": [
+[
+"Priya Van Der Berg Lunch",
+"PERSON",
+46,
+70,
+0.7
+],
+[
+"Tara Faker",
+"PERSON",
+104,
+114,
+0.95
+],
+[
+"Omar Okafor Lunch",
+"PERSON",
+159,
+176,
+0.95
+],
+[
+"Bob Roe Lunch",
+"PERSON",
+210,
+223,
+0.95
+],
+[
+"Dev Testperson",
+"PERSON",
+257,
+271,
+0.95
+],
+[
+"Yara Smith",
+"PERSON",
+315,
+325,
+0.95
+],
+[
+"Rosa Smith",
+"PERSON",
+369,
+379,
+0.95
+],
+[
+"Ines McDonald Lunch",
+"PERSON",
+424,
+443,
+0.95
+],
+[
+"Zed Quillfeather",
+"PERSON",
+477,
+493,
+0.95
+],
+[
+"Sam Brightwater",
+"PERSON",
+594,
+609,
+0.95
+],
+[
+"Ann Van Der Berg Lunch",
+"PERSON",
+654,
+676,
+0.7
+],
+[
+"Xavi Smith",
+"PERSON",
+776,
+786,
+0.95
+],
+[
+"Tara Quillfeather",
+"PERSON",
+830,
+847,
+0.95
+],
+[
+"Kira Marlowe",
+"PERSON",
+892,
+904,
+0.95
+],
+[
+"Ines Testperson",
+"PERSON",
+948,
+963,
+0.95
+],
+[
+"Ann Smith Lunch",
+"PERSON",
+1068,
+1083,
+0.95
+],
+[
+"Zed Marlowe",
+"PERSON",
+1117,
+1128,
+0.95
+],
+[
+"Jonas McDonald",
+"PERSON",
+1223,
+1237,
+0.95
+],
+[
+"Tara Faker Please",
+"PERSON",
+1281,
+1298,
+0.75
+],
+[
+"Gwen Smith Lunch",
+"PERSON",
+1340,
+1356,
+0.95
+],
+[
+"Dev Nobody",
+"PERSON",
+1390,
+1400,
+0.75
+],
+[
+"Ines Marlowe",
+"PERSON",
+1444,
+1456,
+0.95
+],
+[
+"Jonas Smith Lunch",
+"PERSON",
+1500,
+1517,
+0.95
+],
+[
+"Ann Examplar",
+"PERSON",
+1609,
+1621,
+0.95
+],
+[
+"Gwen De La Cruz Lunch",
+"PERSON",
+1722,
+1743,
+0.7
+],
+[
+"Wren Smith-Jones",
+"PERSON",
+1777,
+1793,
+0.75
+],
+[
+"Rosa Nobody Please",
+"PERSON",
+1837,
+1855,
+0.75
+],
+[
+"Noor O'Neil",
+"PERSON",
+1897,
+1908,
+0.95
+],
+[
+"Mina McDonald",
+"PERSON",
+1953,
+1966,
+0.95
+],
+[
+"Tara Okafor",
+"PERSON",
+2010,
+2021,
+0.95
+],
+[
+"Zed Van Der Berg",
+"PERSON",
+2066,
+2082,
+0.7
+],
+[
+"Xavi McDonald Lunch",
+"PERSON",
+2131,
+2150,
+0.95
+],
+[
+"Yara McDonald Traffic",
+"PERSON",
+2184,
+2205,
+0.95
+],
+[
+"Quinn Van Der Berg",
+"PERSON",
+2244,
+2262,
+0.7
+]
+]
+},
+{
+"text": "Dr. Ann Lee-Testperson and Marie-Anne Faker met bin Nobody and von Quillfeather. Ana de la Cruz agreed. Jo Li waved. Al Ng spoke.",
+"validated": [
+[
+"Ann Lee-Testperson",
+"PERSON",
+4,
+22,
+0.75
+],
+[
+"bin Nobody",
+"PERSON",
+48,
+58,
+0.95
+],
+[
+"von Quillfeather",
+"PERSON",
+63,
+79,
+0.95
+],
+[
+"Ana de la Cruz",
+"PERSON",
+81,
+95,
+0.7
+],
+[
+"Jo Li",
+"PERSON",
+104,
+109,
+0.95
+],
+[
+"Al Ng",
+"PERSON",
+117,
+122,
+0.95
+]
+]
+},
+{
+"text": "Name1 Testperson and 3rd Person met Bob\tRoe and Ann Lee.",
+"validated": []
+},
+{
+"text": "王小明 met Ann Testperson. Zoë Nobody replied.",
+"validated": [
+[
+"Ann Testperson",
+"PERSON",
+8,
+22,
+0.95
+],
+[
+"Zoë Nobody",
+"PERSON",
+24,
+34,
+0.75
+]
+]
+}
+]
