@@ -48,15 +48,17 @@ class TestAsciiOnlyFetchMetadata:
     def test_other_site_values_denied(self, value):
         assert get_health([("Sec-Fetch-Site", value)]).code == "forbidden_fetch_site"
 
-    @pytest.mark.parametrize("value", [" cors", "CORS ", "\tNo-Cors", "no-cors"])
-    def test_mode_ascii_trim_and_case(self, value):
+    @pytest.mark.parametrize("value", [" cors", "CORS ", "\tCoRs\t", "cors"])
+    def test_mode_ascii_trim_and_case_allowed_without_site(self, value):
+        assert get_health([("Sec-Fetch-Mode", value)]).allowed
+
+    @pytest.mark.parametrize("value", ["\tNo-Cors", "no-cors"])
+    def test_mode_no_cors_denied(self, value):
         assert get_health([("Sec-Fetch-Mode", value)]).code == "forbidden_fetch_site"
 
     @pytest.mark.parametrize("pad", PADS)
     def test_mode_is_not_unicode_trimmed(self, pad):
-        # Only exactly cors/no-cors (after ASCII trim) is rejected; the padded
-        # value is a different, unknown token.
-        assert get_health([("Sec-Fetch-Mode", pad + "cors")]).allowed
+        assert get_health([("Sec-Fetch-Mode", pad + "cors")]).code == "forbidden_fetch_site"
 
 
 class TestAsciiOnlyOtherHeaderNormalisation:
@@ -208,7 +210,7 @@ def _o_ports(ports):
     if not isinstance(ports, (list, tuple, set, frozenset)):
         return set()
     for p in ports:
-        if type(p) is not int or not 1 <= p <= 65535:
+        if not isinstance(p, int) or isinstance(p, bool) or not 1 <= p <= 65535:
             return set()
     return set(ports) if len(set(ports)) <= 8 else set()
 
@@ -250,6 +252,19 @@ def _o_ctype(v):
     return rest[1:].lstrip(" \t") == "charset=utf-8"
 
 
+def _o_fetch_denied(h):
+    def vals(k):
+        return set(_alower(_atrim(v)) for v in h.get("sec-fetch-" + k, []))
+
+    if "sec-fetch-site" not in h:
+        allowed = {"mode": {"cors"}, "dest": set(), "user": set()}
+    elif vals("site") == {"none"}:
+        allowed = {"mode": {"navigate"}, "dest": {"document"}, "user": {"?1"}}
+    else:
+        return True
+    return any(not vals(k) <= allowed[k] for k in allowed)
+
+
 def oracle(method, target, headers, ports, token):
     if method not in ("GET", "POST"):
         return (False, 405, "method_not_allowed")
@@ -279,9 +294,7 @@ def oracle(method, target, headers, ports, token):
         return (False, 421, "bad_host")
     if "origin" in h:
         return (False, 403, "forbidden_origin")
-    if any(_alower(_atrim(v)) != "none" for v in h.get("sec-fetch-site", [])):
-        return (False, 403, "forbidden_fetch_site")
-    if any(_alower(_atrim(v)) in ("cors", "no-cors") for v in h.get("sec-fetch-mode", [])):
+    if _o_fetch_denied(h):
         return (False, 403, "forbidden_fetch_site")
     if method == "GET" and any(v != "0" for v in h.get("content-length", [])):
         return bad
@@ -329,7 +342,9 @@ _HOSTS = [HOST_OK, "localhost:8123", "LOCALHOST:8123", "127.0.0.1:9", "127.0.0.1
 _SITE = [None, "none", "NONE", " none", "none\t", "\xa0none", "none ", "\x85none",
          "​none", "same-origin", "cross-site", "", "nonee", "None "]
 _MODE = [None, "navigate", "cors", " CORS", "no-cors\t", "\xa0cors", "same-origin",
-         "​no-cors"]
+         "​no-cors", "websocket", "", "\xa0navigate"]
+_DEST = [None, "document", " Document\t", "script", "x", "", "empty", "\xa0document"]
+_USER = [None, "?1", " ?1 ", "?0", "", "1", "\xa0?1"]
 _CT = ["application/json", "Application/JSON", "application/json; charset=utf-8",
        "application/json;charset=UTF-8", "application/json ;\tcharset=utf-8",
        "application/json; charset=utf-8 ", "application/vnd.x+json", "text/plain",
@@ -352,11 +367,22 @@ def _near_valid_request(rng):
         headers = [("Host", HOST_OK), ("Authorization", f"Bearer {TOKEN}"),
                    ("Content-Type", "application/json"), ("Content-Length", "12")]
     ports = (PORT,)
-    pick = rng.randrange(9)
+    pick = rng.randrange(12)
     if pick == 1:
         headers.append(("Sec-Fetch-Site", rng.choice(_SITE[1:])))
     elif pick == 2:
         headers.append(("Sec-Fetch-Mode", rng.choice(_MODE[1:])))
+    elif pick == 9:
+        headers.append(("Sec-Fetch-Dest", rng.choice(_DEST[1:])))
+    elif pick == 10:
+        headers.append(("Sec-Fetch-User", rng.choice(_USER[1:])))
+    elif pick == 11:
+        for name, pool in (("Sec-Fetch-Site", ["none", "none", "none"] + _SITE[1:]),
+                           ("Sec-Fetch-Mode", ["navigate", "navigate"] + _MODE[1:]),
+                           ("Sec-Fetch-Dest", ["document", "document"] + _DEST[1:]),
+                           ("Sec-Fetch-User", ["?1", "?1"] + _USER[1:])):
+            if rng.random() < 0.8:
+                headers.append((name, rng.choice(pool)))
     elif pick == 3:
         headers[0] = ("Host", rng.choice(_HOSTS))
     elif pick == 4 and method == "POST":
@@ -409,6 +435,11 @@ def _rand_request(rng):
         v = rng.choice(_MODE)
         if v is not None:
             headers.append(("Sec-Fetch-Mode", v))
+    for name, pool in (("Sec-Fetch-Dest", _DEST), ("Sec-Fetch-User", _USER)):
+        if rng.random() < 0.1:
+            v = rng.choice(pool)
+            if v is not None:
+                headers.append((name, v))
     if rng.random() < 0.06:
         headers.append(("Origin", rng.choice(["http://evil.example", "null", ""])))
     if rng.random() < 0.04:

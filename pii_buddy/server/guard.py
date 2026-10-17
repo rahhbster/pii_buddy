@@ -3,6 +3,11 @@
 Every function takes already-parsed request parts and returns a verdict; no
 sockets, threads, files or logging.  Codes are a stable machine vocabulary and
 never contain request data.
+
+Browsers are never wanted here.  ``Origin`` of any kind is refused, and the
+Sec-Fetch-* headers are an allow-list (see ``_fetch_metadata_bad``): absent
+Site means a non-browser client and only ``Mode: cors`` may accompany it;
+Site ``none`` allows only navigate/document/?1; every other value is refused.
 """
 
 import hashlib
@@ -109,15 +114,18 @@ def _normalize_ports(expected_ports):
 
 
 def host_allowed(host_header, expected_ports):
-    if not isinstance(host_header, str) or len(host_header) > 64:
+    try:
+        if not isinstance(host_header, str) or len(host_header) > 64:
+            return False
+        if not host_header.isascii():
+            return False
+        m = _HOST.fullmatch(host_header.translate(_ASCII_LOWER))
+        if not m:
+            return False
+        port = int(m.group(1))
+        return port <= 65535 and port in _normalize_ports(expected_ports)
+    except Exception:
         return False
-    if not host_header.isascii():
-        return False
-    m = _HOST.fullmatch(host_header.translate(_ASCII_LOWER))
-    if not m:
-        return False
-    port = int(m.group(1))
-    return port <= 65535 and port in _normalize_ports(expected_ports)
 
 
 def target_allowed(target):
@@ -159,10 +167,30 @@ def _token(value):
     return value.strip(" \t").translate(_ASCII_LOWER)
 
 
+_FETCH_ABSENT = {"mode": {"cors"}, "dest": set(), "user": set()}
+_FETCH_NONE = {"mode": {"navigate"}, "dest": {"document"}, "user": {"?1"}}
+
+
 def _fetch_metadata_bad(h):
-    if any(_token(v) != "none" for v in h.get("sec-fetch-site", ())):
+    """Allow-list over every raw Sec-Fetch-* value (duplicates included).
+
+    No Site header: a non-browser client (curl sends nothing, Node fetch sends
+    only ``Sec-Fetch-Mode: cors``); Dest and User must be absent.  Site
+    ``none``: user-initiated navigation, Mode/Dest/User absent or exactly
+    navigate/document/?1.  Anything else (browsers always send Site with Mode)
+    is denied, as is any duplicate with one value outside the set.
+    """
+    site = h.get("sec-fetch-site")
+    if site is None:
+        allowed = _FETCH_ABSENT
+    elif all(_token(v) == "none" for v in site):
+        allowed = _FETCH_NONE
+    else:
         return True
-    return any(_token(v) in ("cors", "no-cors") for v in h.get("sec-fetch-mode", ()))
+    return any(
+        not {_token(v) for v in h.get("sec-fetch-" + k, ())} <= ok
+        for k, ok in allowed.items()
+    )
 
 
 def _check_body_headers(h):
