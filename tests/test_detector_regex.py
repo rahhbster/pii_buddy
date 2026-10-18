@@ -162,6 +162,7 @@ def test_existing_us_phone_forms_still_work():
 _LINEAR_UNITS = [
     ("a-dot", "a."),
     ("a-dash", "a-"),
+    ("dash-label", "a-a."),
     ("digit-space", "1 "),
     ("digit-run", "1"),
     ("a-at", "a@"),
