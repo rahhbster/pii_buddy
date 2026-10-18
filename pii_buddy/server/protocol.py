@@ -1,15 +1,18 @@
 """Pure request dispatcher for the local API (REST routes and MCP JSON-RPC).
 
 ``handle(route, body, request_id=..., usage=...)`` takes the ``Decision.route``
-string from guard.py and the raw body bytes and returns a ``Response``.  No
+string from guard.py ("GET /v1/health", "POST /mcp", ...) and the raw body bytes
+and returns a ``Response``.  The route table is derived from guard's own, so the
+two cannot drift; any other string is a 404.  No
 sockets, threads, files, logging or prints; core is reached only through its
 public functions.
 
 Errors never echo input.  Every failure is ``{"error", "message", "request_id"}``
-with a message taken from a fixed table, whatever was raised.  Only ``Exception``
-is caught, and always in a block that is left before the response is built, so
-no response (and nothing returned) is chained to the original exception or the
-input it may hold.  The only exception-derived data that leaves is
+with a message taken from a fixed table, whatever was raised.  Everything but
+KeyboardInterrupt, SystemExit and GeneratorExit is caught, always in a block
+that is left before the response is built, so no response (and nothing
+returned) is chained to the original exception or the input it may hold.
+``handle`` raises nothing else.  The only exception-derived data that leaves is
 ``Response.diag``: a code, a sanitised class name and a sanitised
 "file.py:function:line", for the caller's own metadata-only log.
 
@@ -26,12 +29,13 @@ import json
 import math
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import pii_buddy as _pkg
 
 from .. import core
+from . import guard
 
 MAX_BODY_BYTES = 512 * 1024
 MAX_DEPTH = 16
@@ -103,7 +107,8 @@ class Diag:
 @dataclass(frozen=True)
 class Response:
     status: int
-    body: bytes
+    # May hold the mapping of originals, so it never appears in repr/str.
+    body: bytes = field(repr=False)
     headers: tuple = HEADERS
     diag: "Diag | None" = None
     entity_count: "int | None" = None
@@ -162,6 +167,43 @@ def _pairs(pairs):
     return out
 
 
+_STRING_SPECIALS = re.compile(rb'"|\\+').search
+_OUTER_SPECIALS = re.compile(rb'["\[\]{}]').search
+
+
+def _too_deep(body):
+    """True if bracket/brace nesting outside strings exceeds MAX_DEPTH.
+
+    Linear, string-aware and iterative, so deep input never reaches the C
+    parser (which can overflow the stack once the recursion limit is raised).
+    Mismatched or unterminated input is not judged here; the parser reports it.
+    """
+    if body.count(b"[") + body.count(b"{") <= MAX_DEPTH:
+        return False
+    depth = 0
+    pos = 0
+    end = len(body)
+    in_string = False
+    while pos < end:
+        m = (_STRING_SPECIALS if in_string else _OUTER_SPECIALS)(body, pos)
+        if m is None:
+            return False
+        pos = m.end()
+        ch = body[m.start()]
+        if ch == 0x22:                      # "
+            in_string = not in_string
+        elif ch == 0x5C:                    # backslash run (in a string only)
+            if (pos - m.start()) % 2:
+                pos += 1                    # the last backslash escapes the next byte
+        elif ch == 0x5B or ch == 0x7B:      # [ {
+            depth += 1
+            if depth > MAX_DEPTH:
+                return True
+        elif depth:                         # ] }
+            depth -= 1
+    return False
+
+
 def _walk_ok(value):
     """Depth <= MAX_DEPTH and no lone surrogate in any string or key."""
     search = _SURROGATE_RE.search
@@ -195,7 +237,8 @@ def parse_json_body(body):
     Rejects: non-bytes, a BOM, invalid UTF-8, lone surrogate escapes, trailing
     data, duplicate keys, NaN / Infinity, integers over 20 digits, non-finite or
     over-long floats and nesting deeper than 16.  The deep-nesting guard for the
-    parser itself is its own recursion limit (RecursionError, caught below).
+    parser itself is an iterative bracket pre-scan that runs before the C parser;
+    the post-parse walk is a second layer.
     """
     if type(body) is not bytes:
         raise ProtocolError("invalid_json")
@@ -204,8 +247,8 @@ def parse_json_body(body):
     failed = False
     value = None
     try:
-        if body.startswith(_BOM):
-            raise ValueError("bom")
+        if body.startswith(_BOM) or _too_deep(body):
+            raise ValueError("bom or depth")
         value = json.loads(
             body.decode("utf-8"),
             object_pairs_hook=_pairs,
@@ -239,24 +282,54 @@ def _safe_where(where):
     return None
 
 
-def _core_diag(exc):
-    code = exc.code
-    if not (type(code) is str and code in _CORE_CODES):
-        code = "internal_error"
-    return Diag(code, _safe_name(exc.exc_type), _safe_where(exc.where))
+def _attr(obj, name):
+    """getattr that never raises (a hostile property or __getattribute__)."""
+    try:
+        return getattr(obj, name)
+    except Exception:
+        return None
+
+
+def _class_name(exc):
+    try:
+        return _safe_name(type(exc).__name__)
+    except Exception:
+        return None
+
+
+def _diag_of(exc):
+    """Diag for a caught exception.  Runs after the except block has been left
+    and reads nothing from the exception except through never-raising helpers."""
+    try:
+        cls = type(exc)
+        code = _attr(exc, "code")
+        if issubclass(cls, ProtocolError):
+            if not (type(code) is str and code in _STATUS):
+                code = "internal_error"
+            return Diag(code)
+        if issubclass(cls, core.CoreError):
+            if not (type(code) is str and code in _CORE_CODES):
+                code = "internal_error"
+            return Diag(code, _safe_name(_attr(exc, "exc_type")),
+                        _safe_where(_attr(exc, "where")))
+        return Diag("internal_error", _class_name(exc), None)
+    except Exception:
+        return Diag("internal_error")
 
 
 def _guard(fn, *args):
-    """-> (value, None) or (None, Diag).  Leaves the except block before returning."""
-    diag = None
+    """-> (value, None) or (None, Diag).  Never raises except for
+    KeyboardInterrupt, SystemExit and GeneratorExit; the Diag is built after the
+    except block is left, so nothing built later is chained to the exception."""
+    held = None
     try:
         return fn(*args), None
-    except ProtocolError as exc:
-        diag = Diag(exc.code)
-    except core.CoreError as exc:
-        diag = _core_diag(exc)
-    except Exception as exc:
-        diag = Diag("internal_error", _safe_name(type(exc).__name__), None)
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except BaseException as exc:
+        held = exc
+    diag = _diag_of(held)
+    held = None
     return None, diag
 
 
@@ -341,12 +414,9 @@ def _rest_restore(obj):
     return {"text": core.restore_text(obj["redacted_text"], obj["mapping"])}, None
 
 
-_REST_BODY = {"check": _rest_check, "redact": _rest_redact, "restore": _rest_restore}
-
-
-def _rest(route, body, usage):
+def _rest(handler, body, usage):
     obj = parse_json_body(body)
-    payload, count = _REST_BODY[route](obj)
+    payload, count = handler(obj)
     return _Out(200, payload, count, None, True)
 
 
@@ -476,6 +546,22 @@ def _rpc_error(status, code, ident, diag=None):
 _RPC_KEYS = frozenset({"jsonrpc", "id", "method", "params"})
 
 
+_RESPONSE_KEYS = frozenset({"jsonrpc", "id", "result", "error"})
+
+
+def _is_client_response(msg, id_ok):
+    """A well-formed JSON-RPC response: id, exactly one of result / error
+    (error an object), no method.  Streamable HTTP answers these with 202."""
+    if "method" in msg or not id_ok or not msg.keys() <= _RESPONSE_KEYS:
+        return False
+    jsonrpc = msg.get("jsonrpc")
+    if not (type(jsonrpc) is str and jsonrpc == "2.0"):
+        return False
+    if ("result" in msg) == ("error" in msg):
+        return False
+    return "result" in msg or type(msg["error"]) is dict
+
+
 def _rpc(msg, rid, usage):
     if type(msg) is not dict:
         return _rpc_error(400, -32600, None)
@@ -483,6 +569,8 @@ def _rpc(msg, rid, usage):
     ident = msg.get("id")
     id_ok = has_id and type(ident) in (str, int)
     echo = ident if id_ok else None
+    if _is_client_response(msg, id_ok):
+        return _Out(202, None)
     jsonrpc = msg.get("jsonrpc")
     method = msg.get("method")
     params = msg.get("params")
@@ -539,36 +627,57 @@ def _mcp(body, rid, usage):
 
 # ------------------------------------------------------------------- handle
 
+_PATH_KIND = {
+    "/v1/health": ("health", None),
+    "/v1/usage": ("usage", None),
+    "/v1/check": ("rest", _rest_check),
+    "/v1/redact": ("rest", _rest_redact),
+    "/v1/restore": ("rest", _rest_restore),
+    "/mcp": ("mcp", None),
+}
+
+# Keyed on exactly what guard.Decision.route carries ("GET /v1/health"), built
+# from guard's own table so a route added there without a handler here fails at
+# import instead of 404ing in production.
+_DISPATCH = {
+    "%s %s" % (method, path): _PATH_KIND[path]
+    for path, methods in guard._ROUTES.items()
+    for method in methods
+}
+ROUTES = frozenset(_DISPATCH)
+_MCP_ROUTE = "POST /mcp"
+
+
 def _route(route, body, rid, usage):
-    if route == "health":
-        return _Out(200, {"ok": True})
-    if route == "usage":
-        return _Out(200, _usage_payload(usage))
-    if route in _REST_BODY:
-        out = _rest(route, body, usage)
-    elif route == "mcp":
-        out = _mcp(body, rid, usage)
-    else:
+    entry = _DISPATCH.get(route) if type(route) is str else None
+    if entry is None:
         raise ProtocolError("not_found")
-    return out
+    kind, handler = entry
+    if kind == "rest":
+        return _rest(handler, body, usage)
+    if kind == "mcp":
+        return _mcp(body, rid, usage)
+    if kind == "health":
+        return _Out(200, {"ok": True})
+    return _Out(200, _usage_payload(usage))
 
 
 def handle(route, body, *, request_id, usage):
     rid = _clean_rid(request_id)
     out, diag = _guard(_route, route, body, rid, usage)
     if diag is not None:
-        if route == "mcp":
+        if route == _MCP_ROUTE:
             return Response(
                 500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
         return _error_response(rid, diag)
     encoded, diag = _guard(_encode, out)
     if diag is not None:
-        if route == "mcp":
+        if route == _MCP_ROUTE:
             return Response(
                 500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
         return _error_response(rid, diag)
     if out.counted:
-        usage.increment()
+        _guard(usage.increment)
     return Response(out.status, encoded, HEADERS, out.diag, out.entity_count)
 
 

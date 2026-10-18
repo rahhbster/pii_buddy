@@ -20,10 +20,17 @@ repo: `pii_buddy_private/docs/reviews/2026-10-14-team-review.md`.
 test plan: `pii_buddy_private` log + the PR bodies). Five PRs, tests first,
 each independently red-teamed:
 1. `feat/local-api-core` (#18): merged.
-2. guard (`server/guard.py`) merged; `feat/local-api-protocol`: pure
+2. guard (`server/guard.py`) merged; `feat/local-api-protocol` (#25): pure
    `server/protocol.py` dispatcher (REST + MCP JSON-RPC), in review. It is
    `handle(route, body, *, request_id, usage) -> Response(status, body,
-   headers, diag, entity_count)`; `route` is `guard.Decision.route`.
+   headers, diag, entity_count)`; `route` is exactly `guard.Decision.route`
+   ("GET /v1/health", "POST /v1/check", ..., "POST /mcp"): protocol builds its
+   dispatch table from `guard._ROUTES` (`protocol.ROUTES`), so a route added
+   to the guard without a handler fails at import; any other string is 404.
+   `tests/test_server_guard_protocol_integration.py` pins that seam. Open
+   neighbours: #23 (de-flake detector timing tests) and #24 (core follow-ups).
+   Next command: `gh pr list`, then read
+   `tests/test_server_guard_protocol_integration.py` before touching `http.py`.
    PR 3 contract: log only `Response.diag` (code, class name, where) and
    `entity_count`, NEVER `__cause__` (through ProcessPoolExecutor it is a
    stdlib `_RemoteTraceback` holding formatted worker traceback text); give it

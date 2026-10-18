@@ -10,7 +10,15 @@ import pytest
 import pii_buddy
 from pii_buddy import core
 from pii_buddy.server import protocol
-from tests._protocol_helpers import CANARY, HEADERS, RID, call, install_fake_core, jbody
+from tests._protocol_helpers import (
+    CANARY,
+    HEADERS,
+    RID,
+    ROUTE,
+    call,
+    install_fake_core,
+    jbody,
+)
 
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 VERSION = getattr(pii_buddy, "__version__", "0")
@@ -170,7 +178,7 @@ class TestEnvelope:
     @pytest.mark.parametrize("body", [[], [rpc("ping")], [rpc("ping"), rpc("ping", id=2)],
                                       [[]], [1], 5, "x", None, True, 1.5])
     def test_batches_and_non_objects(self, body):
-        r = protocol.handle("mcp", json.dumps(body).encode(), request_id=RID,
+        r = protocol.handle(ROUTE["mcp"], json.dumps(body).encode(), request_id=RID,
                             usage=protocol.UsageCounter())
         err(r, -32600, 400, id=None)
 
@@ -188,17 +196,17 @@ class TestParseErrors:
         b'{"jsonrpc":"2.0","id":1,"method":"ping","params":' + b'{"a":' * 17 + b"1" + b"}" * 17 + b"}",
     ])
     def test_minus_32700_with_null_id(self, body):
-        r = protocol.handle("mcp", body, request_id=RID, usage=protocol.UsageCounter())
+        r = protocol.handle(ROUTE["mcp"], body, request_id=RID, usage=protocol.UsageCounter())
         err(r, -32700, 400, id=None)
 
     def test_oversize_body(self):
-        r = protocol.handle("mcp", b" " * (512 * 1024 + 1), request_id=RID,
+        r = protocol.handle(ROUTE["mcp"], b" " * (512 * 1024 + 1), request_id=RID,
                             usage=protocol.UsageCounter())
         assert r.status == 413
         assert jbody(r)["error"]["code"] == -32600
 
     def test_parse_error_never_echoes_input(self):
-        r = protocol.handle("mcp", ('{"%s":1,"%s":2}' % (CANARY, CANARY)).encode(),
+        r = protocol.handle(ROUTE["mcp"], ('{"%s":1,"%s":2}' % (CANARY, CANARY)).encode(),
                             request_id=RID, usage=protocol.UsageCounter())
         assert CANARY not in r.body.decode()
 
@@ -658,7 +666,7 @@ class TestDifferentialFuzz:
             u = protocol.UsageCounter()
             for _ in range(n):
                 u.increment()
-            resp = protocol.handle("mcp", raw_bytes, request_id=RID, usage=u)
+            resp = protocol.handle(ROUTE["mcp"], raw_bytes, request_id=RID, usage=u)
             ctx = (case, raw_bytes[:300])
             assert resp.headers == HEADERS, ctx
             if obj == "FAIL" and isinstance(obj, str):
@@ -693,3 +701,66 @@ class TestDifferentialFuzz:
         # the generator must actually exercise every outcome
         assert stats["ok"] > 2000 and stats["err"] > 2000 and stats["note"] > 1000
         assert stats["tool_err"] > 1000 and stats["parse"] > 1000, stats
+
+
+# ------------------------------------- client responses / notifications (202)
+
+class TestClientResponsesAreAccepted:
+    """Streamable HTTP: a POST whose input is only responses or notifications
+    gets HTTP 202 with no body.  A response has an id, exactly one of
+    result / error, and no method."""
+
+    @pytest.mark.parametrize("msg", [
+        {"jsonrpc": "2.0", "id": 1, "result": {}},
+        {"jsonrpc": "2.0", "id": "abc", "result": {"roots": []}},
+        {"jsonrpc": "2.0", "id": 0, "result": None},
+        {"jsonrpc": "2.0", "id": 2 ** 40, "result": [1, 2]},
+        {"jsonrpc": "2.0", "id": -1, "result": "x"},
+        {"jsonrpc": "2.0", "id": 3, "error": {"code": -32601, "message": "nope"}},
+        {"jsonrpc": "2.0", "id": "", "error": {"code": 1, "message": "m", "data": [1]}},
+        {"jsonrpc": "2.0", "id": 4, "error": {}},
+    ])
+    def test_valid_response_is_202_empty(self, msg):
+        u = protocol.UsageCounter()
+        r = call("mcp", msg, usage=u)
+        assert (r.status, r.body) == (202, b"")
+        assert r.headers == HEADERS
+        assert r.diag is None and r.entity_count is None
+        assert u.requests_served == 0
+
+    @pytest.mark.parametrize("msg", [
+        {"jsonrpc": "2.0", "id": 1, "result": {}, "error": {}},
+        {"jsonrpc": "2.0", "id": 1},
+        {"jsonrpc": "2.0", "result": {}},
+        {"jsonrpc": "2.0", "error": {"code": 1, "message": "m"}},
+        {"jsonrpc": "2.0", "id": None, "result": {}},
+        {"jsonrpc": "2.0", "id": True, "result": {}},
+        {"jsonrpc": "2.0", "id": 1.5, "result": {}},
+        {"jsonrpc": "2.0", "id": [1], "result": {}},
+        {"jsonrpc": "2.0", "id": {}, "error": {}},
+        {"jsonrpc": "2.0", "id": 1, "error": "boom"},
+        {"jsonrpc": "2.0", "id": 1, "error": None},
+        {"jsonrpc": "2.0", "id": 1, "error": [1]},
+        {"jsonrpc": "1.0", "id": 1, "result": {}},
+        {"jsonrpc": 2, "id": 1, "result": {}},
+        {"id": 1, "result": {}},
+        {"jsonrpc": "2.0", "id": 1, "result": {}, "extra": 1},
+        {"jsonrpc": "2.0", "id": 1, "result": {}, "params": {}},
+    ])
+    def test_malformed_response_stays_invalid_request(self, msg):
+        err(call("mcp", msg), -32600, 400)
+
+    def test_result_with_a_method_is_not_a_response(self):
+        err(call("mcp", {"jsonrpc": "2.0", "id": 1, "method": "ping", "result": {}}),
+            -32600, 400, id=1)
+
+    def test_valid_ids_are_echoed_on_malformed_responses(self):
+        b = jbody(call("mcp", {"jsonrpc": "2.0", "id": 9, "result": {}, "error": {}}))
+        assert b["id"] == 9
+
+    def test_responses_in_a_batch_are_still_rejected(self):
+        err(call("mcp", [{"jsonrpc": "2.0", "id": 1, "result": {}}]), -32600, 400, id=None)
+
+    def test_canary_in_a_response_is_never_echoed(self):
+        r = call("mcp", {"jsonrpc": "2.0", "id": 1, "result": {"x": CANARY}})
+        assert r.body == b"" and CANARY not in repr(r)

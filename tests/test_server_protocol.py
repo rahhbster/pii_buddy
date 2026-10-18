@@ -2,13 +2,16 @@
 parsing, the error contract, the usage counter and the silence guarantee."""
 
 import dataclasses
+import itertools
 import json
 import logging
 import os
 import pathlib
+import pprint
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 
@@ -17,6 +20,7 @@ from pii_buddy.server import protocol
 from tests._protocol_helpers import (
     CANARY,
     HEADERS,
+    ROUTE,
     RID,
     call,
     install_fake_core,
@@ -265,7 +269,7 @@ class TestSchema:
     @pytest.mark.parametrize("route", sorted(ALLOWED))
     @pytest.mark.parametrize("top", [[], [{"text": "x"}], "x", 5, 1.5, True, None])
     def test_top_level_must_be_object(self, fake, route, top):
-        r = protocol.handle(route, json.dumps(top).encode(), request_id=RID,
+        r = protocol.handle(ROUTE[route], json.dumps(top).encode(), request_id=RID,
                             usage=protocol.UsageCounter())
         assert r.status == 400
         assert jbody(r)["error"] == "invalid_request"
@@ -273,7 +277,7 @@ class TestSchema:
     @pytest.mark.parametrize("route", sorted(ALLOWED))
     def test_missing_or_empty_body_is_invalid_json(self, fake, route):
         for body in (None, b"", b"   "):
-            r = protocol.handle(route, body, request_id=RID, usage=protocol.UsageCounter())
+            r = protocol.handle(ROUTE[route], body, request_id=RID, usage=protocol.UsageCounter())
             assert (r.status, jbody(r)["error"]) == (400, "invalid_json")
 
     def test_text_wrong_type_goes_through_core(self, fake):
@@ -408,7 +412,7 @@ class TestParseJsonBody:
         for name, body in BAD_BODIES.items():
             if name == "empty" or name == "ws_only":
                 pass
-            r = protocol.handle("check", body, request_id=RID, usage=protocol.UsageCounter())
+            r = protocol.handle(ROUTE["check"], body, request_id=RID, usage=protocol.UsageCounter())
             assert r.status == 400, name
             assert jbody(r) == {
                 "error": "invalid_json",
@@ -417,7 +421,7 @@ class TestParseJsonBody:
             }
 
     def test_rest_oversize_is_413(self, fake):
-        r = protocol.handle("check", b" " * (512 * 1024 + 1), request_id=RID,
+        r = protocol.handle(ROUTE["check"], b" " * (512 * 1024 + 1), request_id=RID,
                             usage=protocol.UsageCounter())
         assert (r.status, jbody(r)["error"]) == (413, "payload_too_large")
 
@@ -443,7 +447,7 @@ for name, body in cases.items():
         out[name] = "ok"
     except protocol.ProtocolError as e:
         out[name] = e.code
-    r = protocol.handle("mcp", body, request_id="r_1", usage=protocol.UsageCounter())
+    r = protocol.handle("POST /mcp", body, request_id="r_1", usage=protocol.UsageCounter())
     out[name + ":mcp"] = r.status
 print(json.dumps(out))
 '''
@@ -731,6 +735,588 @@ class TestSilence:
         src = pathlib.Path(protocol.__file__).read_text()
         for needle in ("print(", "import logging", "logging.", "sys.stdout", "sys.stderr",
                        "open(", "import socket", "import os", "import subprocess",
-                       "Thread(", "_restore_unchecked", "pathlib", "import sys",
-                       "BaseException"):
+                       "Thread(", "_restore_unchecked", "pathlib", "import sys"):
             assert needle not in src, needle
+
+    def test_base_exception_is_caught_only_after_the_three_are_reraised(self):
+        src = pathlib.Path(protocol.__file__).read_text()
+        assert src.count("except BaseException") == 1
+        assert ("except (KeyboardInterrupt, SystemExit, GeneratorExit):\n"
+                "        raise\n    except BaseException as exc:") in src
+
+
+# ----------------------------------------------- review round: PR #25 findings
+
+BARE = ("health", "usage", "check", "redact", "restore", "mcp")
+
+
+class TestRouteTable:
+    def test_dispatch_keys_are_the_guards_strings(self):
+        assert protocol.ROUTES == frozenset(ROUTE.values())
+
+    @pytest.mark.parametrize("name", BARE)
+    def test_bare_names_are_not_routes(self, name):
+        r = protocol.handle(name, b"{}", request_id=RID, usage=protocol.UsageCounter())
+        assert (r.status, jbody(r)["error"]) == (404, "not_found")
+
+    def test_unhashable_route_is_404_not_a_crash(self):
+        r = protocol.handle([1], b"{}", request_id=RID, usage=protocol.UsageCounter())
+        assert (r.status, jbody(r)["error"]) == (404, "not_found")
+
+
+class TestResponseReprIsBodyFree:
+    def _resp(self, fake_installed=True):
+        return protocol.Response(
+            200, b'{"mapping":{"<<NAME_1>>":"%s"}}' % CANARY.encode(),
+            diag=protocol.Diag("internal_error", "ValueError", "x.py:f:1"),
+            entity_count=3,
+        )
+
+    def _all_renderings(self, resp):
+        yield repr(resp)
+        yield str(resp)
+        yield f"{resp}"
+        yield "%s" % (resp,)
+        yield "%r" % (resp,)
+        yield format(resp)
+        yield format(resp, "")
+        yield "{}".format(resp)
+        yield pprint.pformat(resp)
+        yield pprint.pformat([resp, {"k": resp}], width=20)
+        yield repr([resp])
+
+    def test_canary_never_rendered(self):
+        for text in self._all_renderings(self._resp()):
+            assert CANARY not in text
+            assert not any(w in text for w in CANARY_WINDOWS), text
+
+    def test_real_route_response_never_rendered(self, fake):
+        resp = call("redact", {"text": "Mail %s@example.test now" % CANARY.lower()})
+        assert CANARY.lower() in resp.body.decode()
+        for text in self._all_renderings(resp):
+            assert CANARY.lower() not in text
+
+    def test_metadata_fields_stay_visible(self):
+        text = repr(self._resp())
+        assert "status=200" in text
+        assert "entity_count=3" in text
+        assert "internal_error" in text and "ValueError" in text
+        assert "body" not in text
+
+    def test_body_field_is_still_a_normal_field(self):
+        r = self._resp()
+        assert r.body.startswith(b'{"mapping"')
+        assert dataclasses.replace(r, status=500).body == r.body
+
+    def test_diag_repr_has_only_metadata(self):
+        d = protocol.Diag("internal_error", "ValueError", "x.py:f:1")
+        assert repr(d) == "Diag(code='internal_error', exc_type='ValueError', where='x.py:f:1')"
+
+
+# ------------------------------------------------ hostile exception objects
+
+class _Meta(type):
+    @property
+    def __name__(cls):
+        raise RuntimeError(CANARY)
+
+
+def _hostile_core_errors():
+    class BadCode(core.CoreError):
+        code = property(lambda s: (_ for _ in ()).throw(RuntimeError(CANARY)),
+                        lambda s, v: None)
+
+    class IntCode(core.CoreError):
+        code = property(lambda s: 5, lambda s, v: None)
+
+    class ListCode(core.CoreError):
+        code = property(lambda s: [CANARY], lambda s, v: None)
+
+    class HugeCode(core.CoreError):
+        code = property(lambda s: "x" * 10_000, lambda s, v: None)
+
+    class StrSub(str):
+        def __hash__(self):
+            raise RuntimeError(CANARY)
+
+        def __eq__(self, other):
+            raise RuntimeError(CANARY)
+
+    class SubclassCode(core.CoreError):
+        code = property(lambda s: StrSub("invalid_text"), lambda s, v: None)
+
+    class BadWhere(core.CoreError):
+        where = property(lambda s: (_ for _ in ()).throw(RuntimeError(CANARY)),
+                         lambda s, v: None)
+
+    class BadExcType(core.CoreError):
+        exc_type = property(lambda s: (_ for _ in ()).throw(RuntimeError(CANARY)),
+                            lambda s, v: None)
+
+    class BadClass(core.CoreError):
+        __class__ = property(lambda s: (_ for _ in ()).throw(RuntimeError(CANARY)))
+
+    class BadMeta(core.CoreError, metaclass=_Meta):
+        pass
+
+    class BadGetattr(core.CoreError):
+        def __getattribute__(self, name):
+            if name in ("code", "where", "exc_type"):
+                raise RuntimeError(CANARY)
+            return super().__getattribute__(name)
+
+    out = {}
+    for cls in (BadCode, IntCode, ListCode, HugeCode, SubclassCode, BadWhere,
+                BadExcType, BadClass, BadMeta, BadGetattr):
+        out[cls.__name__ if cls is not BadMeta else "BadMeta"] = cls
+    return out
+
+
+HOSTILE = _hostile_core_errors()
+
+
+def _mcp_check_call():
+    return {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "pii_check", "arguments": {"text": "x"}}}
+
+
+def _safe_call(*args, **kwargs):
+    """call() that turns any escape into a plain failure; a hostile exception
+    must not get as far as pytest's own traceback rendering."""
+    resp = None
+    escaped = False
+    try:
+        resp = call(*args, **kwargs)
+    except BaseException:
+        escaped = True
+    if escaped:
+        pytest.fail("handle() raised")
+    return resp
+
+
+class TestHandleNeverRaises:
+    @pytest.mark.parametrize("name", sorted(HOSTILE))
+    @pytest.mark.parametrize("via", ["rest", "mcp_tool"])
+    def test_hostile_core_error(self, monkeypatch, name, via):
+        cls = HOSTILE[name]
+        monkeypatch.setattr(
+            protocol.core, "check_text",
+            _boom(cls("invalid_text", CANARY, "SomeError", "x.py:f:1")))
+        u = protocol.UsageCounter()
+        if via == "rest":
+            r = _safe_call("check", {"text": "x"}, usage=u)
+            assert type(r.body) is bytes
+            assert jbody(r)["request_id"] == RID
+        else:
+            r = _safe_call("mcp", _mcp_check_call(), usage=u)
+            assert r.status == 200
+            assert jbody(r)["result"]["isError"] is True
+        assert _clean(r)
+        assert CANARY not in repr(r)
+        assert u.requests_served == 0
+        assert r.diag is not None and r.diag.code in {
+            "internal_error", "invalid_text"}
+        assert r.diag.where in (None, "x.py:f:1")
+
+    @pytest.mark.parametrize("name", ["BadCode", "IntCode", "ListCode", "HugeCode",
+                                      "SubclassCode", "BadGetattr"])
+    def test_unreadable_code_falls_back_to_internal_error(self, monkeypatch, name):
+        monkeypatch.setattr(
+            protocol.core, "check_text",
+            _boom(HOSTILE[name]("invalid_text", CANARY, "SomeError", "x.py:f:1")))
+        r = _safe_call("check", {"text": "x"})
+        assert (r.status, jbody(r)["error"]) == (500, "internal_error")
+        assert r.diag.code == "internal_error"
+
+    @pytest.mark.parametrize("name", ["BadWhere", "BadExcType"])
+    def test_unreadable_metadata_keeps_the_code(self, monkeypatch, name):
+        monkeypatch.setattr(
+            protocol.core, "check_text",
+            _boom(HOSTILE[name]("invalid_text", CANARY, "SomeError", "x.py:f:1")))
+        r = _safe_call("check", {"text": "x"})
+        assert (r.status, jbody(r)["error"]) == (400, "invalid_text")
+        if name == "BadWhere":
+            assert r.diag.where is None and r.diag.exc_type == "SomeError"
+        else:
+            assert r.diag.exc_type is None and r.diag.where == "x.py:f:1"
+
+    def test_exception_with_hostile_metaclass_name(self, monkeypatch):
+        class Boom(Exception, metaclass=_Meta):
+            pass
+
+        monkeypatch.setattr(protocol.core, "check_text", _boom(Boom(CANARY)))
+        r = _safe_call("check", {"text": "x"})
+        assert (r.status, jbody(r)["error"]) == (500, "internal_error")
+        assert r.diag == protocol.Diag("internal_error", None, None)
+
+    def test_hostile_protocol_error_subclass(self, monkeypatch):
+        class Evil(protocol.ProtocolError):
+            code = property(lambda s: (_ for _ in ()).throw(RuntimeError(CANARY)),
+                            lambda s, v: None)
+
+        monkeypatch.setattr(protocol.core, "check_text", _boom(Evil("invalid_text")))
+        r = _safe_call("check", {"text": "x"})
+        assert (r.status, jbody(r)["error"]) == (500, "internal_error")
+
+    def test_base_exception_subclass_is_a_500_not_a_raise(self, monkeypatch):
+        class Weird(BaseException):
+            pass
+
+        monkeypatch.setattr(protocol.core, "check_text", _boom(Weird(CANARY)))
+        for route, obj in (("check", {"text": "x"}), ("mcp", _mcp_check_call())):
+            r = _safe_call(route, obj)
+            assert _clean(r)
+            assert r.diag is not None and r.diag.code == "internal_error"
+
+    @pytest.mark.parametrize("exc", [KeyboardInterrupt, SystemExit, GeneratorExit])
+    def test_only_the_three_pass_through(self, monkeypatch, exc):
+        monkeypatch.setattr(protocol.core, "check_text", _boom(exc()))
+        with pytest.raises(exc):
+            call("check", {"text": "x"})
+        with pytest.raises(exc):
+            call("mcp", _mcp_check_call())
+
+    def test_broken_usage_counter_cannot_raise(self, fake):
+        class Broken:
+            @property
+            def requests_served(self):
+                raise RuntimeError(CANARY)
+
+            def increment(self):
+                raise RuntimeError(CANARY)
+
+        r = protocol.handle(ROUTE["usage"], None, request_id=RID, usage=Broken())
+        assert (r.status, jbody(r)["error"]) == (500, "internal_error")
+        r = protocol.handle(ROUTE["check"], b'{"text":"a@b.c"}', request_id=RID,
+                            usage=Broken())
+        assert r.status == 200
+
+
+# ----------------------------------------------- iterative nesting pre-scan
+
+def _nest(n, kind="["):
+    if kind == "[":
+        return b"[" * n + b"1" + b"]" * n
+    if kind == "{":
+        return b'{"a":' * n + b"1" + b"}" * n
+    out = b"1"
+    for i in range(n):
+        out = (b"[" + out + b"]") if i % 2 == 0 else (b'{"a":' + out + b"}")
+    return out
+
+
+class TestNestingPrescan:
+    @pytest.mark.parametrize("kind", ["[", "{", "mix"])
+    def test_boundary_16_ok_17_rejected(self, kind):
+        protocol.parse_json_body(_nest(16, kind))
+        with pytest.raises(protocol.ProtocolError) as e:
+            protocol.parse_json_body(_nest(17, kind))
+        assert e.value.code == "invalid_json"
+
+    @pytest.mark.parametrize("kind", ["[", "{", "mix"])
+    def test_prescan_flags_exactly_depth_17(self, kind):
+        assert protocol._too_deep(_nest(16, kind)) is False
+        assert protocol._too_deep(_nest(17, kind)) is True
+
+    def test_deep_input_never_reaches_the_c_parser(self, monkeypatch):
+        calls = []
+        real = protocol.json.loads
+
+        def spy(*a, **k):
+            calls.append(1)
+            return real(*a, **k)
+
+        monkeypatch.setattr(protocol.json, "loads", spy)
+        for n in (17, 100, 10_000):
+            for kind in ("[", "{", "mix"):
+                with pytest.raises(protocol.ProtocolError):
+                    protocol.parse_json_body(_nest(n, kind))
+        assert calls == []
+        protocol.parse_json_body(_nest(16))
+        assert calls == [1]
+
+    def test_brackets_inside_strings_do_not_count(self):
+        body = b'{"a":"' + b"[" * 1000 + b'"}'
+        assert protocol._too_deep(body) is False
+        assert protocol.parse_json_body(body) == {"a": "[" * 1000}
+        body = b'["' + b"{[" * 500 + b'",' + b"[" * 15 + b"1" + b"]" * 15 + b"]"
+        assert protocol._too_deep(body) is False
+        protocol.parse_json_body(body)
+
+    def test_escaped_quote_does_not_end_the_string(self):
+        body = b'["\\"' + b"[" * 100 + b'"]'
+        assert protocol._too_deep(body) is False
+        assert protocol.parse_json_body(body) == ['"' + "[" * 100]
+
+    def test_escaped_backslash_then_quote_does_end_the_string(self):
+        body = b'["\\\\"' + b",[" * 17 + b"]" * 17 + b"]"
+        assert protocol._too_deep(body) is True
+        short = b'["\\\\"' + b",[" * 3 + b"]" * 3 + b"]"
+        assert protocol._too_deep(short) is False
+
+    def test_long_backslash_runs(self):
+        for k in (1, 2, 3, 4, 7, 100, 1001):
+            odd = b'["' + b"\\" * k + b'",' + b"[" * 17
+            even_close = b'["' + b"\\" * k + b'"' + b",[" * 17 + b"]" * 17 + b"]"
+            assert protocol._too_deep(even_close) is (k % 2 == 0), k
+            assert protocol._too_deep(odd) is (k % 2 == 0), k
+
+    def test_unterminated_string_and_bad_escapes_are_left_to_the_parser(self):
+        for body in (b'["abc', b'["\\', b'["\\x[[[[[[[[[[[[[[[[[[[[[[["]', b'"', b"\\", b""):
+            assert protocol._too_deep(body) is False
+            with pytest.raises(protocol.ProtocolError) as e:
+                protocol.parse_json_body(body)
+            assert e.value.code == "invalid_json"
+
+    def test_unbalanced_closers_do_not_go_negative(self):
+        body = b"]" * 100 + b"[" * 16
+        assert protocol._too_deep(body) is False
+        body = b"]" * 100 + b"[" * 17
+        assert protocol._too_deep(body) is True
+
+    def test_non_ascii_bytes_do_not_confuse_the_scan(self):
+        body = '["é\U0001f600[[[[[[[[[[[[[[[[[[[[[["]'.encode()
+        assert protocol._too_deep(body) is False
+        assert protocol.parse_json_body(body)[0].startswith("é")
+
+    def test_walk_is_still_a_second_layer(self, monkeypatch):
+        monkeypatch.setattr(protocol, "_too_deep", lambda b: False)
+        with pytest.raises(protocol.ProtocolError) as e:
+            protocol.parse_json_body(_nest(17))
+        assert e.value.code == "invalid_json"
+
+
+PRESCAN_SCRIPT = r'''
+import json, sys
+sys.setrecursionlimit(1_000_000)
+from pii_buddy.server import protocol
+
+N = 512 * 1024
+cases = {
+    "open_arr": b"[" * N,
+    "open_obj": b"{" * N,
+    "quotes": b'"' * N,
+    "backslashes": b"\\" * N,
+    "obj_keys": b'{"a":' * (N // 5),
+    "arr_in_string": b'["' + b"[" * (N - 4) + b'"]',
+    "str_then_deep": b'["' + b"\\\\" * 1000 + b'"' + b",[" * 100000,
+    "mix": (b'["[{\\"' + b"[{" * 1000 + b'"' + b",{" * 20000)[:N],
+    "alternating": (b'"[' * (N // 2)),
+    "deep_10000": b"[" * 10000 + b"1" + b"]" * 10000,
+    "deep_obj_10000": b'{"a":' * 10000 + b"1" + b"}" * 10000,
+    "deep_100000": b"[" * 100000 + b"1" + b"]" * 100000,
+}
+out = {}
+for name, body in cases.items():
+    assert len(body) <= N, name
+    try:
+        protocol.parse_json_body(body)
+        out[name] = "ok"
+    except protocol.ProtocolError as e:
+        out[name] = e.code
+    r = protocol.handle("POST /mcp", body, request_id="r_1", usage=protocol.UsageCounter())
+    out[name + ":mcp"] = r.status
+print(json.dumps(out))
+'''
+
+
+class TestPrescanInSubprocess:
+    def test_pathological_bodies_under_a_raised_recursion_limit(self, tmp_path):
+        env = dict(os.environ, PII_BUDDY_DIR=str(tmp_path / "PII_Buddy"))
+        p = subprocess.run(
+            [sys.executable, "-c", PRESCAN_SCRIPT],
+            capture_output=True, text=True, timeout=30, env=env,
+            cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+        )
+        assert p.returncode == 0, (p.returncode, p.stderr[-2000:])
+        assert p.stderr == ""
+        out = json.loads(p.stdout)
+        for name in ("open_arr", "open_obj", "quotes", "backslashes", "obj_keys",
+                     "str_then_deep", "deep_10000", "deep_obj_10000", "deep_100000"):
+            assert out[name] == "invalid_json", (name, out[name])
+        assert out["arr_in_string"] == "ok"  # brackets inside a string are not nesting
+        assert out["alternating"] == "invalid_json"
+        assert out["mix"] == "invalid_json"
+        for k, v in out.items():
+            if k.endswith(":mcp"):
+                assert v in (400, 413), (k, v)
+
+
+# ---------------------------------------------------------- surviving mutants
+
+class TestFloatLengthEdge:
+    def test_64_chars_ok_65_rejected(self):
+        ok = b"0." + b"1" * 62
+        assert len(ok) == 64
+        assert protocol.parse_json_body(ok) == float(ok)
+        with pytest.raises(protocol.ProtocolError) as e:
+            protocol.parse_json_body(b"0." + b"1" * 63)
+        assert e.value.code == "invalid_json"
+        assert protocol.parse_json_body(b'{"a":' + ok + b"}") == {"a": float(ok)}
+        with pytest.raises(protocol.ProtocolError):
+            protocol.parse_json_body(b'{"a":0.' + b"1" * 63 + b"}")
+
+    def test_int_digit_edge(self):
+        assert protocol.parse_json_body(b"9" * 20) == int("9" * 20)
+        assert protocol.parse_json_body(b"-" + b"9" * 20) == -int("9" * 20)
+        with pytest.raises(protocol.ProtocolError):
+            protocol.parse_json_body(b"9" * 21)
+        with pytest.raises(protocol.ProtocolError):
+            protocol.parse_json_body(b"-" + b"9" * 21)
+
+
+class _YieldingCounter(protocol.UsageCounter):
+    """Reads of the count stall now and then between read and write, so an
+    unlocked read-modify-write loses updates even when the GIL would hide it.
+    Under the lock the stall is serialised and costs nothing but time."""
+
+    _ticks = itertools.count()
+
+    @property
+    def _n(self):
+        value = self.__dict__["_value"]
+        if next(self._ticks) % 50 == 0:
+            time.sleep(1e-4)
+        return value
+
+    @_n.setter
+    def _n(self, v):
+        self.__dict__["_value"] = v
+
+
+def _hammer(counter, threads=16, per=5000):
+    start = threading.Barrier(threads)
+
+    def work():
+        start.wait()
+        for _ in range(per):
+            counter.increment()
+
+    ts = [threading.Thread(target=work) for _ in range(threads)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+
+
+class TestUsageCounterIsLocked:
+    def test_16_threads_x_5000_with_forced_interleaving(self):
+        c = _YieldingCounter()
+        _hammer(c)
+        assert c.requests_served == 80_000
+
+    def test_16_threads_x_5000_with_tiny_switch_interval(self):
+        old = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        try:
+            c = protocol.UsageCounter()
+            _hammer(c)
+        finally:
+            sys.setswitchinterval(old)
+        assert c.requests_served == 80_000
+
+    def test_new_counter_is_zero_and_instances_are_independent(self):
+        a, b = protocol.UsageCounter(), protocol.UsageCounter()
+        a.increment()
+        assert (a.requests_served, b.requests_served) == (1, 0)
+
+
+class TestEntityCountField:
+    @pytest.fixture
+    def three(self, monkeypatch):
+        f = (core.Finding("EMAIL", 0, 3, 0.5), core.Finding("EMAIL", 4, 7, 0.5),
+             core.Finding("PHONE", 8, 12, 0.5))
+        counts = {"EMAIL": 2, "PHONE": 1}
+        monkeypatch.setattr(protocol.core, "check_text",
+                            lambda t, document_type="auto": core.CheckResult(f, counts))
+        monkeypatch.setattr(
+            protocol.core, "redact_text",
+            lambda t, document_type="auto", audit=True: core.RedactResult(
+                "R", {"<<EMAIL_1>>": "x"}, f, counts, 1))
+
+    def test_rest_check_and_redact_count_findings(self, three):
+        for route in ("check", "redact"):
+            r = call(route, {"text": "x"})
+            assert type(r.entity_count) is int
+            assert r.entity_count == len(jbody(r)["findings"]) == 3
+
+    def test_mcp_check_and_redact_count_findings(self, three):
+        for name in ("pii_check", "pii_redact"):
+            r = call("mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                             "params": {"name": name, "arguments": {"text": "x"}}})
+            res = jbody(r)["result"]
+            assert res["isError"] is False
+            assert type(r.entity_count) is int
+            assert r.entity_count == len(res["structuredContent"]["findings"]) == 3
+
+    def test_zero_findings_is_zero_not_none(self, fake):
+        r = call("check", {"text": "nothing here"})
+        assert r.entity_count == 0 and type(r.entity_count) is int
+
+    def test_none_where_documented(self, fake):
+        assert call("restore", {"redacted_text": "x", "mapping": {}}).entity_count is None
+        assert call("health").entity_count is None
+        assert call("usage").entity_count is None
+        assert call("check", b"{").entity_count is None
+        assert call("check", {"text": 5}).entity_count is None
+        assert call("nope", {}).entity_count is None
+        for obj in ({"jsonrpc": "2.0", "id": 1, "method": "ping"},
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                     "params": {"name": "pii_usage"}},
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                     "params": {"name": "pii_check", "arguments": {"text": 5}}},
+                    {"jsonrpc": "2.0", "method": "notifications/initialized"}):
+            assert call("mcp", obj).entity_count is None, obj
+
+    def test_restore_count_is_none_even_with_a_mapping(self, fake):
+        r = call("restore", {"redacted_text": "<<EMAIL_1>> <<EMAIL_1>>",
+                             "mapping": {"<<EMAIL_1>>": "a@b.c"}})
+        assert r.status == 200 and r.entity_count is None
+
+
+class TestMcpInternalFailureContract:
+    """Contract (local_api_design.md, MCP): tool errors are results with
+    isError:true, not JSON-RPC errors, and still HTTP 200.  Only a failure
+    outside any tool (here: the result cannot be encoded) is HTTP 500 with a
+    JSON-RPC -32603 error and a null id."""
+
+    CALL = {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+            "params": {"name": "pii_check", "arguments": {"text": "x"}}}
+
+    def test_plain_exception_in_a_tool_is_http_200_is_error(self, monkeypatch):
+        monkeypatch.setattr(protocol.core, "check_text", _boom(Exception(CANARY)))
+        u = protocol.UsageCounter()
+        r = call("mcp", self.CALL, usage=u)
+        assert r.status == 200
+        b = jbody(r)
+        assert set(b) == {"jsonrpc", "id", "result"} and b["id"] == 7
+        assert b["result"]["isError"] is True
+        assert b["result"]["structuredContent"] == {
+            "error": "internal_error", "message": "internal error", "request_id": RID}
+        assert r.diag == protocol.Diag("internal_error", "Exception", None)
+        assert r.entity_count is None and u.requests_served == 0
+        assert _clean(r)
+
+    def test_unencodable_result_is_http_500_jsonrpc_internal_error(self, monkeypatch):
+        class Bad:
+            def to_dict(self):
+                return {"entity_counts": {}, "findings": [], "x": float("nan")}
+
+        monkeypatch.setattr(protocol.core, "check_text", lambda *a, **k: Bad())
+        u = protocol.UsageCounter()
+        r = call("mcp", self.CALL, usage=u)
+        assert r.status == 500
+        assert jbody(r) == {"jsonrpc": "2.0", "id": None,
+                            "error": {"code": -32603, "message": "Internal error"}}
+        assert r.diag is not None and r.diag.code == "internal_error"
+        assert r.headers == HEADERS and u.requests_served == 0
+
+    def test_same_failure_on_rest_is_the_fixed_500(self, monkeypatch):
+        class Bad:
+            def to_dict(self):
+                return {"x": float("nan")}
+
+        monkeypatch.setattr(protocol.core, "check_text", lambda *a, **k: Bad())
+        r = call("check", {"text": "x"})
+        assert (r.status, jbody(r)["error"]) == (500, "internal_error")

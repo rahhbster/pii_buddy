@@ -14,6 +14,16 @@ HEADERS = (
 RID = "r_00ab12cd"
 CANARY = "Zq7f3a9cXk"
 
+# The exact strings guard.Decision.route carries; protocol must dispatch on these.
+ROUTE = {
+    "health": "GET /v1/health",
+    "usage": "GET /v1/usage",
+    "check": "POST /v1/check",
+    "redact": "POST /v1/redact",
+    "restore": "POST /v1/restore",
+    "mcp": "POST /mcp",
+}
+
 
 def _findings(text):
     if type(text) is str and "@" in text:
@@ -59,7 +69,7 @@ def call(route, obj=None, *, usage=None, rid=RID):
         body = obj
     else:
         body = raw(obj)
-    return protocol.handle(route, body, request_id=rid, usage=usage)
+    return protocol.handle(ROUTE.get(route, route), body, request_id=rid, usage=usage)
 
 
 def jbody(resp):
