@@ -5,11 +5,19 @@ callers (CLI, local API, MCP) own persistence and options. Errors are CoreError 
 `code` and a fixed message that never contains input.
 
 LATENCY: `core` has NO latency bound. The only size limit is MAX_TEXT_CHARS,
-measured in characters. spaCy can take many seconds on pathological inputs
-(for example a 50,000-character run of one-character tokens, a dot run in the
-middle of a chunk such as "a" + "." * 49998 + "b", or very name-dense text,
-about 2.5 s after the validation speed-up). A caller that needs a bound (the
-HTTP / MCP server) must run `core` under a hard timeout in a worker process.
+measured in characters. spaCy is superlinear on some inputs: "!" * 50_000
+(single-character tokens) is quadratic and did not finish in 90 s (about 250 s
+extrapolated); a dot run in the middle of a chunk such as "a" + "." * 49998 +
+"b", or 25,000 line breaks, take 6-8 s; the slowest legitimate input measured
+was about 4.4 s (a 5,000-SSN CSV at the cap). A caller that needs a bound (the
+HTTP / MCP server) must run `core` in a worker process with a hard timeout of
+at least 30 s.
+
+TYPES: parameters must be exactly `str`, `dict` and `bool`. Subclasses
+(including OrderedDict and bool-likes such as 0 or "") are rejected with
+CoreError("invalid_request"): a subclass can override __len__, __eq__,
+__hash__ or items() and bypass the caps or raise a bare exception. Plain
+json.load results are exact types and work unchanged.
 """
 
 from __future__ import annotations
@@ -34,21 +42,35 @@ DOCUMENT_TYPES = frozenset({"auto", "general", "resume", "transcript"})
 
 _SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 
+_WHERE_RE = re.compile(r"[A-Za-z0-9_.:]+")
+
 # Bounded and '<'-free inside NAME tags so scanning stays linear and a tag
 # can never swallow a following one.
 TAG_RE = re.compile(r"<<[A-Za-z0-9_]{1,100}_\d{1,9}>>|<NAME [^<>\r\n]{1,100}>")
 
 
 class CoreError(ValueError):
-    def __init__(self, code: str, message: str, exc_type: str | None = None):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        exc_type: str | None = None,
+        where: str | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.message = message
         # Class name of a wrapped internal exception, for logs. Never its message.
         self.exc_type = exc_type
+        # "file.py:function:lineno" of the innermost frame; never locals,
+        # source text or the exception message. None unless it is safe.
+        self.where = where
 
     def to_dict(self) -> dict:
-        return {"error": self.code, "message": self.message}
+        d = {"error": self.code, "message": self.message}
+        if self.where is not None and _WHERE_RE.fullmatch(self.where):
+            d["where"] = self.where
+        return d
 
 
 @dataclass(frozen=True)
@@ -97,15 +119,20 @@ class RedactResult:
         }
 
 
+def _require_str(value, what, code="invalid_text"):
+    if type(value) is not str:
+        if isinstance(value, str):
+            raise CoreError("invalid_request", f"{what} must be a plain string")
+        raise CoreError(code, f"{what} must be a string")
+
+
 def _check_input(text, document_type):
-    if not isinstance(text, str):
-        raise CoreError("invalid_text", "text must be a string")
-    if len(text) > MAX_TEXT_CHARS:
+    _require_str(text, "text")
+    if str.__len__(text) > MAX_TEXT_CHARS:
         raise CoreError(
             "payload_too_large", f"text exceeds {MAX_TEXT_CHARS} characters"
         )
-    if not isinstance(document_type, str):
-        raise CoreError("invalid_request", "document_type must be a string")
+    _require_str(document_type, "document_type", "invalid_request")
     if document_type not in DOCUMENT_TYPES:
         raise CoreError("invalid_document_type", "unknown document_type")
     # A regex search, not text.encode(): a UnicodeEncodeError carries the whole
@@ -123,15 +150,29 @@ def _guarded(fn, *args):
     """
     no_model = False
     failed = None
+    where = None
     try:
         return fn(*args)
     except detector.ModelNotInstalledError:
         no_model = True
     except Exception as exc:
         failed = type(exc).__name__
+        where = _innermost_frame(exc.__traceback__)
     if no_model:
         raise CoreError("model_unavailable", "no spaCy model is installed")
-    raise CoreError("internal_error", "internal error", failed)
+    raise CoreError("internal_error", "internal error", failed, where)
+
+
+def _innermost_frame(tb):
+    """"file.py:function:lineno" of the deepest frame, or None if not plain."""
+    if tb is None:
+        return None
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    code = tb.tb_frame.f_code
+    name = code.co_filename.replace("\\", "/").rsplit("/", 1)[-1]
+    where = f"{name}:{code.co_name}:{tb.tb_lineno}"
+    return where if _WHERE_RE.fullmatch(where) else None
 
 
 def _detect(text, document_type):
@@ -158,6 +199,8 @@ def check_text(text: str, *, document_type: str = "auto") -> CheckResult:
 def redact_text(
     text: str, *, document_type: str = "auto", audit: bool = True
 ) -> RedactResult:
+    if type(audit) is not bool:
+        raise CoreError("invalid_request", "audit must be true or false")
     _check_input(text, document_type)
     entities = _detect(text, document_type)
     redacted, mapping = _guarded(redact, text, entities)
@@ -183,11 +226,16 @@ def _check_no_surrogates(*strings) -> None:
 
 
 def _check_mapping_types(mapping) -> None:
-    if not isinstance(mapping, dict):
+    if type(mapping) is not dict:
+        if isinstance(mapping, dict):
+            raise CoreError("invalid_request", "mapping must be a plain dict")
         raise CoreError("invalid_mapping", "mapping must be an object")
     for tag, value in mapping.items():
-        if not isinstance(tag, str) or not isinstance(value, str):
-            raise CoreError("invalid_mapping", "mapping must map strings to strings")
+        for item in (tag, value):
+            if type(item) is not str:
+                if isinstance(item, str):
+                    raise CoreError("invalid_request", "mapping must hold plain strings")
+                raise CoreError("invalid_mapping", "mapping must map strings to strings")
 
 
 def _validate_mapping(mapping) -> None:
@@ -196,9 +244,9 @@ def _validate_mapping(mapping) -> None:
         raise CoreError("invalid_mapping", "mapping has too many entries")
     for tag, value in mapping.items():
         _check_no_surrogates(tag, value)
-        if len(tag) > MAX_TAG_CHARS or TAG_RE.fullmatch(tag) is None:
+        if str.__len__(tag) > MAX_TAG_CHARS or TAG_RE.fullmatch(tag) is None:
             raise CoreError("invalid_mapping", "mapping key is not a tag")
-        if len(value) > MAX_VALUE_CHARS:
+        if str.__len__(value) > MAX_VALUE_CHARS:
             raise CoreError("invalid_mapping", "mapping value is too long")
 
 
@@ -208,9 +256,8 @@ def restore_text(redacted_text: str, mapping: Mapping[str, str]) -> str:
     `mapping` must be a plain dict, never a path. Always validates: size caps,
     tag-shaped keys only, bounded output.
     """
-    if not isinstance(redacted_text, str):
-        raise CoreError("invalid_text", "text must be a string")
-    if len(redacted_text) > MAX_RESTORE_TEXT_CHARS:
+    _require_str(redacted_text, "text")
+    if str.__len__(redacted_text) > MAX_RESTORE_TEXT_CHARS:
         raise CoreError("payload_too_large", "text is too large")
     _check_no_surrogates(redacted_text)
     _validate_mapping(mapping)
@@ -237,12 +284,14 @@ def restore_text(redacted_text: str, mapping: Mapping[str, str]) -> str:
 def _restore_unchecked(redacted_text: str, mapping: dict) -> str:
     """Restore from the caller's own mapping file (imported only by restorer.py).
 
+    NOT a public API: no output bound, no size caps. The HTTP / MCP server
+    must never call it; use restore_text.
+
     No size caps and no tag-shape check, so hand-edited keys and large
     mappings keep working; the type check stays and empty keys are ignored.
     Never expose this to API input: it has no output bound.
     """
-    if not isinstance(redacted_text, str):
-        raise CoreError("invalid_text", "text must be a string")
+    _require_str(redacted_text, "text")
     _check_mapping_types(mapping)
     keys = [t for t in mapping if t]
     if not keys:
