@@ -72,6 +72,12 @@ class TestErrorLocation:
         assert e.value.where is None
         assert "where" not in e.value.to_dict()
 
+    @pytest.mark.parametrize("bad", ["a b", "x<y>:f:1", "f.py:g:1\n", "f.py:g:1 (secret)"])
+    def test_to_dict_omits_where_with_unsafe_characters(self, bad):
+        err = core.CoreError("internal_error", "internal error", "X", bad)
+        assert "where" not in err.to_dict()
+        assert core.CoreError("internal_error", "m", "X", "a.py:f:3").to_dict()["where"] == "a.py:f:3"
+
     def test_validation_errors_have_no_where(self):
         with pytest.raises(core.CoreError) as e:
             core.check_text(5)
