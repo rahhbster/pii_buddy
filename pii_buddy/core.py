@@ -23,6 +23,7 @@ json.load results are exact types and work unchanged.
 
 from __future__ import annotations
 
+import functools
 import re
 import types
 from collections import Counter
@@ -56,6 +57,10 @@ _CODE_NAMES = {
     "<setcomp>": "setcomp",
     "<module>": "module",
 }
+
+# A wrapped exception's class name reaches logs, so it is bounded and ASCII.
+_EXC_TYPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+_EXC_TYPE_FALLBACK = "Exception"
 
 # Bounded and '<'-free inside NAME tags so scanning stays linear and a tag
 # can never swallow a following one.
@@ -186,6 +191,27 @@ def _check_input(text, document_type):
         raise CoreError("invalid_text", "text is not valid unicode")
 
 
+def _scrubbed(fn):
+    """Re-raise a CoreError with a traceback that holds none of the caller's data.
+
+    A traceback keeps every frame it passed through alive, with their locals
+    (the text, the entities, the mapping). The error is re-raised from here
+    after the arguments are dropped, so only this frame is left in it.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        failed = None
+        try:
+            return fn(*args, **kwargs)
+        except CoreError as exc:
+            failed = exc
+        args = kwargs = None
+        raise failed.with_traceback(None)
+
+    return wrapper
+
+
 def _guarded(fn, *args):
     """Run one pipeline step; any Exception becomes a fixed-message CoreError.
 
@@ -211,9 +237,11 @@ def _guarded(fn, *args):
 def _safe_type_name(exc):
     try:
         name = type(exc).__name__
-        return name if type(name) is str else None
+        if type(name) is str and _EXC_TYPE_RE.fullmatch(name):
+            return name
     except Exception:
-        return None
+        pass
+    return _EXC_TYPE_FALLBACK
 
 
 def _capture_where(exc):
@@ -252,12 +280,14 @@ def _counts(entities) -> dict:
     return dict(sorted(Counter(e.label for e in entities).items()))
 
 
+@_scrubbed
 def check_text(text: str, *, document_type: str = "auto") -> CheckResult:
     _check_input(text, document_type)
     entities = _detect(text, document_type)
     return CheckResult(_findings(entities), _counts(entities))
 
 
+@_scrubbed
 def redact_text(
     text: str, *, document_type: str = "auto", audit: bool = True
 ) -> RedactResult:
@@ -324,6 +354,7 @@ def _validate_mapping(mapping) -> None:
             raise CoreError("invalid_mapping", "mapping value is too long")
 
 
+@_scrubbed
 def restore_text(redacted_text: str, mapping: dict[str, str]) -> str:
     """Swap tags back for their originals in one pass (restored text is never rescanned).
 
@@ -351,10 +382,13 @@ def restore_text(redacted_text: str, mapping: dict[str, str]) -> str:
         if size > MAX_RESTORE_OUTPUT_CHARS:
             raise CoreError("payload_too_large", "restored text is too large")
         pos = m.end()
+    if size + len(redacted_text) - pos > MAX_RESTORE_OUTPUT_CHARS:
+        raise CoreError("payload_too_large", "restored text is too large")
     pieces.append(redacted_text[pos:])
     return "".join(pieces)
 
 
+@_scrubbed
 def _restore_unchecked(redacted_text: str, mapping: dict) -> str:
     """Restore from the caller's own mapping file (imported only by restorer.py).
 
