@@ -9,6 +9,7 @@ import multiprocessing
 import operator
 import pickle
 import re
+import sys
 import types
 
 import pytest
@@ -24,15 +25,28 @@ WHERE_FORMAT = re.compile(r"[A-Za-z0-9_]+\.py:[A-Za-z0-9_]+:[0-9]+")
 SCOPE_NAMES = {"listcomp", "genexpr", "lambda", "dictcomp", "setcomp", "module"}
 
 
-def assert_where(where, *funcs, file=None):
-    """Version-independent check of a `where` string."""
+def assert_where(where, *funcs, file=None, exact=False):
+    """Check a `where` string. exact=True pins file and function name."""
     assert where is not None
     assert WHERE_FORMAT.fullmatch(where), where
     fname, func, line = where.split(":")
-    assert func in SCOPE_NAMES | set(funcs), where
     assert int(line) > 0
+    if exact:
+        assert file is not None and len(funcs) == 1
+        assert (fname, func) == (file, funcs[0]), where
+        return
+    assert func in SCOPE_NAMES | set(funcs), where
     if file is not None:
         assert fname == file, where
+
+
+def assert_where_real(where, func, file, file_pre312=True):
+    """Exact on Python >= 3.12. Before 3.12 comprehension frames are separate
+    (named <listcomp>) and may belong to another file, so the loose form."""
+    if sys.version_info >= (3, 12):
+        assert_where(where, func, file=file, exact=True)
+    else:
+        assert_where(where, func, file=file if file_pre312 else None)
 
 
 def _raiser(co_name="boom", co_filename=None, message="x"):
@@ -99,7 +113,7 @@ class TestWhereVersionNames:
             core.redact_text(CANARY_TEXT)
         err = e.value
         assert err.exc_type == "AttributeError"
-        assert_where(err.where, "redact")
+        assert_where_real(err.where, "redact", "redactor.py")
         assert err.to_dict()["where"] == err.where
         assert "canary_attr" not in json.dumps(err.to_dict())
         _assert_chain_clean(err)
@@ -114,13 +128,13 @@ class TestWhereVersionNames:
             core.check_text("hello")
         # innermost frame is listcomp on 3.10-3.11, detect on 3.12+; the file
         # is not asserted because a comprehension frame may belong to any file.
-        assert_where(e.value.where, "detect")
+        assert_where_real(e.value.where, "detect", "detector.py", file_pre312=False)
 
     def test_plain_def_failure_names_exact_file_and_function(self, stub_detect):
         stub_detect(_raiser("detect_pii", "/p/detector.py"))
         with pytest.raises(core.CoreError) as e:
             core.check_text("hello")
-        assert_where(e.value.where, "detect_pii", file="detector.py")
+        assert_where(e.value.where, "detect_pii", file="detector.py", exact=True)
         assert e.value.where.startswith("detector.py:detect_pii:")
 
     @pytest.mark.parametrize("co_name", ["<listcomp>", "<genexpr>", "<lambda>", "<dictcomp>", "<setcomp>", "<module>"])
@@ -275,7 +289,7 @@ class TestHostileTraceback:
         with pytest.raises(core.CoreError) as e:
             core.check_text("hello")
         assert e.value.code == "internal_error"
-        assert e.value.exc_type is None
+        assert e.value.exc_type == "Exception"
 
 
 class _PropClass:
