@@ -18,7 +18,21 @@ from pii_buddy import core, detector
 from .test_core import CANARY_TEXT
 from .test_core_review_fixes import _assert_chain_clean
 
-WHERE_FORMAT = re.compile(r"[A-Za-z0-9_.]+\.py:[A-Za-z0-9_]+:[0-9]+")
+WHERE_FORMAT = re.compile(r"[A-Za-z0-9_]+\.py:[A-Za-z0-9_]+:[0-9]+")
+# Comprehensions are real frames named <listcomp> etc. before 3.12 (PEP 709
+# inlines them later), and the innermost frame may sit in a test file.
+SCOPE_NAMES = {"listcomp", "genexpr", "lambda", "dictcomp", "setcomp", "module"}
+
+
+def assert_where(where, *funcs, file=None):
+    """Version-independent check of a `where` string."""
+    assert where is not None
+    assert WHERE_FORMAT.fullmatch(where), where
+    fname, func, line = where.split(":")
+    assert func in SCOPE_NAMES | set(funcs), where
+    assert int(line) > 0
+    if file is not None:
+        assert fname == file, where
 
 
 def _raiser(co_name="boom", co_filename=None, message="x"):
@@ -85,8 +99,7 @@ class TestWhereVersionNames:
             core.redact_text(CANARY_TEXT)
         err = e.value
         assert err.exc_type == "AttributeError"
-        assert WHERE_FORMAT.fullmatch(err.where), err.where
-        assert err.where.startswith("redactor.py:")
+        assert_where(err.where, "redact")
         assert err.to_dict()["where"] == err.where
         assert "canary_attr" not in json.dumps(err.to_dict())
         _assert_chain_clean(err)
@@ -99,10 +112,37 @@ class TestWhereVersionNames:
         stub_detect(detect)
         with pytest.raises(core.CoreError) as e:
             core.check_text("hello")
-        # innermost frame is the C-level property getter's caller: the
-        # comprehension on 3.10-3.11, the function itself on 3.12+.
-        assert WHERE_FORMAT.fullmatch(e.value.where), e.value.where
-        assert re.fullmatch(r"detector\.py:(listcomp|detect):[0-9]+", e.value.where)
+        # innermost frame is listcomp on 3.10-3.11, detect on 3.12+; the file
+        # is not asserted because a comprehension frame may belong to any file.
+        assert_where(e.value.where, "detect")
+
+    def test_plain_def_failure_names_exact_file_and_function(self, stub_detect):
+        stub_detect(_raiser("detect_pii", "/p/detector.py"))
+        with pytest.raises(core.CoreError) as e:
+            core.check_text("hello")
+        assert_where(e.value.where, "detect_pii", file="detector.py")
+        assert e.value.where.startswith("detector.py:detect_pii:")
+
+    @pytest.mark.parametrize("co_name", ["<listcomp>", "<genexpr>", "<lambda>", "<dictcomp>", "<setcomp>", "<module>"])
+    def test_simulated_py310_scope_names_through_guarded(self, stub_detect, co_name):
+        stub_detect(_raiser(co_name, "/p/detector.py"))
+        with pytest.raises(core.CoreError) as e:
+            core.check_text("hello")
+        assert_where(e.value.where, file="detector.py")
+        assert e.value.where.split(":")[1] == co_name.strip("<>")
+
+    def test_simulated_py310_innermost_comprehension_frame(self):
+        def outer():
+            def inner():
+                raise RuntimeError("x")
+
+            inner.__code__ = inner.__code__.replace(co_name="<listcomp>", co_filename="/p/redactor.py")
+            inner()
+
+        outer.__code__ = outer.__code__.replace(co_filename="/p/redactor.py")
+        where = _where_of(outer)
+        assert_where(where, file="redactor.py")
+        assert where.split(":")[1] == "listcomp"
 
 
 class TestWhereBuilder:

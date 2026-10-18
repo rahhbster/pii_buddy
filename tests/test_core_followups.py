@@ -12,6 +12,7 @@ import pytest
 from pii_buddy import core, detector
 
 from .test_core import CANARY_TEXT, CANARY_WINDOWS
+from .test_core_review3 import assert_where
 from .test_core_review_fixes import _assert_chain_clean
 
 WHERE_RE = re.compile(r"[A-Za-z0-9_.:]+")
@@ -37,7 +38,7 @@ class TestErrorLocation:
         err = e.value
         assert err.code == "internal_error"
         assert err.exc_type == "AttributeError"
-        assert re.fullmatch(r"redactor\.py:redact:\d+", err.where), err.where
+        assert_where(err.where, "redact")
         assert err.to_dict()["where"] == err.where
 
     def test_where_is_fixed_format_and_leaks_nothing(self, broken_redact):
