@@ -8,11 +8,12 @@ sockets, threads, files, logging or prints; core is reached only through its
 public functions.
 
 Errors never echo input.  Every failure is ``{"error", "message", "request_id"}``
-with a message taken from a fixed table, whatever was raised.  Everything but
-KeyboardInterrupt, SystemExit and GeneratorExit is caught, always in a block
-that is left before the response is built, so no response (and nothing
-returned) is chained to the original exception or the input it may hold.
-``handle`` raises nothing else.  The only exception-derived data that leaves is
+with a message taken from a fixed table, whatever was raised.  Every ``Exception``
+is caught, always in a block that is left before the response is built, so no
+response (and nothing returned) is chained to the original exception or the input
+it may hold.  ``handle()`` raises nothing except BaseException subclasses that are
+not Exception (KeyboardInterrupt, SystemExit, GeneratorExit, cancellation), which
+propagate by design.  The only exception-derived data that leaves is
 ``Response.diag``: a code, a sanitised class name and a sanitised
 "file.py:function:line", for the caller's own metadata-only log.
 
@@ -318,15 +319,13 @@ def _diag_of(exc):
 
 
 def _guard(fn, *args):
-    """-> (value, None) or (None, Diag).  Never raises except for
-    KeyboardInterrupt, SystemExit and GeneratorExit; the Diag is built after the
-    except block is left, so nothing built later is chained to the exception."""
+    """-> (value, None) or (None, Diag).  Catches Exception only, so interrupts
+    and cancellation propagate; the Diag is built after the except block is
+    left, so nothing built later is chained to the exception."""
     held = None
     try:
         return fn(*args), None
-    except (KeyboardInterrupt, SystemExit, GeneratorExit):
-        raise
-    except BaseException as exc:
+    except Exception as exc:
         held = exc
     diag = _diag_of(held)
     held = None
@@ -627,23 +626,25 @@ def _mcp(body, rid, usage):
 
 # ------------------------------------------------------------------- handle
 
-_PATH_KIND = {
-    "/v1/health": ("health", None),
-    "/v1/usage": ("usage", None),
-    "/v1/check": ("rest", _rest_check),
-    "/v1/redact": ("rest", _rest_redact),
-    "/v1/restore": ("rest", _rest_restore),
-    "/mcp": ("mcp", None),
+_HANDLERS = {
+    "GET /v1/health": ("health", None),
+    "GET /v1/usage": ("usage", None),
+    "POST /v1/check": ("rest", _rest_check),
+    "POST /v1/redact": ("rest", _rest_redact),
+    "POST /v1/restore": ("rest", _rest_restore),
+    "POST /mcp": ("mcp", None),
 }
 
-# Keyed on exactly what guard.Decision.route carries ("GET /v1/health"), built
-# from guard's own table so a route added there without a handler here fails at
-# import instead of 404ing in production.
-_DISPATCH = {
-    "%s %s" % (method, path): _PATH_KIND[path]
-    for path, methods in guard._ROUTES.items()
-    for method in methods
-}
+# The set of routes is guard's own, so a route added there without a handler
+# here fails at import instead of 404ing in production.  Handlers are keyed on
+# the full "METHOD /path" string, so a new method on an existing path has none.
+_DISPATCH = {}
+for _path, _methods in guard._ROUTES.items():
+    for _method in sorted(_methods):
+        _name = "%s %s" % (_method, _path)
+        if _name not in _HANDLERS:
+            raise RuntimeError("protocol has no handler for guard route %r" % _name)
+        _DISPATCH[_name] = _HANDLERS[_name]
 ROUTES = frozenset(_DISPATCH)
 _MCP_ROUTE = "POST /mcp"
 
@@ -662,23 +663,45 @@ def _route(route, body, rid, usage):
     return _Out(200, _usage_payload(usage))
 
 
+def _fixed_500(route, rid):
+    diag = Diag("internal_error")
+    if type(route) is str and route == _MCP_ROUTE:
+        return Response(500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
+    return _error_response(rid, diag)
+
+
+def _usage_ok(usage):
+    """True if ``usage`` has a callable ``increment``; never raises Exception."""
+    try:
+        return callable(usage.increment)
+    except Exception:
+        return False
+
+
+def _count(usage):
+    usage.increment()
+
+
 def handle(route, body, *, request_id, usage):
     rid = _clean_rid(request_id)
+    if not _usage_ok(usage):
+        return _fixed_500(route, rid)
     out, diag = _guard(_route, route, body, rid, usage)
     if diag is not None:
-        if route == _MCP_ROUTE:
-            return Response(
-                500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
-        return _error_response(rid, diag)
+        return _failure(route, rid, diag)
     encoded, diag = _guard(_encode, out)
     if diag is not None:
-        if route == _MCP_ROUTE:
-            return Response(
-                500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
-        return _error_response(rid, diag)
+        return _failure(route, rid, diag)
     if out.counted:
-        _guard(usage.increment)
+        _guard(_count, usage)
     return Response(out.status, encoded, HEADERS, out.diag, out.entity_count)
+
+
+def _failure(route, rid, diag):
+    if type(route) is str and route == _MCP_ROUTE:
+        return Response(
+            500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
+    return _error_response(rid, diag)
 
 
 def _encode(out):

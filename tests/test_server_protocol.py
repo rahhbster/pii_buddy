@@ -738,11 +738,18 @@ class TestSilence:
                        "Thread(", "_restore_unchecked", "pathlib", "import sys"):
             assert needle not in src, needle
 
-    def test_base_exception_is_caught_only_after_the_three_are_reraised(self):
+    def test_baseexception_is_never_named_or_caught(self):
+        import ast
         src = pathlib.Path(protocol.__file__).read_text()
-        assert src.count("except BaseException") == 1
-        assert ("except (KeyboardInterrupt, SystemExit, GeneratorExit):\n"
-                "        raise\n    except BaseException as exc:") in src
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.ExceptHandler):
+                assert node.type is not None, "bare except"
+                names = [n.id for n in ast.walk(node.type) if isinstance(n, ast.Name)]
+                assert names == ["Exception"], names
+            if isinstance(node, ast.Name):
+                assert node.id != "BaseException"
+            if isinstance(node, ast.Attribute):
+                assert node.attr != "BaseException"
 
 
 # ----------------------------------------------- review round: PR #25 findings
@@ -957,24 +964,6 @@ class TestHandleNeverRaises:
         monkeypatch.setattr(protocol.core, "check_text", _boom(Evil("invalid_text")))
         r = _safe_call("check", {"text": "x"})
         assert (r.status, jbody(r)["error"]) == (500, "internal_error")
-
-    def test_base_exception_subclass_is_a_500_not_a_raise(self, monkeypatch):
-        class Weird(BaseException):
-            pass
-
-        monkeypatch.setattr(protocol.core, "check_text", _boom(Weird(CANARY)))
-        for route, obj in (("check", {"text": "x"}), ("mcp", _mcp_check_call())):
-            r = _safe_call(route, obj)
-            assert _clean(r)
-            assert r.diag is not None and r.diag.code == "internal_error"
-
-    @pytest.mark.parametrize("exc", [KeyboardInterrupt, SystemExit, GeneratorExit])
-    def test_only_the_three_pass_through(self, monkeypatch, exc):
-        monkeypatch.setattr(protocol.core, "check_text", _boom(exc()))
-        with pytest.raises(exc):
-            call("check", {"text": "x"})
-        with pytest.raises(exc):
-            call("mcp", _mcp_check_call())
 
     def test_broken_usage_counter_cannot_raise(self, fake):
         class Broken:
@@ -1320,3 +1309,512 @@ class TestMcpInternalFailureContract:
         monkeypatch.setattr(protocol.core, "check_text", lambda *a, **k: Bad())
         r = call("check", {"text": "x"})
         assert (r.status, jbody(r)["error"]) == (500, "internal_error")
+
+
+# ------------------------------------------- review round 2: PR #25 findings
+
+import asyncio
+
+_PY311 = sys.version_info >= (3, 11)
+
+
+class _CustomInterrupt(BaseException):
+    pass
+
+
+def _interrupts():
+    out = {
+        "KeyboardInterrupt": KeyboardInterrupt,
+        "SystemExit": lambda: SystemExit(3),
+        "GeneratorExit": GeneratorExit,
+        "CancelledError": asyncio.CancelledError,
+        "Custom": lambda: _CustomInterrupt(CANARY),
+    }
+    if _PY311:
+        out["GroupOfKeyboardInterrupt"] = lambda: BaseExceptionGroup(
+            "g", [KeyboardInterrupt()])
+        out["GroupOfSystemExit"] = lambda: BaseExceptionGroup("g", [SystemExit(3)])
+    return out
+
+
+INTERRUPTS = _interrupts()
+
+CORE_FNS = {
+    "check": ("check_text", "pii_check"),
+    "redact": ("redact_text", "pii_redact"),
+}
+
+
+def _mcp_tool_call(tool, text="x"):
+    return {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": tool, "arguments": {"text": text}}}
+
+
+class TestInterruptsPropagate:
+    """Anything that is not an ``Exception`` is an interrupt or a cancellation
+    and leaves handle() untouched."""
+
+    @pytest.mark.parametrize("name", sorted(INTERRUPTS))
+    @pytest.mark.parametrize("route", ["check", "redact", "restore"])
+    def test_rest(self, monkeypatch, name, route):
+        fn = {"check": "check_text", "redact": "redact_text", "restore": "restore_text"}[route]
+        body = {"redacted_text": "x", "mapping": {}} if route == "restore" else {"text": "x"}
+        exc = INTERRUPTS[name]()
+        monkeypatch.setattr(protocol.core, fn, _boom(exc))
+        u = protocol.UsageCounter()
+        with pytest.raises(type(exc)):
+            call(route, body, usage=u)
+        assert u.requests_served == 0
+
+    @pytest.mark.parametrize("name", sorted(INTERRUPTS))
+    @pytest.mark.parametrize("route", ["check", "redact"])
+    def test_mcp_tools(self, monkeypatch, name, route):
+        fn, tool = CORE_FNS[route]
+        exc = INTERRUPTS[name]()
+        monkeypatch.setattr(protocol.core, fn, _boom(exc))
+        u = protocol.UsageCounter()
+        with pytest.raises(type(exc)):
+            call("mcp", _mcp_tool_call(tool), usage=u)
+        assert u.requests_served == 0
+
+    @pytest.mark.parametrize("route", ["check", "mcp"])
+    def test_interrupt_from_a_hostile_attribute_still_propagates(self, monkeypatch, route):
+        class Bad(core.CoreError):
+            code = property(lambda s: (_ for _ in ()).throw(KeyboardInterrupt()),
+                            lambda s, v: None)
+
+        monkeypatch.setattr(protocol.core, "check_text",
+                            _boom(Bad("invalid_text", CANARY, "E", "x.py:f:1")))
+        obj = {"text": "x"} if route == "check" else _mcp_tool_call("pii_check")
+        with pytest.raises(KeyboardInterrupt):
+            call(route, obj)
+
+    def test_interrupt_from_the_usage_counter_propagates(self, fake):
+        class U:
+            requests_served = 0
+
+            def increment(self):
+                raise KeyboardInterrupt()
+
+        with pytest.raises(KeyboardInterrupt):
+            protocol.handle(ROUTE["check"], b'{"text":"a@b.c"}', request_id=RID, usage=U())
+
+
+def _ordinary():
+    out = {
+        "ValueError": lambda: ValueError(CANARY),
+        "UnicodeEncodeError": lambda: UnicodeEncodeError("utf-8", CANARY, 0, 1, CANARY),
+        "MemoryError": lambda: MemoryError(CANARY),
+        "RecursionError": lambda: RecursionError(CANARY),
+        "KeyError": lambda: KeyError(CANARY),
+        "Exception": lambda: Exception(CANARY),
+    }
+    for code in sorted(CORE_CODE_STATUS) + ["not_found", "verify_not_supported", CANARY]:
+        out["CoreError:" + code] = (
+            lambda code=code: core.CoreError(code, CANARY, "SomeError", "x.py:f:1"))
+    if _PY311:
+        out["ExceptionGroup"] = lambda: ExceptionGroup(
+            CANARY, [ValueError(CANARY), KeyError(CANARY)])
+    return out
+
+
+ORDINARY = _ordinary()
+
+
+def _expected(name):
+    if name.startswith("CoreError:"):
+        code = name.split(":", 1)[1]
+        if code in CORE_CODE_STATUS:
+            return CORE_CODE_STATUS[code], code
+    return 500, "internal_error"
+
+
+class TestOrdinaryExceptionsAreFixedResponses:
+    @pytest.mark.parametrize("name", sorted(ORDINARY))
+    @pytest.mark.parametrize("fn,body", [
+        ("check_text", {"text": "x"}),
+        ("redact_text", {"text": "x"}),
+        ("restore_text", {"redacted_text": "x", "mapping": {}}),
+    ])
+    def test_rest(self, monkeypatch, name, fn, body):
+        monkeypatch.setattr(protocol.core, fn, _boom(ORDINARY[name]()))
+        u = protocol.UsageCounter()
+        route = {"check_text": "check", "redact_text": "redact", "restore_text": "restore"}[fn]
+        r = call(route, body, usage=u)
+        status, code = _expected(name)
+        assert (r.status, jbody(r)["error"]) == (status, code)
+        assert set(jbody(r)) == ERROR_KEYS and _clean(r)
+        assert r.diag is not None and r.diag.code == code
+        assert u.requests_served == 0
+
+    @pytest.mark.parametrize("name", sorted(ORDINARY))
+    @pytest.mark.parametrize("fn,tool", [("check_text", "pii_check"),
+                                         ("redact_text", "pii_redact")])
+    def test_mcp_tool(self, monkeypatch, name, fn, tool):
+        monkeypatch.setattr(protocol.core, fn, _boom(ORDINARY[name]()))
+        u = protocol.UsageCounter()
+        r = call("mcp", _mcp_tool_call(tool), usage=u)
+        _, code = _expected(name)
+        assert r.status == 200
+        res = jbody(r)["result"]
+        assert res["isError"] is True and res["structuredContent"]["error"] == code
+        assert _clean(r) and r.diag.code == code
+        assert u.requests_served == 0
+
+
+def _raising(exc_factory):
+    return property(lambda s: (_ for _ in ()).throw(exc_factory()), lambda s, v: None)
+
+
+ATTR_EXCEPTIONS = {
+    "ValueError": lambda: ValueError(CANARY),
+    "RuntimeError": lambda: RuntimeError(CANARY),
+    "KeyError": lambda: KeyError(CANARY),
+    "AttributeError": lambda: AttributeError(CANARY),
+    "TypeError": lambda: TypeError(CANARY),
+    "RecursionError": lambda: RecursionError(CANARY),
+    "MemoryError": lambda: MemoryError(CANARY),
+}
+
+
+class TestHostileAttributesRaisingOrdinaryExceptions:
+    @pytest.mark.parametrize("exc", sorted(ATTR_EXCEPTIONS))
+    @pytest.mark.parametrize("attr", ["code", "where", "exc_type"])
+    @pytest.mark.parametrize("route", ["check", "mcp"])
+    def test_property(self, monkeypatch, exc, attr, route):
+        cls = type("Hostile", (core.CoreError,), {attr: _raising(ATTR_EXCEPTIONS[exc])})
+        monkeypatch.setattr(protocol.core, "check_text",
+                            _boom(cls("invalid_text", CANARY, "SomeError", "x.py:f:1")))
+        obj = {"text": "x"} if route == "check" else _mcp_tool_call("pii_check")
+        u = protocol.UsageCounter()
+        r = _safe_call(route, obj, usage=u)
+        want = "internal_error" if attr == "code" else "invalid_text"
+        assert r.diag.code == want
+        if route == "check":
+            assert jbody(r)["error"] == want
+        else:
+            assert jbody(r)["result"]["isError"] is True
+        assert _clean(r) and u.requests_served == 0
+
+    @pytest.mark.parametrize("exc", sorted(ATTR_EXCEPTIONS))
+    def test_metaclass_name(self, monkeypatch, exc):
+        class Meta(type):
+            __name__ = _raising(ATTR_EXCEPTIONS[exc])
+
+        class Boom(Exception, metaclass=Meta):
+            pass
+
+        monkeypatch.setattr(protocol.core, "check_text", _boom(Boom(CANARY)))
+        for route, obj in (("check", {"text": "x"}), ("mcp", _mcp_check_call())):
+            r = _safe_call(route, obj)
+            assert r.diag == protocol.Diag("internal_error", None, None)
+            assert _clean(r)
+
+
+class _NoIncrement:
+    requests_served = 0
+
+
+class _IncrementNotCallable:
+    requests_served = 0
+    increment = 5
+
+
+class _IncrementRaisesOnLookup:
+    requests_served = 0
+    increment = _raising(lambda: ValueError(CANARY))
+
+
+class _HostileGetattr:
+    def __getattribute__(self, name):
+        raise RuntimeError(CANARY)
+
+
+class _IncrementVanishes:
+    """A fine counter until core has run: the lookup then starts raising."""
+
+    requests_served = 0
+
+    def __init__(self):
+        self.lookups = 0
+
+    @property
+    def increment(self):
+        self.lookups += 1
+        if self.lookups > 1:
+            raise ValueError(CANARY)
+        return lambda: None
+
+
+class _IncrementRaises:
+    requests_served = 0
+
+    def increment(self):
+        raise ValueError(CANARY)
+
+
+BAD_USAGE = {
+    "None": lambda: None,
+    "NoIncrement": _NoIncrement,
+    "NotCallable": _IncrementNotCallable,
+    "LookupRaises": _IncrementRaisesOnLookup,
+    "HostileGetattr": _HostileGetattr,
+    "int": lambda: 5,
+}
+
+
+class TestUsageValidatedUpFront:
+    @pytest.mark.parametrize("name", sorted(BAD_USAGE))
+    @pytest.mark.parametrize("route", ["health", "usage", "check", "redact", "restore"])
+    def test_rest_is_a_fixed_500_and_core_never_runs(self, monkeypatch, name, route):
+        calls = []
+        for fn in ("check_text", "redact_text", "restore_text"):
+            monkeypatch.setattr(protocol.core, fn, lambda *a, **k: calls.append(1))
+        body = b'{"text":"x"}' if route in ("check", "redact") else (
+            b'{"redacted_text":"x","mapping":{}}' if route == "restore" else None)
+        r = protocol.handle(ROUTE[route], body, request_id=RID, usage=BAD_USAGE[name]())
+        assert (r.status, jbody(r)) == (500, {
+            "error": "internal_error", "message": "internal error", "request_id": RID})
+        assert r.diag is not None and r.diag.code == "internal_error"
+        assert r.headers == HEADERS and _clean(r) and calls == []
+
+    @pytest.mark.parametrize("name", sorted(BAD_USAGE))
+    def test_mcp_is_a_jsonrpc_500_and_core_never_runs(self, monkeypatch, name):
+        calls = []
+        monkeypatch.setattr(protocol.core, "check_text", lambda *a, **k: calls.append(1))
+        body = json.dumps(_mcp_tool_call("pii_check")).encode()
+        r = protocol.handle(ROUTE["mcp"], body, request_id=RID, usage=BAD_USAGE[name]())
+        assert r.status == 500
+        assert jbody(r) == {"jsonrpc": "2.0", "id": None,
+                            "error": {"code": -32603, "message": "Internal error"}}
+        assert r.diag.code == "internal_error" and calls == [] and _clean(r)
+
+    @pytest.mark.parametrize("name", sorted(BAD_USAGE))
+    def test_a_bad_usage_never_raises_for_unknown_routes_either(self, name):
+        r = protocol.handle("GET /nope", b"", request_id=RID, usage=BAD_USAGE[name]())
+        assert r.status in (404, 500) and _clean(r)
+
+    @pytest.mark.parametrize("make", [_IncrementVanishes, _IncrementRaises])
+    @pytest.mark.parametrize("route", ["check", "redact", "mcp"])
+    def test_usage_failure_after_core_does_not_lose_the_response(self, fake, make, route):
+        if route == "mcp":
+            body = json.dumps(_mcp_tool_call("pii_check", "a@b.c")).encode()
+        else:
+            body = b'{"text":"a@b.c"}'
+        r = protocol.handle(ROUTE[route], body, request_id=RID, usage=make())
+        assert r.status == 200 and r.diag is None and r.entity_count == 1
+        assert _clean(r)
+
+
+class _HostileStr(str):
+    def __eq__(self, other):
+        raise RuntimeError(CANARY)
+
+    def __hash__(self):
+        raise RuntimeError(CANARY)
+
+
+class _HostileObj:
+    def __eq__(self, other):
+        raise RuntimeError(CANARY)
+
+    def __hash__(self):
+        raise RuntimeError(CANARY)
+
+
+class _Unhashable(list):
+    pass
+
+
+class TestRouteMustBeAnExactStr:
+    @pytest.mark.parametrize("make", [
+        lambda: _HostileStr("POST /mcp"), lambda: _HostileStr("POST /v1/check"),
+        _HostileObj, _Unhashable, lambda: 5, lambda: None, lambda: b"POST /mcp",
+    ])
+    def test_is_404_and_never_compared(self, make):
+        r = protocol.handle(make(), b"{}", request_id=RID, usage=protocol.UsageCounter())
+        assert (r.status, jbody(r)["error"]) == (404, "not_found")
+        assert _clean(r)
+
+    def test_http_methods_the_guard_never_admits_are_404(self):
+        for route in ("HEAD /v1/health", "HEAD /mcp", "OPTIONS /v1/check",
+                      "PUT /v1/usage", "DELETE /mcp"):
+            r = protocol.handle(route, b"", request_id=RID, usage=protocol.UsageCounter())
+            assert (r.status, jbody(r)["error"]) == (404, "not_found"), route
+
+
+class TestCoreCodesAreAllowListed:
+    @pytest.mark.parametrize("code", ["not_found", "verify_not_supported", "bogus", ""])
+    def test_codes_core_never_emits_are_internal(self, monkeypatch, code):
+        monkeypatch.setattr(protocol.core, "check_text",
+                            _boom(core.CoreError(code, CANARY, "E", "x.py:f:1")))
+        r = call("check", {"text": "x"})
+        assert (r.status, jbody(r)["error"]) == (500, "internal_error")
+        assert r.diag.code == "internal_error"
+
+    def test_the_allow_list_is_exactly_what_core_emits(self):
+        assert protocol._CORE_CODES == frozenset(CORE_CODE_STATUS)
+
+
+# ---------------------------------------------- guard routes without handlers
+
+ROUTE_SCRIPT = r'''
+import sys
+from pii_buddy.server import guard
+for spec in sys.argv[1:]:
+    path, methods = spec.split("=")
+    guard._ROUTES[path] = frozenset(methods.split(","))
+try:
+    import pii_buddy.server.protocol
+except Exception as e:
+    print(type(e).__name__ + "|" + str(e))
+else:
+    print("imported")
+'''
+
+
+def _import_with_routes(tmp_path, *specs):
+    env = dict(os.environ, PII_BUDDY_DIR=str(tmp_path / "PII_Buddy"))
+    p = subprocess.run(
+        [sys.executable, "-c", ROUTE_SCRIPT, *specs],
+        capture_output=True, text=True, timeout=60, env=env,
+        cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+    )
+    assert p.returncode == 0, p.stderr[-2000:]
+    return p.stdout.strip()
+
+
+class TestGuardRouteWithoutHandler:
+    def test_a_seventh_path_fails_at_import_with_a_clear_message(self, tmp_path):
+        out = _import_with_routes(tmp_path, "/v1/new=GET")
+        kind, _, msg = out.partition("|")
+        assert kind == "RuntimeError", out
+        assert msg.startswith("protocol has no handler for guard route")
+        assert "GET /v1/new" in msg
+
+    def test_a_new_method_on_an_existing_path_is_not_silently_dispatched(self, tmp_path):
+        out = _import_with_routes(tmp_path, "/v1/health=GET,HEAD")
+        kind, _, msg = out.partition("|")
+        assert kind == "RuntimeError", out
+        assert "HEAD /v1/health" in msg
+
+    def test_the_real_tables_import_cleanly(self, tmp_path):
+        assert _import_with_routes(tmp_path) == "imported"
+
+
+# ------------------------------ pre-scan: sibling containers (depth must drop)
+
+def _arr(items):
+    return b"[" + b",".join(items) + b"]"
+
+
+class TestPrescanSiblings:
+    def test_1000_empty_array_siblings_at_depth_2(self):
+        body = _arr([b"[]"] * 1000)
+        assert protocol._too_deep(body) is False
+        assert protocol.parse_json_body(body) == [[]] * 1000
+
+    def test_1000_empty_object_siblings_at_depth_2(self):
+        body = _arr([b"{}"] * 1000)
+        assert protocol._too_deep(body) is False
+        assert protocol.parse_json_body(body) == [{}] * 1000
+
+    def test_1000_keys_with_empty_array_values(self):
+        body = b"{" + b",".join(b'"k%d":[]' % i for i in range(1000)) + b"}"
+        assert protocol._too_deep(body) is False
+        assert len(protocol.parse_json_body(body)) == 1000
+
+    def test_1000_keys_with_empty_object_values(self):
+        body = b"{" + b",".join(b'"k%d":{}' % i for i in range(1000)) + b"}"
+        assert protocol._too_deep(body) is False
+        assert len(protocol.parse_json_body(body)) == 1000
+
+    def test_seventeen_sequential_one_element_siblings(self):
+        body = _arr([b"[1]"] * 17)
+        assert protocol._too_deep(body) is False
+        assert protocol.parse_json_body(body) == [[1]] * 17
+
+    @pytest.mark.parametrize("n", [15, 16, 17, 18, 33, 100])
+    def test_sibling_counts_around_the_depth_limit(self, n):
+        assert protocol._too_deep(_arr([b"[1]"] * n)) is False
+
+    @pytest.mark.parametrize("pairs", [1, 16, 17, 100, 1000, 5000])
+    def test_alternating_open_close_pairs(self, pairs):
+        body = _arr([b"[]", b"{}"] * pairs)
+        assert protocol._too_deep(body) is False
+        assert len(protocol.parse_json_body(body)) == 2 * pairs
+        mixed = b"[" + b",".join(b'{"a":[]}' for _ in range(pairs)) + b"]"
+        assert protocol._too_deep(mixed) is False
+        protocol.parse_json_body(mixed)
+
+    def test_concatenated_values_are_not_too_deep_just_invalid(self):
+        body = b"[]" * 5000
+        assert protocol._too_deep(body) is False
+        with pytest.raises(protocol.ProtocolError) as e:
+            protocol.parse_json_body(body)
+        assert e.value.code == "invalid_json"
+
+    @pytest.mark.parametrize("wrap", [0, 1, 13, 14])
+    def test_sibling_groups_up_to_depth_16_are_accepted(self, wrap):
+        body = b"[" * wrap + _arr([b"[]"] * 1000) + b"]" * wrap
+        assert protocol._too_deep(body) is False
+        protocol.parse_json_body(body)
+
+    @pytest.mark.parametrize("wrap", [15, 16, 17, 20])
+    def test_sibling_groups_at_depth_17_are_rejected(self, wrap):
+        body = b"[" * wrap + _arr([b"[]"] * 1000) + b"]" * wrap
+        assert protocol._too_deep(body) is True
+        with pytest.raises(protocol.ProtocolError):
+            protocol.parse_json_body(body)
+
+    def test_many_chains_that_each_reach_exactly_depth_16(self):
+        chain = b"[" * 15 + b"1" + b"]" * 15
+        body = _arr([chain] * 1000)
+        assert protocol._too_deep(body) is False
+        protocol.parse_json_body(body)
+
+    def test_one_chain_among_many_reaching_depth_17_is_rejected(self):
+        ok = b"[" * 15 + b"1" + b"]" * 15
+        bad = b"[" * 16 + b"1" + b"]" * 16
+        body = _arr([ok] * 500 + [bad] + [ok] * 500)
+        assert protocol._too_deep(body) is True
+
+    def test_object_chains_among_siblings(self):
+        chain = b'{"a":' * 15 + b"1" + b"}" * 15
+        body = b"{" + b",".join(b'"k%d":%s' % (i, chain) for i in range(300)) + b"}"
+        assert protocol._too_deep(body) is False
+        protocol.parse_json_body(body)
+
+
+WIDE_SCRIPT = r'''
+import json, sys
+from pii_buddy.server import protocol
+
+N = protocol.MAX_BODY_BYTES
+out = {}
+for name, unit in (("arrays", b"[1]"), ("objects", b'{"a":1}'), ("empty", b"[]")):
+    count = (N - 2) // (len(unit) + 1)
+    body = b"[" + b",".join([unit] * count) + b"]"
+    assert len(body) <= N, name
+    value = protocol.parse_json_body(body)
+    out[name] = [len(body), len(value)]
+    r = protocol.handle("POST /mcp", body, request_id="r_1", usage=protocol.UsageCounter())
+    out[name + ":mcp"] = r.status
+print(json.dumps(out))
+'''
+
+
+class TestWideButShallowDocument:
+    def test_a_512_kib_document_is_accepted(self, tmp_path):
+        env = dict(os.environ, PII_BUDDY_DIR=str(tmp_path / "PII_Buddy"))
+        p = subprocess.run(
+            [sys.executable, "-c", WIDE_SCRIPT],
+            capture_output=True, text=True, timeout=60, env=env,
+            cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+        )
+        assert p.returncode == 0, (p.returncode, p.stderr[-2000:])
+        out = json.loads(p.stdout)
+        for name in ("arrays", "objects", "empty"):
+            size, n = out[name]
+            assert size > 500 * 1024 and n > 50_000, (name, out[name])
+            assert out[name + ":mcp"] == 400  # valid JSON, but not a JSON-RPC message

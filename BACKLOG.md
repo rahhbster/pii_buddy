@@ -27,10 +27,16 @@ each independently red-teamed:
    ("GET /v1/health", "POST /v1/check", ..., "POST /mcp"): protocol builds its
    dispatch table from `guard._ROUTES` (`protocol.ROUTES`), so a route added
    to the guard without a handler fails at import; any other string is 404.
-   `tests/test_server_guard_protocol_integration.py` pins that seam. Open
-   neighbours: #23 (de-flake detector timing tests) and #24 (core follow-ups).
+   `tests/test_server_guard_protocol_integration.py` pins that seam. `handle()`
+   catches `Exception` only: KeyboardInterrupt, SystemExit, GeneratorExit,
+   CancelledError and BaseExceptionGroups of them propagate by design (the
+   watchdog's `future.result(timeout)` raises ordinary Exception types); a bad
+   `usage` (no callable `increment`) or a non-`str` route never raises (500 /
+   404). #24 is merged; open neighbours: #23 (de-flake detector timing tests)
+   and this PR (#25).
    Next command: `gh pr list`, then read
-   `tests/test_server_guard_protocol_integration.py` before touching `http.py`.
+   `tests/test_server_guard_protocol_integration.py` before creating
+   `pii_buddy/server/http.py`.
    PR 3 contract: log only `Response.diag` (code, class name, where) and
    `entity_count`, NEVER `__cause__` (through ProcessPoolExecutor it is a
    stdlib `_RemoteTraceback` holding formatted worker traceback text); give it
