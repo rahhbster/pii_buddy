@@ -13,7 +13,7 @@ head 6b22272, may still be open: read it from that branch if so).
 
 State: public `main` = aedcc39 (CI green). Merged for the build: #18 `core.py`,
 #20 + #22 `server/guard.py`, #21 validation perf, #24 core follow-ups, #25
-`server/protocol.py`. Open: #23 only (de-flake timing tests, see Half-applied).
+`server/protocol.py`. Open: #23 (de-flake timing tests; red team running, see Half-applied) and this bridge PR.
 The review wave #1-#17 is long done.
 
 Do exactly this, in order:
@@ -70,14 +70,22 @@ do not delete any remote branch without asking.
 
 ### Half-applied / live state (read before touching anything)
 
-- **#23 (`fix/deflake-timing-tests`, head 2002cd6):** a fixer (agent
-  `aadbb0135246eee4f` in the previous session, running ~1 h, not pushed) is applying
-  the red team's findings: minimum-of-5 for BOTH sizes, 0.005 s floor, raise the
-  validation small N, add `restore`/`redact` scaling tests. It may push to that branch
-  at any time (it merges main into it). If it is gone, redo it from the findings in the
-  private log. Then: independent red team of the new head, then ask the owner to merge.
-  Until it merges, some detector/validation timing-scaling tests FLAKE under load (18 in one heavy-load run)
-  (rerun singly before believing a failure).
+- **#23 (`fix/deflake-timing-tests`, head 679d4f9, test-only):** the fixer FINISHED
+  and pushed (min-of-5 CPU time for both sizes, 5 ms floor, validation small N raised,
+  new `tests/test_restore_scaling.py`, an `a-a.` regex unit). It merged main twice.
+  Full suite 3,679 passed; real CI py3.10 + py3.12 PASS; its own numbers: mutants
+  caught 10/10 idle and 8-12/12 loaded, 0 false positives in 2,255 results. An
+  INDEPENDENT RED TEAM of 679d4f9 is running (agent `a7325cd560b7bbef3`; its report
+  arrives as a task notification; if it is gone, re-run a red team on that exact head
+  with the brief "sensitivity vs old wall-time tests, false positives under load,
+  machine-dependent thresholds (0.4 s CPU limit, 24x restorer ratio), process_time blind
+  spots"). Then ask the owner to merge #23 (pin `--match-head-commit`). Until it merges,
+  some detector/validation timing-scaling tests FLAKE under load (18 in one heavy-load
+  run): rerun singly before believing a failure.
+- **Found by that fixer, NOT fixed (product code):** `core._restore_unchecked` is one
+  alternation regex and is O(keys x occurrences): `t(2N)/t(N)` ~3.4 on CORRECT code, so
+  a plain ratio cannot tell it from a per-key `str.replace` loop. #23 therefore tests it
+  as linear-in-text for a fixed mapping and <24x the time of `restore_text`.
 - **`~/code/pii_buddy/.claude/worktrees/`:** 58 agent worktrees, 820 MB, untracked
   (`?? .claude/`). Safe to delete only with the owner's OK: `git worktree list`,
   `git worktree prune`, then remove the `worktree-agent-*` local branches.
