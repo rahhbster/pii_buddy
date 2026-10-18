@@ -8,10 +8,11 @@ LATENCY: `core` has NO latency bound. The only size limit is MAX_TEXT_CHARS,
 measured in characters. spaCy is superlinear on some inputs: "!" * 50_000
 (single-character tokens) is quadratic and did not finish in 90 s (about 250 s
 extrapolated); a dot run in the middle of a chunk such as "a" + "." * 49998 +
-"b", or 25,000 line breaks, take 6-8 s; the slowest legitimate input measured
-was about 4.4 s (a 5,000-SSN CSV at the cap). A caller that needs a bound (the
-HTTP / MCP server) must run `core` in a worker process with a hard timeout of
-at least 30 s.
+"b", or 25,000 line breaks, take 6-8 s on a quiet machine. Legitimate inputs
+at the cap (for example a 5,000-SSN CSV) typically take a few seconds, up to
+~10 s on a loaded machine. A caller that needs a bound (the HTTP / MCP server)
+must run `core` in a worker process with a hard timeout of at least 30 s.
+CoreError pickles, so it crosses that process boundary intact.
 
 TYPES: parameters must be exactly `str`, `dict` and `bool`. Subclasses
 (including OrderedDict and bool-likes such as 0 or "") are rejected with
@@ -23,10 +24,9 @@ json.load results are exact types and work unchanged.
 from __future__ import annotations
 
 import re
+import types
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Mapping
-
 from . import audit as _audit
 from . import detector
 from .redactor import redact
@@ -42,7 +42,20 @@ DOCUMENT_TYPES = frozenset({"auto", "general", "resume", "transcript"})
 
 _SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 
-_WHERE_RE = re.compile(r"[A-Za-z0-9_.:]+")
+# [0-9], not \d: \d also matches non-ASCII digits.
+_WHERE_RE = re.compile(r"[A-Za-z0-9_.]+\.py:[A-Za-z0-9_]+:[0-9]+")
+_WHERE_MAX_CHARS = 160
+
+# Python < 3.12 names comprehension frames "<listcomp>" etc. A fixed allow-list,
+# not a generic strip, so no other angle-bracket name can get through.
+_CODE_NAMES = {
+    "<listcomp>": "listcomp",
+    "<genexpr>": "genexpr",
+    "<lambda>": "lambda",
+    "<dictcomp>": "dictcomp",
+    "<setcomp>": "setcomp",
+    "<module>": "module",
+}
 
 # Bounded and '<'-free inside NAME tags so scanning stays linear and a tag
 # can never swallow a following one.
@@ -66,11 +79,28 @@ class CoreError(ValueError):
         # source text or the exception message. None unless it is safe.
         self.where = where
 
+    def __reduce__(self):
+        # Default exception pickling replays only args=(message,), which
+        # __init__ rejects. Rebuild from the four fixed fields; the chain
+        # (__cause__ / __context__) is deliberately not carried.
+        return (type(self), (self.code, self.message, self.exc_type, self.where))
+
     def to_dict(self) -> dict:
         d = {"error": self.code, "message": self.message}
-        if self.where is not None and _WHERE_RE.fullmatch(self.where):
+        if _where_ok(self.where):
             d["where"] = self.where
         return d
+
+
+def _where_ok(where) -> bool:
+    try:
+        return (
+            type(where) is str
+            and str.__len__(where) <= _WHERE_MAX_CHARS
+            and _WHERE_RE.fullmatch(where) is not None
+        )
+    except Exception:
+        return False
 
 
 @dataclass(frozen=True)
@@ -119,11 +149,26 @@ class RedactResult:
         }
 
 
+def _is_subclass_of(value, base) -> bool:
+    # type(value), never isinstance(): isinstance falls back to value.__class__,
+    # which a hostile object can make raise or lie.
+    return issubclass(type(value), base)
+
+
 def _require_str(value, what, code="invalid_text"):
-    if type(value) is not str:
-        if isinstance(value, str):
-            raise CoreError("invalid_request", f"{what} must be a plain string")
-        raise CoreError(code, f"{what} must be a string")
+    if type(value) is str:
+        return
+    failed = False
+    subclass = False
+    try:
+        subclass = _is_subclass_of(value, str)
+    except Exception:
+        failed = True
+    if failed:
+        raise CoreError("invalid_request", f"{what} must be a string")
+    if subclass:
+        raise CoreError("invalid_request", f"{what} must be a plain string")
+    raise CoreError(code, f"{what} must be a string")
 
 
 def _check_input(text, document_type):
@@ -156,23 +201,40 @@ def _guarded(fn, *args):
     except detector.ModelNotInstalledError:
         no_model = True
     except Exception as exc:
-        failed = type(exc).__name__
-        where = _innermost_frame(exc.__traceback__)
+        failed = _safe_type_name(exc)
+        where = _capture_where(exc)
     if no_model:
         raise CoreError("model_unavailable", "no spaCy model is installed")
     raise CoreError("internal_error", "internal error", failed, where)
 
 
-def _innermost_frame(tb):
-    """"file.py:function:lineno" of the deepest frame, or None if not plain."""
-    if tb is None:
+def _safe_type_name(exc):
+    try:
+        name = type(exc).__name__
+        return name if type(name) is str else None
+    except Exception:
         return None
-    while tb.tb_next is not None:
-        tb = tb.tb_next
-    code = tb.tb_frame.f_code
-    name = code.co_filename.replace("\\", "/").rsplit("/", 1)[-1]
-    where = f"{name}:{code.co_name}:{tb.tb_lineno}"
-    return where if _WHERE_RE.fullmatch(where) else None
+
+
+def _capture_where(exc):
+    """"file.py:function:lineno" of the innermost frame; None on any doubt.
+
+    Never raises: a hostile exception can make __traceback__ itself raise.
+    """
+    try:
+        tb = exc.__traceback__
+        if type(tb) is not types.TracebackType:
+            return None
+        while tb.tb_next is not None:
+            tb = tb.tb_next
+        code = tb.tb_frame.f_code
+        name = code.co_name
+        name = _CODE_NAMES.get(name, name)
+        base = code.co_filename.replace("\\", "/").rsplit("/", 1)[-1]
+        where = f"{base}:{name}:{tb.tb_lineno}"
+        return where if _where_ok(where) else None
+    except Exception:
+        return None
 
 
 def _detect(text, document_type):
@@ -227,13 +289,25 @@ def _check_no_surrogates(*strings) -> None:
 
 def _check_mapping_types(mapping) -> None:
     if type(mapping) is not dict:
-        if isinstance(mapping, dict):
+        failed = False
+        subclass = False
+        try:
+            subclass = _is_subclass_of(mapping, dict)
+        except Exception:
+            failed = True
+        if failed or subclass:
             raise CoreError("invalid_request", "mapping must be a plain dict")
         raise CoreError("invalid_mapping", "mapping must be an object")
     for tag, value in mapping.items():
         for item in (tag, value):
             if type(item) is not str:
-                if isinstance(item, str):
+                failed = False
+                subclass = False
+                try:
+                    subclass = _is_subclass_of(item, str)
+                except Exception:
+                    failed = True
+                if failed or subclass:
                     raise CoreError("invalid_request", "mapping must hold plain strings")
                 raise CoreError("invalid_mapping", "mapping must map strings to strings")
 
@@ -250,7 +324,7 @@ def _validate_mapping(mapping) -> None:
             raise CoreError("invalid_mapping", "mapping value is too long")
 
 
-def restore_text(redacted_text: str, mapping: Mapping[str, str]) -> str:
+def restore_text(redacted_text: str, mapping: dict[str, str]) -> str:
     """Swap tags back for their originals in one pass (restored text is never rescanned).
 
     `mapping` must be a plain dict, never a path. Always validates: size caps,
