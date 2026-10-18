@@ -19,10 +19,16 @@ repo: `pii_buddy_private/docs/reviews/2026-10-14-team-review.md`.
 **Now building: local API + local MCP server** (build spec, security model and
 test plan: `pii_buddy_private` log + the PR bodies). Five PRs, tests first,
 each independently red-teamed:
-1. `feat/local-api-core` (#18): pure `core.py`, `get_nlp(allow_download)`,
-   restorer delegation. In review.
-2. `feat/local-api-guard`: `server/guard.py`, pure header/Host/Origin/token/
-   size checks, no sockets. In progress. Then `server/protocol.py` after #18.
+1. `feat/local-api-core` (#18): merged.
+2. guard (`server/guard.py`) merged; `feat/local-api-protocol`: pure
+   `server/protocol.py` dispatcher (REST + MCP JSON-RPC), in review. It is
+   `handle(route, body, *, request_id, usage) -> Response(status, body,
+   headers, diag, entity_count)`; `route` is `guard.Decision.route`.
+   PR 3 contract: log only `Response.diag` (code, class name, where) and
+   `entity_count`, NEVER `__cause__` (through ProcessPoolExecutor it is a
+   stdlib `_RemoteTraceback` holding formatted worker traceback text); give it
+   `request_id` as `r_<hex>`; empty body + 202 for MCP notifications (write
+   nothing on stdio); run core in a worker process with >= 30 s timeout.
 3. HTTP server + runtime (token file, server.json, flock, logging).
 4. MCP: `/mcp` Streamable HTTP and stdio, hand-written JSON-RPC subset.
 5. `main.py --serve` / `--mcp-stdio`, MAS refusal, `docs/local_api.md`.
