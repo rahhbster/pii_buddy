@@ -165,9 +165,9 @@ def test_many_emails_is_not_quadratic(tmp_path):
     import time
     text = " ".join(f"user{i}@example.test" for i in range(2000))
     ents = _entities(text, [(m, "EMAIL") for m in re.findall(r"\S+", text)])
-    t = time.perf_counter()
+    t = time.process_time()
     redacted, mapping = redact(text, ents)
-    assert time.perf_counter() - t < 1.0
+    assert time.process_time() - t < 1.0
     assert _restore(redacted, mapping, tmp_path) == text
 
 
@@ -176,9 +176,9 @@ def test_many_persons_is_not_quadratic(tmp_path):
     names = [f"Zxq{i} Testperson{i}" for i in range(1000)]
     text = ". ".join(names)
     ents = _entities(text, [(n, "PERSON") for n in names])
-    t = time.perf_counter()
+    t = time.process_time()
     redacted, mapping = redact(text, ents)
-    assert time.perf_counter() - t < 2.0
+    assert time.process_time() - t < 2.0
     assert _restore(redacted, mapping, tmp_path) == text
 
 
@@ -186,8 +186,8 @@ def test_one_name_repeated_44000_times_in_5mb():
     import time
     text = ("Ann Testperson " + "lorem ipsum dolor " * 7 + "\n") * 44000
     ents = [FakeEntity("Ann Testperson", "PERSON", 0, 14)]
-    t = time.perf_counter()
+    t = time.process_time()
     redacted, _ = redact(text, ents)
-    assert time.perf_counter() - t < 20.0
+    assert time.process_time() - t < 20.0
     assert redacted.count("<NAME AT>") == 44000
     assert "Ann" not in redacted
