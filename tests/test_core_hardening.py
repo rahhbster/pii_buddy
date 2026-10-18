@@ -1,4 +1,4 @@
-"""Hardening tests for pii_buddy.core / restorer: latency guards, the removed
+"""Hardening tests for pii_buddy.core / restorer: input edge cases, the removed
 public `trusted` bypass, the restorer's unchecked path, repr safety, and
 mutation-killers for locks and copies."""
 
@@ -16,183 +16,6 @@ from pii_buddy import core, detector
 from .test_core import CANARY, CANARY_EMAIL, CANARY_TEXT, FakeNlp, _assert_no_canary
 
 
-def _synthetic_prose(n):
-    words = ("the quick brown fox jumps over a lazy dog while several tired engineers "
-             "review quarterly numbers and argue about nothing important today").split()
-    out, i, size = [], 0, 0
-    while size < n:
-        sent = " ".join(words[(i + j) % len(words)] for j in range(11)).capitalize() + ". "
-        out.append(sent)
-        size += len(sent)
-        i += 3
-    return "".join(out)[:n]
-
-
-def _synthetic_resume(n):
-    block = (
-        "Alex Sample\n12 Example Street, Testville\nalex.sample@example.test | (555) 010-0142\n"
-        "EXPERIENCE\nSenior Engineer, Widget Corp, Jan 2010 - Mar 2020\n"
-        + "- Led a team of five engineers shipping the billing platform.\n" * 8
-        + "EDUCATION\nB.S. Computer Science, Example University, 2003\n\n"
-    )
-    return (block * (n // len(block) + 1))[:n]
-
-
-def _synthetic_csv(n):
-    out, size, i = ["id,first,last,email,phone,date,amount\n"], 0, 0
-    while size < n:
-        i += 1
-        row = (f"{i},Alex,Sample,alex{i}@example.test,555-010-{i % 9000 + 1000},"
-               f"2024-01-{i % 28 + 1:02d},{i}.50\n")
-        out.append(row)
-        size += len(row)
-    return "".join(out)[:n]
-
-
-# ------------------------------------------------------- latency guards
-
-class TestTokenGuard:
-    @pytest.fixture
-    def stub(self, monkeypatch):
-        self.detected = []
-        monkeypatch.setattr(
-            detector, "detect_pii",
-            lambda text, doc_type="auto": self.detected.append(len(text)) or [],
-        )
-
-    def test_constants(self):
-        assert isinstance(core.MAX_TOKENS, int) and 1_000 <= core.MAX_TOKENS <= 50_000
-        assert isinstance(core.MAX_TOKENIZER_COST, int) and core.MAX_TOKENIZER_COST > 0
-
-    @pytest.mark.parametrize("fn", [core.check_text, core.redact_text])
-    def test_exactly_max_tokens_is_accepted(self, fn, stub, monkeypatch):
-        monkeypatch.setattr(detector, "count_tokens", lambda text: core.MAX_TOKENS)
-        fn("hello")
-        assert self.detected == [5]
-
-    @pytest.mark.parametrize("fn", [core.check_text, core.redact_text])
-    def test_one_over_max_tokens_is_rejected_before_ner(self, fn, stub, monkeypatch):
-        monkeypatch.setattr(detector, "count_tokens", lambda text: core.MAX_TOKENS + 1)
-        with pytest.raises(core.CoreError) as e:
-            fn(CANARY_TEXT)
-        assert e.value.code == "payload_too_large"
-        assert e.value.message == core.TOO_COMPLEX_MESSAGE
-        _assert_no_canary(str(e.value))
-        _assert_no_canary(repr(e.value))
-        assert self.detected == []
-
-    def test_token_count_is_taken_on_the_submitted_text(self, stub, monkeypatch):
-        seen = []
-        monkeypatch.setattr(detector, "count_tokens", lambda text: seen.append(text) or 1)
-        core.check_text("some text")
-        assert seen == ["some text"]
-
-    @pytest.mark.parametrize("fn", [core.check_text, core.redact_text])
-    def test_tokenizer_cost_over_budget_is_rejected_without_tokenizing(self, fn, stub, monkeypatch):
-        monkeypatch.setattr(
-            detector, "count_tokens", lambda text: pytest.fail("tokenizer ran on a hostile chunk")
-        )
-        text = "$" * 3_000
-        assert detector.tokenizer_cost(text) > core.MAX_TOKENIZER_COST
-        with pytest.raises(core.CoreError) as e:
-            fn(text)
-        assert e.value.code == "payload_too_large"
-        assert self.detected == []
-
-    def test_tokenizer_cost_boundary(self, stub, monkeypatch):
-        monkeypatch.setattr(detector, "count_tokens", lambda text: 1)
-        text = "$" * 100
-        cost = detector.tokenizer_cost(text)
-        monkeypatch.setattr(core, "MAX_TOKENIZER_COST", cost)
-        core.check_text(text)
-        monkeypatch.setattr(core, "MAX_TOKENIZER_COST", cost - 1)
-        with pytest.raises(core.CoreError) as e:
-            core.check_text(text)
-        assert e.value.code == "payload_too_large"
-
-    def test_character_cap_still_runs_first(self, stub, monkeypatch):
-        monkeypatch.setattr(
-            detector, "tokenizer_cost", lambda text: pytest.fail("cost computed past the cap")
-        )
-        with pytest.raises(core.CoreError) as e:
-            core.check_text("a" * 50_001)
-        assert e.value.message == "text exceeds 50000 characters"
-
-    @pytest.mark.parametrize("make,n", [
-        (_synthetic_prose, 50_000), (_synthetic_resume, 40_000), (_synthetic_csv, 50_000),
-    ], ids=["prose", "resume", "csv"])
-    def test_realistic_long_inputs_are_not_rejected(self, make, n, stub):
-        text = make(n)
-        assert len(text) == n
-        core.check_text(text)
-        assert self.detected == [n]
-
-    @pytest.mark.parametrize("make", [
-        lambda: "\U0001F600" * 16_000,
-        lambda: "!" * 50_000,
-        lambda: "a " * 25_000,
-        lambda: ". " * 25_000,
-        lambda: "1 " * 25_000,
-        lambda: "! " * 20_000,
-        lambda: "a  " * 16_000,
-        lambda: "\n," * 25_000,
-    ], ids=["emoji", "bangs", "a_sp", "dot_sp", "one_sp", "bang_sp", "a_2sp", "nl_comma"])
-    def test_hostile_shapes_fail_fast_with_the_real_tokenizer(self, make, stub):
-        text = make()
-        start = time.perf_counter()
-        with pytest.raises(core.CoreError) as e:
-            core.check_text(text)
-        assert time.perf_counter() - start < 3.0
-        assert e.value.code == "payload_too_large"
-        assert self.detected == []
-
-    def test_count_tokens_matches_the_tokenizer_and_runs_under_the_lock(self, monkeypatch):
-        fake = FakeNlp()
-        monkeypatch.setattr(detector, "_nlp", fake)
-        assert detector.count_tokens("Hello, world!") == 4
-        assert fake.lock_held == [True]
-        assert not detector._nlp_lock.locked()
-
-    def test_count_tokens_releases_the_lock_on_error(self, monkeypatch):
-        class Boom(FakeNlp):
-            def make_doc(self, text):
-                raise RuntimeError("boom")
-
-        monkeypatch.setattr(detector, "_nlp", Boom())
-        with pytest.raises(RuntimeError):
-            detector.count_tokens("x")
-        assert not detector._nlp_lock.locked()
-
-    @pytest.mark.parametrize("text,cost", [
-        ("", 0),
-        ("hello world", 55),
-        ("a,b", 15),
-        ("a" * 50_000, 250_000),
-        ("$" * 10, 150),
-        ("$$ $$", 33),
-        ("  a \n\t b  ", 50),
-        ("x y", 15),
-        ("a:b", 15),
-        ("A$A$x", 35),
-    ])
-    def test_tokenizer_cost_values(self, text, cost):
-        assert detector.tokenizer_cost(text) == cost
-
-    def test_cost_bounds_real_tokenizer_time(self):
-        nlp = detector.get_nlp(allow_download=False)
-        shapes = [
-            "$" * 1_500, "\U0001F600" * 1_200, "(" * 1_800, "=" * 1_000 + " " + "!?" * 600,
-            "a" + "{" * 1_400 + "a", "(a." * 600,
-        ]
-        for i, text in enumerate(shapes):
-            text = f"{i}{text}"
-            cost = detector.tokenizer_cost(text)
-            start = time.perf_counter()
-            nlp.make_doc(text)
-            elapsed = time.perf_counter() - start
-            assert elapsed <= cost / 1e6 + 0.05, (i, cost, elapsed)
-
-
 class TestInputEdgeCases:
     @pytest.mark.parametrize("fn", [core.check_text, core.redact_text])
     def test_lone_surrogate_is_a_typed_error(self, fn):
@@ -208,16 +31,12 @@ class TestInputEdgeCases:
     def test_nul_bytes_do_not_crash(self, fn):
         fn("abc\x00def ghi\x00 jane.roe@example.test")
 
-    def test_single_50000_char_token_is_bounded(self):
-        start = time.perf_counter()
+    def test_single_50000_char_token_is_accepted(self):
         core.check_text("a" * 50_000)
-        assert time.perf_counter() - start < 5.0
 
     @pytest.mark.parametrize("text", ["\n" * 50_000, " " * 50_000])
-    def test_whitespace_only_is_bounded(self, text):
-        start = time.perf_counter()
+    def test_whitespace_only_has_no_findings(self, text):
         assert core.check_text(text).findings == ()
-        assert time.perf_counter() - start < 5.0
 
 
 # ------------------------------------------------- restore: no public bypass
@@ -464,7 +283,6 @@ class TestLocksAndCopies:
         )
         monkeypatch.setattr(detector, "detect_pii", lambda text, doc_type="auto": [])
         monkeypatch.setattr(detector, "get_nlp", lambda allow_download=True: None)
-        monkeypatch.setattr(detector, "count_tokens", lambda text: 1)
         result = core.redact_text("a@example.test", audit=False)
         assert result.mapping == shared and result.mapping is not shared
         result.mapping["<<EMAIL_2>>"] = "b@example.test"

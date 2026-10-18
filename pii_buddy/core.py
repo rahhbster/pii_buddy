@@ -3,6 +3,13 @@
 No file, clipboard or log I/O, no prints, and no reading of user preferences:
 callers (CLI, local API, MCP) own persistence and options. Errors are CoreError with a stable
 `code` and a fixed message that never contains input.
+
+LATENCY: `core` has NO latency bound. The only size limit is MAX_TEXT_CHARS,
+measured in characters. spaCy can take many seconds on pathological inputs
+(for example a 50,000-character run of one-character tokens, a dot run in the
+middle of a chunk such as "a" + "." * 49998 + "b", or very name-dense text,
+about 2.5 s after the validation speed-up). A caller that needs a bound (the
+HTTP / MCP server) must run `core` under a hard timeout in a worker process.
 """
 
 from __future__ import annotations
@@ -23,21 +30,6 @@ MAX_MAPPING_ENTRIES = 10_000
 MAX_VALUE_CHARS = MAX_TEXT_CHARS
 MAX_TAG_CHARS = 128
 
-# Latency guards. The spaCy tokenizer is quadratic in some whitespace-free
-# shapes (long affix chains, ":"-dense chunks), so detector.tokenizer_cost()
-# (estimated microseconds, see the cost model in detector.py) is checked first
-# and the tokenizer only runs on text under MAX_TOKENIZER_COST (1.5 s of
-# estimated work; the slowest accepted input measured ~1 s). NER and detection
-# then cost ~0.14-0.18 ms per token, so MAX_TOKENS bounds them to a few seconds.
-# This latency bound holds for the tokenizer and NER only, NOT for validation:
-# name-dense text such as "Sam, " * 7999 still takes ~16 s in
-# validation.score_person_entity (entities x tokens), which is being fixed
-# separately. The subprocess watchdog in front of --serve is the real timeout.
-MAX_TOKENS = 16_000
-MAX_TOKENIZER_COST = 1_500_000
-
-TOO_COMPLEX_MESSAGE = "text is too complex to process safely"
-
 DOCUMENT_TYPES = frozenset({"auto", "general", "resume", "transcript"})
 
 _SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
@@ -48,10 +40,12 @@ TAG_RE = re.compile(r"<<[A-Za-z0-9_]{1,100}_\d{1,9}>>|<NAME [^<>\r\n]{1,100}>")
 
 
 class CoreError(ValueError):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, exc_type: str | None = None):
         super().__init__(message)
         self.code = code
         self.message = message
+        # Class name of a wrapped internal exception, for logs. Never its message.
+        self.exc_type = exc_type
 
     def to_dict(self) -> dict:
         return {"error": self.code, "message": self.message}
@@ -110,6 +104,8 @@ def _check_input(text, document_type):
         raise CoreError(
             "payload_too_large", f"text exceeds {MAX_TEXT_CHARS} characters"
         )
+    if not isinstance(document_type, str):
+        raise CoreError("invalid_request", "document_type must be a string")
     if document_type not in DOCUMENT_TYPES:
         raise CoreError("invalid_document_type", "unknown document_type")
     # A regex search, not text.encode(): a UnicodeEncodeError carries the whole
@@ -118,20 +114,29 @@ def _check_input(text, document_type):
         raise CoreError("invalid_text", "text is not valid unicode")
 
 
-def _detect(text, document_type):
+def _guarded(fn, *args):
+    """Run one pipeline step; any Exception becomes a fixed-message CoreError.
+
+    The raise happens after the except block so neither __cause__ nor
+    __context__ can carry the original exception (and the input it holds).
+    BaseException (KeyboardInterrupt, SystemExit) is not caught.
+    """
+    no_model = False
+    failed = None
     try:
-        detector.get_nlp(allow_download=False)
-        model_ready = True
+        return fn(*args)
     except detector.ModelNotInstalledError:
-        model_ready = False
-    if not model_ready:
+        no_model = True
+    except Exception as exc:
+        failed = type(exc).__name__
+    if no_model:
         raise CoreError("model_unavailable", "no spaCy model is installed")
-    if (
-        detector.tokenizer_cost(text) > MAX_TOKENIZER_COST
-        or detector.count_tokens(text) > MAX_TOKENS
-    ):
-        raise CoreError("payload_too_large", TOO_COMPLEX_MESSAGE)
-    return detector.detect_pii(text, document_type)
+    raise CoreError("internal_error", "internal error", failed)
+
+
+def _detect(text, document_type):
+    _guarded(detector.get_nlp, False)
+    return _guarded(detector.detect_pii, text, document_type)
 
 
 def _findings(entities) -> tuple:
@@ -155,10 +160,10 @@ def redact_text(
 ) -> RedactResult:
     _check_input(text, document_type)
     entities = _detect(text, document_type)
-    redacted, mapping = redact(text, entities)
+    redacted, mapping = _guarded(redact, text, entities)
     before = len(mapping["tags"])
     if audit:
-        redacted, mapping = _audit.audit_redacted(redacted, mapping)
+        redacted, mapping = _guarded(_audit.audit_redacted, redacted, mapping)
     tags = dict(mapping["tags"])
     # A tag restore_text would refuse must fail here, not at restore time.
     _validate_mapping(tags)
@@ -169,6 +174,12 @@ def redact_text(
         entity_counts=_counts(entities),
         audit_additions=len(tags) - before,
     )
+
+
+def _check_no_surrogates(*strings) -> None:
+    for s in strings:
+        if _SURROGATE_RE.search(s) is not None:
+            raise CoreError("invalid_text", "text is not valid unicode")
 
 
 def _check_mapping_types(mapping) -> None:
@@ -184,6 +195,7 @@ def _validate_mapping(mapping) -> None:
     if len(mapping) > MAX_MAPPING_ENTRIES:
         raise CoreError("invalid_mapping", "mapping has too many entries")
     for tag, value in mapping.items():
+        _check_no_surrogates(tag, value)
         if len(tag) > MAX_TAG_CHARS or TAG_RE.fullmatch(tag) is None:
             raise CoreError("invalid_mapping", "mapping key is not a tag")
         if len(value) > MAX_VALUE_CHARS:
@@ -200,6 +212,7 @@ def restore_text(redacted_text: str, mapping: Mapping[str, str]) -> str:
         raise CoreError("invalid_text", "text must be a string")
     if len(redacted_text) > MAX_RESTORE_TEXT_CHARS:
         raise CoreError("payload_too_large", "text is too large")
+    _check_no_surrogates(redacted_text)
     _validate_mapping(mapping)
     if not mapping:
         return redacted_text

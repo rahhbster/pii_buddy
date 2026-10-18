@@ -135,7 +135,6 @@ class TestPayloadCap:
 
         monkeypatch.setattr(detector, "detect_pii", fake)
         monkeypatch.setattr(detector, "get_nlp", lambda allow_download=True: None)
-        monkeypatch.setattr(detector, "count_tokens", lambda text: 1)
 
     @pytest.mark.parametrize("fn", [core.check_text, core.redact_text])
     def test_exactly_at_cap_is_accepted(self, fn):
@@ -203,7 +202,6 @@ class TestRedactRoundTrip:
         )
         monkeypatch.setattr(detector, "detect_pii", lambda t, d="auto": [])
         monkeypatch.setattr(detector, "get_nlp", lambda allow_download=True: None)
-        monkeypatch.setattr(detector, "count_tokens", lambda text: 1)
         with pytest.raises(core.CoreError) as e:
             core.redact_text("hello", audit=False)
         assert e.value.code == "invalid_mapping"
