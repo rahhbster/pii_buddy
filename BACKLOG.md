@@ -12,35 +12,33 @@ Regression tests: `tests/test_dir_override.py`.
 
 ## Next
 
-**Team-mode review wave, mostly merged (2026-10-14).** The detailed log
-(defects, verdicts, incidents) is in the PRIVATE repo:
-`pii_buddy_private/docs/reviews/2026-10-14-team-review.md`. It lists
-unfixed defects, so it is not kept here.
+**The team-mode review wave is done (2026-10-15).** All of #1-#17 are merged.
+Running log (defects, verdicts, incidents, residual risks) is in the PRIVATE
+repo: `pii_buddy_private/docs/reviews/2026-10-14-team-review.md`.
 
-Merged to `main`: #1 (name next to email/phone), #2 (LICENSE), #3
-(blocklist updater), #4 (redactor/restorer), #5 (site/README), #7
-(watcher: collisions, perms), #8 (CI, py3.10+3.12), #9 (synthetic
-fixtures), #10 (non-vacuous tests), #11 (DMG build), #13 (`--restore`
-crash), #14 (`--force-update`, exit codes), #15 (test isolation).
+**Now building: local API + local MCP server** (build spec, security model and
+test plan: `pii_buddy_private` log + the PR bodies). Five PRs, tests first,
+each independently red-teamed:
+1. `feat/local-api-core` (#18): pure `core.py`, `get_nlp(allow_download)`,
+   restorer delegation. In review.
+2. `feat/local-api-guard`: `server/guard.py`, pure header/Host/Origin/token/
+   size checks, no sockets. In progress. Then `server/protocol.py` after #18.
+3. HTTP server + runtime (token file, server.json, flock, logging).
+4. MCP: `/mcp` Streamable HTTP and stdio, hand-written JSON-RPC subset.
+5. `main.py --serve` / `--mcp-stdio`, MAS refusal, `docs/local_api.md`.
+Later: menubar toggle; subprocess watchdog; hosted-parity checks.
+Settled: zero new dependencies; MCP `return_mapping` defaults false (HTTP
+true); explicit `--serve` only; never in the Mac App Store build.
 
-Still open:
-1. **#6 menubar** (`fix/menubar-lock-and-clipboard`): login-item plist is
-   never auto-rewritten; lock path, clipboard order, 0600 logs. Final fix
-   a349597 needs one more independent review (an automated scan flagged a
-   "parser differential" in menubar.py at the latest commit, unverified).
-2. **#12 detector regex coverage** (`fix/detector-regex-coverage`): five
-   review rounds. Hard-stop round in progress: bound `BARE_URL_RE`, keep
-   overlap remainders, standard card groupings only. If the next
-   independent review rejects it, ship the proven subset only.
-3. Follow-up PRs: Python floor is 3.10 (the repo still says "3.9+" in
-   README, `setup.sh`, `build_dmg.sh`); mappings and prefs through the
-   private-write helper and `PII_BUDDY_DIR` (`main.py` paste path,
-   `menubar.py`); `main.py --dir` mutates config globals (a reverse-order
-   test leak); local API + MCP server (design in the private log).
-4. Never run the suite without `PII_BUDDY_DIR` set to a temp dir, and do
-   not delete any remote branch without asking the owner.
+Known follow-ups (not blockers): card issuer-prefix gate (false positives),
+4-5-6 / 5-5-5 groupings, wider card separators; mappings and prefs through the
+private-write helper and `PII_BUDDY_DIR` (`main.py` paste path, `menubar.py`);
+`main.py --dir` mutates config globals (reverse-order test leak);
+`--update-app` stash without pop.
 
-Also pending: the free sandbox smoke test below (not yet run).
+Rules: never run the suite without `PII_BUDDY_DIR` set to a temp dir; use
+explicit-path `git add` (never `-a`) in shared checkouts; do not delete any
+remote branch without asking the owner.
 
 **Free sandbox smoke test — do this first.** Needs a real Mac and
 Console.app. Run the tests first:
