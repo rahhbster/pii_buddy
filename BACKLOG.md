@@ -11,16 +11,16 @@ head 6b22272, may still be open: read it from that branch if so).
 
 **Build PR 3 of 5 of the local API/MCP server: the HTTP layer.**
 
-State: public `main` = aedcc39 (CI green). Merged for the build: #18 `core.py`,
+State: public `main` = ba50e22 (after #23; verify CI). Merged for the build: #18 `core.py`,
 #20 + #22 `server/guard.py`, #21 validation perf, #24 core follow-ups, #25
-`server/protocol.py`. Open: #23 (de-flake timing tests; red team running, see Half-applied) and this bridge PR.
+`server/protocol.py`. Merged: #23. Open: this bridge PR only.
 The review wave #1-#17 is long done.
 
 Do exactly this, in order:
 
 ```bash
 cd ~/code/pii_buddy && git checkout main && git pull --ff-only origin main
-gh pr list                                   # expect only #23
+gh pr list                                   # expect only the bridge PR
 git checkout -b feat/local-api-http origin/main
 # read first: pii_buddy_private/docs/design/local-api-mcp-build-spec.md
 #   ("As built" section + the PR 3 MUST list), then
@@ -70,18 +70,18 @@ do not delete any remote branch without asking.
 
 ### Half-applied / live state (read before touching anything)
 
-- **#23 (`fix/deflake-timing-tests`, head 679d4f9, test-only):** the fixer FINISHED
-  and pushed (min-of-5 CPU time for both sizes, 5 ms floor, validation small N raised,
-  new `tests/test_restore_scaling.py`, an `a-a.` regex unit). It merged main twice.
-  Full suite 3,679 passed; real CI py3.10 + py3.12 PASS; its own numbers: mutants
-  caught 10/10 idle and 8-12/12 loaded, 0 false positives in 2,255 results. An
-  INDEPENDENT RED TEAM of 679d4f9 is running (agent `a7325cd560b7bbef3`; its report
-  arrives as a task notification; if it is gone, re-run a red team on that exact head
-  with the brief "sensitivity vs old wall-time tests, false positives under load,
-  machine-dependent thresholds (0.4 s CPU limit, 24x restorer ratio), process_time blind
-  spots"). Then ask the owner to merge #23 (pin `--match-head-commit`). Until it merges,
-  some detector/validation timing-scaling tests FLAKE under load (18 in one heavy-load
-  run): rerun singly before believing a failure.
+- **#23 MERGED 2026-10-19 (`ba50e22`, pinned to 679d4f9).** Independent red team:
+  APPROVE WITH CHANGES (0 false positives in 2,600 results). Follow-up PR to open
+  (`fix/timing-test-gaps`, test-only, own red team): (1) `test_redact_text_scales_linearly_in_distinct_emails`
+  catches nothing (spaCy dominates at 500/1,000 emails): raise N or drop it; (2) ratio
+  checks need the quadratic part >75% of the 25k runtime, so a 7x slowdown above 300k
+  chars passes at 5.7 s of an 8 s backstop; (3) the 0.4 s CPU limit and the 24x
+  restorer limit are machine-dependent (24x is tuned to 5,000 keys x 1 occurrence;
+  correct code reaches 23.3x at 3 occurrences each): use a multiple of an in-process
+  reference; (4) add an `@override ` unit to `test_detector_perf._UNITS` (handle
+  lookback); (5) add a PERSON-scaling ratio test for `redact` (`_group_names` is
+  O(names^2), only an absolute 2 s limit today); (6) py3.10 CI shows 3,664 passed vs
+  3,679 locally: find out why (unexplained). Verify the Test workflow on `ba50e22`.
 - **Found by that fixer, NOT fixed (product code):** `core._restore_unchecked` is one
   alternation regex and is O(keys x occurrences): `t(2N)/t(N)` ~3.4 on CORRECT code, so
   a plain ratio cannot tell it from a per-key `str.replace` loop. #23 therefore tests it
