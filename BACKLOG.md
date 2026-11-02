@@ -11,8 +11,9 @@ list) is `docs/design/local-api-mcp-build-spec.md` there (private PR #5, MERGED 
 
 **Build PR 3 of 5 of the local API/MCP server: the HTTP layer.**
 
-State: public `main` = 9e50c12 once #27 (this file) merges (CI green on 9e50c12; #23,
-#26 and private #5 all merged). Merged for the build: #18 `core.py`,
+State: public `main` = 9e50c12 before #27 (this file) merges (CI green on that commit);
+after the merge its tip is #27's merge commit, so branch from `origin/main`. #23, #26
+and private #5 are all merged. Merged for the build: #18 `core.py`,
 #20 + #22 `server/guard.py`, #21 validation perf, #24 core follow-ups, #25
 `server/protocol.py`. No other public PRs are open.
 The review wave #1-#17 is long done.
@@ -107,8 +108,9 @@ do not delete any remote branch without asking.
 - **Private repo:** main 972f03b; one open PR, #6 (`docs/backlog-bridge-post-merge`, a
   private BACKLOG bridge); leftover remote branches, ask before deleting:
   `add-cost-analysis-draft`, `docs/log-final-state`, `docs/team-review-log`,
-  `revert/unrelated-files-from-log-commit` (`sync/readme-and-check-script` belongs to
-  the peer session); a peer Claude session
+  `revert/unrelated-files-from-log-commit` (1 UNMERGED commit; its PR #4 was closed, so
+  check before deleting). `sync/readme-and-check-script` is merged but probably the
+  peer session's: do not touch it. A peer Claude session
   `pii-buddy-private-4f` owns the private `client/` and `scripts/check_sync.py`
   (its check fails if a public PR renames Settings `verify_*`/`openrouter_*`/`venice_*`
   fields or removes `detector.get_nlp` or `redactor._make_initials`); it works in
@@ -165,13 +167,30 @@ do not delete any remote branch without asking.
   unavailable, so it is not an option).** Agents should be able to pay per use by
   token, with free starter tokens for new users. Design is in the PRIVATE repo:
   `docs/strategy/08-mcp-hosted-service-design.md` and `09-mcp-service-gtm-debate.md`
-  (Stripe-keyed rail first; x402/pay.sh blocked on its undisclosed fee). Open: what a
+  (Stripe-keyed rail first; doc 08 blocks x402/pay.sh on its undisclosed fee, doc 09
+  schedules a 2-day x402 spike after Stripe is live). New here, not in doc 08: the
+  `mcp.piibuddy.com` host (doc 08 mounts `/mcp` on the existing API app) and the
+  caller-held mapping key. Open: what a
   "token" is (prepaid credit balance tied to a `pb_live_` key, or per-call payment such
   as x402); how many free tokens per new user and the abuse limit (doc 08: Groq free
   tier costs about $0.09-0.14 per user per month at 3-5 redactions/day); caller-held
   encryption key for the returned mapping, so the server cannot read it. Not started;
   the local API/MCP build (PR 3-5) comes first. Would change my mind: a hosted-first
   demand signal from real users.
+- **Private-inference provider for the hosted service: NEAR AI Cloud vs Venice
+  (researched 2026-11-02 from vendor pages only; nothing tested).** NEAR: per-token,
+  no minimums, no extra charge for attestation, attestation report needs no account;
+  own-hardware "Private TEE" models (e.g. GLM 5.3 Flash $0.08 in / $0.50 out per 1M
+  tokens) plus "3P TEE" models on a third party's enclave; direct API only (the
+  OpenRouter gateway in front is NOT attested); retention terms not on the pricing
+  page, read the DPA. Venice: TEE mode still sends plaintext to Venice's API (the
+  enclave protects it after that); E2EE mode needs client-side crypto (secp256k1 +
+  HKDF + AES-256-GCM, attestation check, three headers) and works on text models only;
+  one third-party review says TEE/E2EE need a Pro plan and prices are in credits
+  (unverified). Doc 03 prices only Groq/OpenRouter-class providers: no TEE option is
+  costed. Recommended next step: a one-day spike calling NEAR's direct API with
+  already-redacted shards and checking the attestation. Would change my mind: NEAR
+  retention terms are unacceptable, or shard accuracy on its models is below Groq's.
 
 ### App Store track: free sandbox smoke test
 
