@@ -1,26 +1,28 @@
 # Backlog
 
-Handoff file. Written 2026-10-18 for a cold restart. Detailed history (defects,
+Handoff file. Refreshed 2026-11-02 for a cold restart (state below is as of that
+day; re-check with `git ls-remote origin` and `gh pr list`). Detailed history (defects,
 verdicts, incidents, residual risks) is in the PRIVATE repo
 `pii_buddy_private`: `docs/reviews/2026-10-14-team-review.md`, and the
 local API/MCP build spec (original + "As built" amendments + the PR 3 MUST
-list) is `docs/design/local-api-mcp-build-spec.md` there (private PR #5,
-head 6b22272, may still be open: read it from that branch if so).
+list) is `docs/design/local-api-mcp-build-spec.md` there (private PR #5, MERGED as 972f03b).
 
 ## Next
 
 **Build PR 3 of 5 of the local API/MCP server: the HTTP layer.**
 
-State: public `main` = ba50e22 (after #23; verify CI). Merged for the build: #18 `core.py`,
+State: public `main` = 9e50c12 before #27 (this file) merges (CI green on that commit);
+after the merge its tip is #27's merge commit, so branch from `origin/main`. #23, #26
+and private #5 are all merged. Merged for the build: #18 `core.py`,
 #20 + #22 `server/guard.py`, #21 validation perf, #24 core follow-ups, #25
-`server/protocol.py`. Merged: #23. Open: this bridge PR only.
+`server/protocol.py`. No other public PRs are open.
 The review wave #1-#17 is long done.
 
 Do exactly this, in order:
 
 ```bash
 cd ~/code/pii_buddy && git checkout main && git pull --ff-only origin main
-gh pr list                                   # expect only the bridge PR
+gh pr list                                   # expect none (#27 merged)
 git checkout -b feat/local-api-http origin/main
 # read first: pii_buddy_private/docs/design/local-api-mcp-build-spec.md
 #   ("As built" section + the PR 3 MUST list), then
@@ -56,6 +58,9 @@ O_NOFOLLOW` + `lstat` checks; `flock` single instance, never unlink lock files;
 refuse when `PII_BUDDY_MAS_BUILD` is set; model preflight at startup, never download
 mid-request.
 
+Small test-only PR any time (own red team): `fix/timing-test-gaps` (branch does not
+exist yet), the six #23 gaps listed in the follow-ups below.
+
 After PR 3: PR 4 MCP stdio (`sys.stdout = sys.stderr`, keep the real stdout fd for
 JSON-RPC, notifications write nothing), PR 5 `main.py --serve` / `--mcp-stdio` +
 `docs/local_api.md`, then menubar toggle. The WATCHDOG (worker process, timeout >=
@@ -89,8 +94,9 @@ do not delete any remote branch without asking.
 - **`~/code/pii_buddy/.claude/worktrees/`:** 58 agent worktrees, 820 MB, untracked
   (`?? .claude/`). Safe to delete only with the owner's OK: `git worktree list`,
   `git worktree prune`, then remove the `worktree-agent-*` local branches.
-- **Merged remote branches** (about 20, e.g. `origin/feat/local-api-core`,
-  `origin/fix/*`, `origin/chore/*`): leftover, not deleted; ask first.
+- **Remote branches:** 27 heads besides `main` on 2026-11-02, most merged (e.g.
+  `origin/feat/local-api-core`, `origin/fix/*`, `origin/chore/*`): leftover, not
+  deleted; ask first. `docs/backlog-bridge-2026-10-26` is this PR's own branch.
 - **Your login item** `~/Library/LaunchAgents/dev.piibuddy.menubar.plist` was
   restored to its original content after a test run rewrote it (2026-10-14); it runs
   `~/code/pii_buddy/.venv/bin/python -m pii_buddy.menubar` FROM THE CLONE, so keep the
@@ -99,8 +105,12 @@ do not delete any remote branch without asking.
   11 old test files). Local snapshots rolled off. The Time Machine backup disk is
   configured but not mounted ("Failed to mount destination"): connect it, then
   `tmutil listbackups` (read-only) to see if a pre-2026-10-14 06:27 backup exists.
-- **Private repo:** PR #5 (`docs/log-final-state`, head 6b22272) open; leftover branch
-  `revert/unrelated-files-from-log-commit`; a peer Claude session
+- **Private repo:** main 972f03b; one open PR, #6 (`docs/backlog-bridge-post-merge`, a
+  private BACKLOG bridge); leftover remote branches, ask before deleting:
+  `add-cost-analysis-draft`, `docs/log-final-state`, `docs/team-review-log`,
+  `revert/unrelated-files-from-log-commit` (1 UNMERGED commit; its PR #4 was closed, so
+  check before deleting). `sync/readme-and-check-script` is merged but probably the
+  peer session's: do not touch it. A peer Claude session
   `pii-buddy-private-4f` owns the private `client/` and `scripts/check_sync.py`
   (its check fails if a public PR renames Settings `verify_*`/`openrouter_*`/`venice_*`
   fields or removes `detector.get_nlp` or `redactor._make_initials`); it works in
@@ -110,6 +120,20 @@ do not delete any remote branch without asking.
 
 ## Open decisions
 
+- **Ship the stale `v1.0.0` fix first? (GitHub release vs App Store.)** The public
+  release `v1.0.0` (2026-02-07, `PII_Buddy.dmg`, 20 downloads) predates all review-wave
+  fixes. Recommended: cut a new GitHub release before any App Store work. Needs: one
+  version number (setup_py2app.py says 0.6.0; build_dmg.sh says 1.0.0), a real-Mac
+  `./extras/build_dmg.sh` run (never run), Developer ID + notarization ($99/yr) to drop
+  the Gatekeeper workaround, clean-Mac test (the DMG builds a venv at first launch and
+  needs Python 3.10+). Publishing is public: ask first. Would change my mind: owner
+  prefers App Store only.
+- **Mac App Store path (checked 2026-10-19):** blocked by (1) the never-run sandbox smoke
+  test below, (2) Apple Developer membership, two 3rd Party Mac Developer certs and a
+  provisioning profile, (3) a listing that does not exist: no privacy-policy or support
+  URL (docs/ is index.html plus CNAME, style, script and images), no screenshots/icon, `LSApplicationCategoryType`
+  missing in setup_py2app.py, export-compliance answers, network-client entitlement
+  needs a disclosed reason. The local API server must never ship in the MAS build.
 - **Watchdog timeout value and policy.** Recommended >= 30 s. Slowest LEGITIMATE input
   4.4 s quiet / ~10 s loaded (50,000-character CSV of 5,000 SSNs); pathological
   `"a"+"."*49998+"b"` 6-8 s, `"a\n"*25000` 7.7 s, `"!"*50000` > 90 s (~250 s). A 30 s
@@ -139,12 +163,45 @@ do not delete any remote branch without asking.
 - **Bookmark staleness** across OS upgrades, volume renames or iCloud Drive folders is
   only observable through long-term use; code logs a warning and proceeds on `is_stale`.
 
-**Free sandbox smoke test — do this first.** Needs a real Mac and
+- **Hosted service at `mcp.piibuddy.com` (owner direction 2026-11-02; `pii.sh` is
+  unavailable, so it is not an option).** Agents should be able to pay per use by
+  token, with free starter tokens for new users. Design is in the PRIVATE repo:
+  `docs/strategy/08-mcp-hosted-service-design.md` and `09-mcp-service-gtm-debate.md`
+  (Stripe-keyed rail first; doc 08 blocks x402/pay.sh on its undisclosed fee, doc 09
+  schedules a 2-day x402 spike after Stripe is live). New here, not in doc 08: the
+  `mcp.piibuddy.com` host (doc 08 mounts `/mcp` on the existing API app) and the
+  caller-held mapping key. Open: what a
+  "token" is (prepaid credit balance tied to a `pb_live_` key, or per-call payment such
+  as x402); how many free tokens per new user and the abuse limit (doc 08: Groq free
+  tier costs about $0.09-0.14 per user per month at 3-5 redactions/day); caller-held
+  encryption key for the returned mapping, so the server cannot read it. Not started;
+  the local API/MCP build (PR 3-5) comes first. Would change my mind: a hosted-first
+  demand signal from real users.
+- **Private-inference provider for the hosted service: NEAR AI Cloud vs Venice
+  (researched 2026-11-02 from vendor pages only; nothing tested).** NEAR: per-token,
+  no minimums, no extra charge for attestation, attestation report needs no account;
+  own-hardware "Private TEE" models (e.g. GLM 5.3 Flash $0.08 in / $0.50 out per 1M
+  tokens) plus "3P TEE" models on a third party's enclave; direct API only (the
+  OpenRouter gateway in front is NOT attested); retention terms not on the pricing
+  page, read the DPA. Venice: TEE mode still sends plaintext to Venice's API (the
+  enclave protects it after that); E2EE mode needs client-side crypto (secp256k1 +
+  HKDF + AES-256-GCM, attestation check, three headers) and works on text models only;
+  one third-party review says TEE/E2EE need a Pro plan and prices are in credits
+  (unverified). Doc 03 costs only Groq/OpenRouter-class providers and self-hosting.
+  Doc 08 costs Venice E2EE (~$0.0045/doc, $0.68/user/mo at 5/day) and already decides
+  Groq for free, Venice for paid; that Venice number has no source in doc 03. No NEAR
+  costing exists anywhere. Recommended next step for the HOSTED track only (after PR
+  3-5, or as a one-day side spike; it does not replace `## Next`): a one-day spike calling NEAR's direct API with
+  already-redacted shards and checking the attestation. Would change my mind: NEAR
+  retention terms are unacceptable, or shard accuracy on its models is below Groq's.
+
+### App Store track: free sandbox smoke test
+
+Independent of PR 3. Do it before any Apple spend. Needs a real Mac and
 Console.app. Run the tests first:
 `pip install pytest && pytest -q` (pytest is not in `requirements.txt`;
-CI uses Python 3.12).
+CI runs Python 3.10 and 3.12).
 
-Do this before spending money or time on Apple Developer enrollment/certs.
 It answers the single biggest open risk for free, using **ad-hoc code
 signing** (no Apple Developer Program membership required — `codesign
 --sign -` applies real entitlements and gets real App Sandbox enforcement
