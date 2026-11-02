@@ -187,8 +187,11 @@ do not delete any remote branch without asking.
   enclave protects it after that); E2EE mode needs client-side crypto (secp256k1 +
   HKDF + AES-256-GCM, attestation check, three headers) and works on text models only;
   one third-party review says TEE/E2EE need a Pro plan and prices are in credits
-  (unverified). Doc 03 prices only Groq/OpenRouter-class providers: no TEE option is
-  costed. Recommended next step: a one-day spike calling NEAR's direct API with
+  (unverified). Doc 03 costs only Groq/OpenRouter-class providers and self-hosting.
+  Doc 08 costs Venice E2EE (~$0.0045/doc, $0.68/user/mo at 5/day) and already decides
+  Groq for free, Venice for paid; that Venice number has no source in doc 03. No NEAR
+  costing exists anywhere. Recommended next step for the HOSTED track only (after PR
+  3-5, or as a one-day side spike; it does not replace `## Next`): a one-day spike calling NEAR's direct API with
   already-redacted shards and checking the attestation. Would change my mind: NEAR
   retention terms are unacceptable, or shard accuracy on its models is below Groq's.
 
