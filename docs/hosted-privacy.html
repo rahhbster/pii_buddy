@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PII Buddy — Hosted Beta Privacy</title>
+  <meta name="description" content="How the invited-tester hosted PII Buddy API handles the text you send it.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .policy { max-width: 760px; margin: 0 auto; padding: 96px 16px 64px; line-height: 1.65; }
+    .policy h1 { font-size: 2rem; margin-bottom: 8px; }
+    .policy h2 { font-size: 1.2rem; margin: 32px 0 8px; }
+    .policy p, .policy li { color: var(--text-secondary); }
+    .policy ul { padding-left: 1.2em; }
+    .policy li { margin: 4px 0; }
+    .policy .note { border-left: 3px solid var(--text-secondary); padding-left: 12px; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="container">
+      <a href="index.html" class="nav-brand">
+        <img src="images/favicon-32.png" alt="Arbie" width="32" height="32">
+        PII Buddy
+      </a>
+    </div>
+  </nav>
+
+  <main class="policy">
+    <h1>Hosted beta: privacy</h1>
+    <p>Effective 2026-11-04. Operator: HZHLLC. Contact: <a href="mailto:CONTACT_EMAIL">CONTACT_EMAIL</a>.</p>
+
+    <p class="note">This page covers only the invited-tester hosted API at
+    <code>mcp.piibuddy.com</code>. The PII Buddy desktop app and command line
+    run on your own computer and do not send your documents anywhere unless you
+    turn on optional cloud verification.</p>
+
+    <h2>Send synthetic data only</h2>
+    <p>The beta is for testing. Use made-up names, emails, numbers and
+    addresses. Do not send real personal information, client data or anything
+    confidential. Detection is not complete: some names, addresses, phone
+    formats and IDs are known to be missed, so output can still contain
+    personal information.</p>
+
+    <h2>What happens to your text</h2>
+    <ul>
+      <li>Your request travels over HTTPS. Encryption ends at our server, so the
+        server sees your text in plain form while it processes it. This is not
+        end-to-end encryption.</li>
+      <li>The text is processed in memory and the answer is sent back. We do not
+        write request bodies, your text or the returned mapping to disk or to our
+        application logs, and we do not keep a copy after the response.</li>
+      <li>The mapping that links placeholders such as <code>&lt;&lt;EMAIL_1&gt;&gt;</code>
+        to the original values is returned to you and not stored by us.</li>
+      <li>We do not use your text to train models, and we do not sell or share it.
+        No third-party AI service sees it in this beta.</li>
+    </ul>
+
+    <h2>What is logged</h2>
+    <ul>
+      <li>Application logs record, per request: a random request ID, the route, the
+        status, the time taken, your tester ID, the request size in bytes, the
+        number of items found, and an error code. Never the text.</li>
+      <li>The web proxy and hosting platform in front of the service may record
+        your IP address, the time and the URL path. Logs are rotated and capped in
+        size.</li>
+      <li>Rate-limit counters are kept in memory and reset when the service
+        restarts.</li>
+    </ul>
+
+    <h2>Where it runs</h2>
+    <p>On a virtual server rented from Hostinger that also runs other services. It is not certified for HIPAA, GDPR or any other
+    compliance scheme; do not use it where such certification is required.</p>
+
+    <h2>Your choices</h2>
+    <p>Stop using your tester key at any time, or ask us to revoke it. Questions or
+    requests: <a href="mailto:CONTACT_EMAIL">CONTACT_EMAIL</a>.</p>
+
+    <h2>Changes</h2>
+    <p>If this page changes, the effective date above changes with it.</p>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <ul class="footer-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="https://github.com/rahhbster/pii_buddy">GitHub</a></li>
+      </ul>
+      <div class="footer-copy">&copy; 2026 PII Buddy</div>
+    </div>
+  </footer>
+</body>
+</html>
