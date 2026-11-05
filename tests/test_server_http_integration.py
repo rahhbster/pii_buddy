@@ -920,3 +920,21 @@ class TestDrain:
             socket.create_connection(("127.0.0.1", port), timeout=1)
         h.server = type("S", (), {"shutdown": lambda s: None,
                                    "server_close": lambda s: None})()
+
+
+class TestRejectDrainCap:
+    def test_trickled_body_after_a_rejection_is_cut_off_quickly(self, make):
+        h = make()
+        head = (f"POST /v1/check HTTP/1.1\r\nHost: 127.0.0.1:{h.port}\r\n"
+                "Content-Type: application/json\r\n"
+                f"Content-Length: {guard.BODY_CAP}\r\n\r\n").encode()
+        t0 = time.monotonic()
+        with socket.create_connection(("127.0.0.1", h.port), timeout=5) as s:
+            s.sendall(head)
+            try:
+                while time.monotonic() - t0 < 6:
+                    s.sendall(b"a")
+                    time.sleep(0.3)
+            except OSError:
+                pass
+        assert time.monotonic() - t0 < 3.5

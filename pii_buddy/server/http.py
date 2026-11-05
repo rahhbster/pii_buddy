@@ -28,6 +28,9 @@ MAX_LINE = 8192 + 256
 MAX_HEAD_BYTES = 64 * 1024
 DRAIN_BYTES = 256 * 1024
 DRAIN_SECONDS = 0.5
+# Total cap on draining a rejected upload: loopback moves BODY_CAP in
+# milliseconds, and a trickling peer must not keep the slot for the body deadline.
+REJECT_DRAIN_SECONDS = 1.0
 
 _METHOD_OK = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _VERSIONS = ("HTTP/1.0", "HTTP/1.1")
@@ -218,8 +221,8 @@ class _Handler(socketserver.BaseRequestHandler):
 
         Closing with unread input sends a RST, which can destroy the response
         before the peer reads it.  An uploader that writes its whole declared
-        body before reading (http.client does) is drained up to the cap within
-        the body deadline; anything else gets the short drain.
+        body before reading (http.client does) is drained up to the cap for at most
+        REJECT_DRAIN_SECONDS; anything else gets the short drain.
         """
         try:
             self.request.shutdown(socket.SHUT_WR)
@@ -227,7 +230,7 @@ class _Handler(socketserver.BaseRequestHandler):
             if self._declared is not None:
                 left = min(self._declared, guard.BODY_CAP) - len(self._buf)
             if left > 0:
-                end = self._deadline
+                end = min(self._deadline, time.monotonic() + REJECT_DRAIN_SECONDS)
             else:
                 end = time.monotonic() + DRAIN_SECONDS
                 left = DRAIN_BYTES
