@@ -709,8 +709,11 @@ def _failure(route, rid, diag):
 
 
 def failure(route, request_id, code, *, exc_type=None):
-    """Fixed response for a failure outside ``handle``, such as a killed worker."""
-    return _failure(route, _clean_rid(request_id), Diag(code, exc_type))
+    """Fixed response for a failure outside ``handle``, such as a killed worker.
+    ``exc_type`` may have come back from a worker, so it is sanitized too."""
+    if not (type(code) is str and code in _STATUS):
+        code = "internal_error"
+    return _failure(route, _clean_rid(request_id), Diag(code, _safe_name(exc_type)))
 
 
 def _encode(out):
