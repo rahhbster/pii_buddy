@@ -4,6 +4,10 @@ tests/data/validation_frozen.json holds the validated entity list (text,
 label, start, end, confidence) of every document in tests/_validation_corpus,
 generated once from main's validation.py. A missing file is a failure, not a
 skip: without it this test would pass vacuously.
+
+Regenerated on fix/audit-mapping-corruption: name candidates no longer cross
+a newline and take non-ASCII letters, so 21 rows gained 54 entities. Every
+entity main produced is still present, unchanged.
 """
 
 import json

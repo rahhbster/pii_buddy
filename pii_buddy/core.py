@@ -30,7 +30,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from . import audit as _audit
 from . import detector
-from .redactor import redact
+from .redactor import TAG_RE, redact
 
 MAX_TEXT_CHARS = 50_000
 MAX_RESTORE_TEXT_CHARS = 4 * MAX_TEXT_CHARS
@@ -61,10 +61,6 @@ _CODE_NAMES = {
 # A wrapped exception's class name reaches logs, so it is bounded and ASCII.
 _EXC_TYPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 _EXC_TYPE_FALLBACK = "Exception"
-
-# Bounded and '<'-free inside NAME tags so scanning stays linear and a tag
-# can never swallow a following one.
-TAG_RE = re.compile(r"<<[A-Za-z0-9_]{1,100}_\d{1,9}>>|<NAME [^<>\r\n]{1,100}>")
 
 
 class CoreError(ValueError):

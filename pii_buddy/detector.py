@@ -7,7 +7,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 
-from .validation import validate_entities
+from .validation import UPPER_CLASS, validate_entities
 
 
 @dataclass
@@ -532,22 +532,45 @@ def _subtract_spans(start: int, end: int, spans: list[tuple[int, int]]) -> list[
     return pieces
 
 
+# One line only: "\s" would join a name to the ALLCAPS title below it, and the
+# candidate would then be rejected for its newline. Words take any uppercase
+# letter plus inner ' ’ - ("JOSÉ", "O'BRIEN", "ANNE-MARIE"); a one-letter word
+# ("PÁDRAIG Ó SÚILLEABHÁIN") is allowed between longer ones.
+_ALLCAPS_WORD = rf"{UPPER_CLASS}(?:{UPPER_CLASS}|['’-](?={UPPER_CLASS}))*"
+_ALLCAPS_LINE_RE = re.compile(
+    rf"^({_ALLCAPS_WORD}(?:[^\S\n]+{_ALLCAPS_WORD}){{0,3}})[^\S\n]*$", re.MULTILINE
+)
+
+
 def _detect_allcaps_names(text: str) -> list[PIIEntity]:
     """Detect ALL CAPS names in resume headers."""
     entities = []
     header = text[:500]
-    for match in re.finditer(r"^([A-Z][A-Z]+(?:\s+[A-Z][A-Z]+){0,3})\s*$", header, re.MULTILINE):
+    for match in _ALLCAPS_LINE_RE.finditer(header):
         name = match.group(1)
         words = name.split()
-        if len(words) >= 2 and all(w.isalpha() for w in words):
+        if len(words) >= 2 and sum(len(w) >= 2 for w in words) >= 2:
             entities.append(PIIEntity(
                 text=name.title(),
                 label="PERSON",
-                start=match.start(),
-                end=match.end(),
+                start=match.start(1),
+                end=match.end(1),
                 confidence=0.9,
             ))
     return entities
+
+
+def _line_spans(start: int, end: int, text: str) -> list[tuple[int, int]]:
+    """Split [start, end) at newlines: a name never spans two lines."""
+    spans = []
+    pos = start
+    while True:
+        nl = text.find("\n", pos, end)
+        if nl == -1:
+            spans.append((pos, end))
+            return spans
+        spans.append((pos, nl))
+        pos = nl + 1
 
 
 def _detect_header_names(text: str) -> list[PIIEntity]:
@@ -796,7 +819,9 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
         if ent.label_ == "PERSON":
             # spaCy often fuses a name with an adjacent email/phone; keep the
             # name text and let the regex hit stand as its own entity.
-            for s, e in pieces:
+            # A multi-line entity ("JAMES WHITFIELD\nSOFTWARE") is judged
+            # line by line instead of being rejected for its newline.
+            for s, e in (ln for p in pieces for ln in _line_spans(*p, text)):
                 raw = text[s:e]
                 piece = raw.strip(" \t\r\n|,;:-")
                 if not piece or not _basic_person_check(piece):
@@ -842,6 +867,12 @@ def detect_pii(text: str, doc_type: str = "auto") -> list[PIIEntity]:
 
     # --- Pass 2: Validation ---
     validated = validate_entities(all_candidates, text, doc, doc_type)
+
+    # ALLCAPS candidates are scored as Title Case; the mapping must hold the
+    # characters actually replaced, or restore changes the document.
+    for e in validated:
+        if e.label == "PERSON":
+            e.text = text[e.start:e.end]
 
     # --- Deduplicate overlapping entities ---
     # "@jane@host.tld" is an address, not a handle followed by a stray host.

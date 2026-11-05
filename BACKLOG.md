@@ -9,6 +9,15 @@ list) is `docs/design/local-api-mcp-build-spec.md` there (private PR #5, MERGED 
 
 ## Next
 
+**First: `fix/audit-mapping-corruption` (pushed 2026-11-04, no PR yet).** Fixes the
+audit pass corrupting mappings, ALLCAPS name-over-title leaks and ASCII-only name
+patterns. Needs an independent red team of its exact head, then a PR (owner merges).
+Re-check with `git log -1 origin/fix/audit-mapping-corruption`. Proof scripts live in
+`/private/tmp/claude-502/scratch_audit/` (not in the repo; may be gone):
+`compare.py` (coverage diff vs main), `audit_neutral.py`, `mutate.py`, `recall.py`.
+`tests/data/validation_frozen.json` was regenerated on purpose (21 rows, 54 entities
+added, none removed). Then continue with PR 3 below.
+
 **Build PR 3 of 5 of the local API/MCP server: the HTTP layer.**
 
 State: public `main` = 9e50c12 before #27 (this file) merges (CI green on that commit);
@@ -195,6 +204,22 @@ do not delete any remote branch without asking.
   already-redacted shards and checking the attestation. Would change my mind: NEAR
   retention terms are unacceptable, or shard accuracy on its models is below Groq's.
 
+- **Audit substitution: substring (kept) vs word boundary (reviewer's suggestion).**
+  `fix/audit-mapping-corruption` keeps main's case-insensitive substring match, now
+  outside existing tags and with one exact-value tag per distinct matched text, so
+  restore is exact but "Li" still tags the "li" in "reliable". Word boundaries were
+  measured: 39 characters main hid (7 docs, all inside ordinary words) became visible,
+  which breaks the never-shrink rule. Would change my mind: the owner accepts that
+  shrink for readability.
+- **Partial mentions restore as the full name** ("Mr. Johnson" comes back as "Mr.
+  Steve Johnson"): redactor design (one canonical value per person tag, see
+  `test_partial_name_mention_restores_as_full_name`). Exact restore would need a tag
+  per surface form. Not changed.
+- **ALLCAPS accented names can still score 0.55 < 0.6** ("SIOBHÁN O’CONNOR",
+  "GÜNTHER LEFÈVRE"): spaCy tags the tokens NN/VB/RB, so the POS penalty applies.
+  Needs a validation scoring change (guarded by the frozen differential). 5 of 300
+  names in the new corpus still leak for this reason.
+
 ### App Store track: free sandbox smoke test
 
 Independent of PR 3. Do it before any Apple spend. Needs a real Mac and
@@ -283,6 +308,10 @@ Never retry these blind.
 - **Word-boundary / CamelCase name sweep in the redactor.** Two rejections (crashed on
   `ſam`/`İlker`, leaked glued names like `annlee`, `DrLee`, `jsmith`, slower). Back to
   `main`'s case-insensitive substring sweep (over-redacts `Annual`; fail closed).
+- **One left-to-right tiling of audit phrases, or non-overlapping occurrence search.**
+  Once the first pass tags more, the tiling shifts and leaves a word of a longer run
+  visible ("Lunch", "Uma"); `finditer` also skips overlapping hits ("Ann Testperson"
+  x3). Use every phrase window plus lookahead occurrences (`audit._covered_runs`).
 - **`except BaseException` in `protocol.handle()`.** Swallowed
   `BaseExceptionGroup([KeyboardInterrupt()])`, `CancelledError`, GreenletExit-like
   exceptions. Use `except Exception`; interrupts propagate by design.
