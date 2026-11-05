@@ -61,38 +61,37 @@ _BESIDE_TAG_RES = (
     re.compile(rf"<NAME [^<>\r\n]+>[^\S\n]+({_NAME_WORD}){_WORD_END}"),
 )
 _HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "professor", "rev",
-               "judge", "hon", "sir", "dame", "lord", "lady"}
+               "hon", "sir", "dame"}
 
 # Capitalized only because they open a sentence or a greeting; as a lone
 # neighbour of a tag they are not the other half of a name, and the substring
-# sweep would otherwise spread them ("whenever", "ours").
+# sweep would otherwise spread them ("whenever", "ours"). Fail closed: any word
+# that is also a plausible given name or surname (April, May, June, Jan, March,
+# Per, Even, Ask, Sun, Best, Senior, Head, Judge, ...) stays OUT of this list.
 _COMMON_WORDS = _HONORIFICS | {
     # greetings and sign-offs
     "hi", "hello", "hey", "dear", "thanks", "thank", "regards", "cheers",
-    "welcome", "congrats", "congratulations", "best", "sincerely", "attn",
-    # weekdays and months
+    "welcome", "congrats", "congratulations", "sincerely", "attn",
+    # weekdays and the months that are not names
     "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
-    "january", "february", "march", "april", "may", "june", "july", "august",
-    "september", "october", "november", "december",
-    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct",
-    "nov", "dec",
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri",
+    "january", "february", "september", "october", "november", "december",
+    "feb", "sept", "oct", "nov",
     # function words
     "the", "and", "but", "nor", "for", "yet", "our", "ours", "your", "yours",
     "his", "her", "hers", "its", "their", "theirs", "she", "they", "them",
     "you", "who", "whom", "whose", "what", "when", "where", "while", "why",
     "how", "which", "that", "this", "these", "those", "then", "than", "there",
     "here", "with", "without", "from", "into", "onto", "over", "under", "about",
-    "after", "before", "since", "until", "during", "per", "via", "also", "both",
+    "after", "before", "since", "until", "during", "via", "also", "both",
     "each", "every", "all", "any", "some", "many", "most", "much", "only",
-    "even", "just", "later", "again", "once", "today", "tomorrow", "yesterday",
+    "just", "later", "again", "once", "today", "tomorrow", "yesterday",
     "tonight", "please", "contact", "meet", "met", "call", "called", "email",
-    "ask", "see", "cc", "fwd",
-    # seniority and job level
-    "senior", "junior", "lead", "principal", "staff", "chief", "head",
+    "see", "fwd",
+    # job titles (no seniority words: Senior, Junior, Chief, Head are surnames)
     "associate", "assistant", "intern", "manager", "director", "president",
     "engineer", "analyst", "developer", "consultant", "officer", "executive",
-    "team", "new", "former", "acting", "interim",
+    "team", "former", "acting", "interim",
 }
 
 # Existing tag patterns (to skip already-tagged text)

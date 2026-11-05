@@ -317,8 +317,8 @@ def test_corpus_recall_floor():
     ("Thanks Priya Sharma for the update, many thanks. Our Daniel Foster "
      "review is ours.", ["Priya", "Sharma", "Daniel", "Foster"],
      ["Thanks", "thanks", "Our", "ours"]),
-    ("Senior Maya Patel led it; seniority matters.", ["Maya", "Patel"],
-     ["Senior", "seniority"]),
+    ("Manager Maya Patel led it; management matters.", ["Maya", "Patel"],
+     ["Manager", "management"]),
     ("On Monday Liam Brooks called, as on most Mondays.", ["Liam", "Brooks"],
      ["Monday", "Mondays"]),
     # Not "Dear Ines Okafor": main's three-word phrase rule tags "Dear" too,
@@ -336,9 +336,9 @@ def test_common_word_beside_a_name_stays_visible(text, names, common):
 
 def test_beside_tag_still_catches_a_real_first_name():
     mapping = {"tags": {"<NAME KS>": "Kira Smith"}, "persons": {}}
-    patched, _ = audit_redacted("Senior <NAME KS> left; Uma <NAME KS> stayed.", mapping)
+    patched, _ = audit_redacted("Thanks, Manager <NAME KS> left; Uma <NAME KS> stayed.", mapping)
     assert "Uma" not in patched
-    assert _word_present("Senior", patched)
+    assert _word_present("Manager", patched)
 
 
 def test_substring_fragments_do_not_enter_persons():
@@ -372,3 +372,27 @@ def test_audit_scales_linearly_in_tags():
     elapsed, (patched, _) = cpu_time(run, _audit_doc(small * 4))
     assert elapsed < BACKSTOP_S
     assert "Mr. Ng" not in patched
+
+
+# Red-team round 2: a stoplist word that is also a name must stay redacted.
+_NAME_LIKE = ["April", "May", "June", "August", "Will", "Mark", "Grace", "Rose",
+              "Frank", "Hope", "March", "Jan", "Jun", "Senior", "Junior", "Per",
+              "Even", "Ask", "Sun", "Sat", "Best", "Chief", "Head", "Judge", "Lady"]
+
+
+@pytest.mark.parametrize("word", _NAME_LIKE)
+@pytest.mark.parametrize("shape", ["{w} <NAME KS> joined today.",
+                                   "Notes: <NAME KS> {w} joined today."])
+def test_name_like_word_beside_a_tag_is_redacted(word, shape):
+    mapping = {"tags": {"<NAME KS>": "Kira Smith"}, "persons": {}}
+    text = shape.format(w=word)
+    patched, updated = audit_redacted(text, mapping)
+    assert not _word_present(word, patched)
+    assert core.restore_text(patched, updated["tags"]) == core.restore_text(text, mapping["tags"])
+
+
+@pytest.mark.parametrize("word", ["When", "Thanks", "Our", "Monday", "Hello", "Dear"])
+def test_non_name_word_beside_a_tag_stays_visible(word):
+    mapping = {"tags": {"<NAME KS>": "Kira Smith"}, "persons": {}}
+    patched, _ = audit_redacted(f"Notes, {word} <NAME KS> joined.", mapping)
+    assert _word_present(word, patched)
