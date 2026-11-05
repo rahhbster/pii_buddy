@@ -22,6 +22,7 @@ import time
 from . import guard, protocol
 
 READ_TIMEOUT = guard.READ_TIMEOUT
+HEAD_TIMEOUT = 2
 MAX_CONNECTIONS = 64
 MAX_LINE = 8192 + 256
 MAX_HEAD_BYTES = 64 * 1024
@@ -86,6 +87,32 @@ def _json_error(request_id, code):
     ).encode("ascii")
 
 
+def _new_request_id():
+    return "r_" + secrets.token_hex(8)
+
+
+def _raw_response(status, body, headers=()):
+    head = [f"HTTP/1.0 {status} {_REASONS.get(status, 'Status')}"]
+    for k, v in headers:
+        head.append(f"{k}: {v}")
+    head.append(f"Content-Length: {len(body)}")
+    head.append("Connection: close")
+    return ("\r\n".join(head) + "\r\n\r\n").encode("ascii") + body
+
+
+def _error_headers(code):
+    extra = (("Retry-After", "1"),) if code == "busy" else ()
+    return tuple(protocol.HEADERS) + extra
+
+
+def _declared_length(headers):
+    """The Content-Length the guard would accept, else None."""
+    values = [v for k, v in headers if k.lower() == "content-length"]
+    if len(values) != 1 or not guard._CONTENT_LENGTH.fullmatch(values[0]):
+        return None
+    return int(values[0])
+
+
 class _Handler(socketserver.BaseRequestHandler):
 
     # ---------------------------------------------------------------- reading
@@ -104,6 +131,8 @@ class _Handler(socketserver.BaseRequestHandler):
             return self.request.recv(65536)
         except (socket.timeout, TimeoutError):
             raise _Reject(408, "request_timeout")
+        except OSError:
+            raise _Reject(400, "bad_request")
 
     def _readline(self, limit, too_long):
         while True:
@@ -172,31 +201,40 @@ class _Handler(socketserver.BaseRequestHandler):
 
     # ---------------------------------------------------------------- writing
 
-    def _send(self, status, body, headers=(), *, extra=()):
-        head = [f"HTTP/1.0 {status} {_REASONS.get(status, 'Status')}"]
-        for k, v in tuple(headers) + tuple(extra):
-            head.append(f"{k}: {v}")
-        head.append(f"Content-Length: {len(body)}")
-        head.append("Connection: close")
-        raw = ("\r\n".join(head) + "\r\n\r\n").encode("ascii") + body
-        self.request.settimeout(READ_TIMEOUT)
+    def _send(self, status, body, headers=()):
+        """Return False if the peer did not take the whole response."""
+        self.request.settimeout(self.server.send_timeout)
         try:
-            self.request.sendall(raw)
+            self.request.sendall(_raw_response(status, body, headers))
         except OSError:
-            pass
+            return False
+        return True
 
     def _send_error(self, status, code, request_id):
-        extra = (("Retry-After", "1"),) if code == "busy" else ()
-        self._send(status, _json_error(request_id, code), protocol.HEADERS, extra=extra)
+        return self._send(status, _json_error(request_id, code), _error_headers(code))
 
     def _drain_and_close(self):
-        """Let the peer read our answer even if we left its body unread."""
+        """Let the peer read our answer even if we left its body unread.
+
+        Closing with unread input sends a RST, which can destroy the response
+        before the peer reads it.  An uploader that writes its whole declared
+        body before reading (http.client does) is drained up to the cap within
+        the body deadline; anything else gets the short drain.
+        """
         try:
             self.request.shutdown(socket.SHUT_WR)
-            end = time.monotonic() + DRAIN_SECONDS
-            left = DRAIN_BYTES
+            left = 0
+            if self._declared is not None:
+                left = min(self._declared, guard.BODY_CAP) - len(self._buf)
+            if left > 0:
+                end = self._deadline
+            else:
+                end = time.monotonic() + DRAIN_SECONDS
+                left = DRAIN_BYTES
             while left > 0 and time.monotonic() < end:
-                self.request.settimeout(max(0.01, end - time.monotonic()))
+                # A stalled peer is dropped after DRAIN_SECONDS of silence.
+                self.request.settimeout(
+                    max(0.01, min(DRAIN_SECONDS, end - time.monotonic())))
                 chunk = self.request.recv(min(left, 65536))
                 if not chunk:
                     break
@@ -222,53 +260,61 @@ class _Handler(socketserver.BaseRequestHandler):
 
     def handle(self):
         started = time.monotonic()
-        self._deadline = started + self.server.read_timeout
+        # Unauthenticated peers can hold a connection only for the short head
+        # deadline; the longer read_timeout starts once the headers are in.
+        self._deadline = started + self.server.head_timeout
         self._buf = bytearray()
-        request_id = "r_" + secrets.token_hex(8)
+        self._declared = None
+        request_id = _new_request_id()
         route, status, bytes_in = None, 500, 0
         error = exc_type = where = entity_count = None
+        sent = True
         try:
             try:
                 method, target = self._read_request_line()
                 headers = self._read_headers()
+                self._deadline = time.monotonic() + self.server.read_timeout
+                self._declared = _declared_length(headers)
                 decision = guard.check_request(
                     method, target, headers,
                     expected_ports=(self.server.port,), token=self.server.token)
                 if not decision.allowed:
                     raise _Reject(decision.status, decision.code)
                 route = decision.route
-                is_post = method == "POST"
-                if is_post and not self.server.slots.acquire(blocking=False):
-                    raise _Reject(503, "busy")
-                try:
-                    body = None
-                    if is_post:
-                        length = int(next(v for k, v in headers
-                                          if k.lower() == "content-length"))
-                        body = self._read_body(length)
-                        bytes_in = length
-                    response = self._dispatch(route, body, request_id)
-                finally:
-                    if is_post:
+                if method == "POST":
+                    # The body is read before taking a slot so a slow uploader
+                    # cannot hold one of the MAX_INFLIGHT workers idle.
+                    body = self._read_body(self._declared)
+                    bytes_in = self._declared
+                    if not self.server.slots.acquire(blocking=False):
+                        raise _Reject(503, "busy")
+                    try:
+                        response = self._dispatch(route, body, request_id)
+                    finally:
                         self.server.slots.release()
+                else:
+                    response = self._dispatch(route, None, request_id)
                 status = response.status
                 entity_count = response.entity_count
                 if response.diag is not None:
                     error = response.diag.code
                     exc_type = response.diag.exc_type
                     where = response.diag.where
-                self._send(response.status, response.body, response.headers)
+                sent = self._send(response.status, response.body, response.headers)
             except _Reject as r:
                 status, error = r.status, r.code
-                self._send_error(r.status, r.code, request_id)
+                sent = self._send_error(r.status, r.code, request_id)
         except BaseException as exc:  # noqa: BLE001 - see _dispatch
             status, error, exc_type = 500, "internal_error", _class_name(exc)
-            self._send_error(500, "internal_error", request_id)
+            sent = self._send_error(500, "internal_error", request_id)
         finally:
-            self._log(request_id, route, status, started, bytes_in,
-                      entity_count=entity_count, error=error,
-                      exc_type=exc_type, where=where)
-            self._drain_and_close()
+            try:
+                self._log(request_id, route, status, started, bytes_in,
+                          entity_count=entity_count,
+                          error=error if sent else "send_failed",
+                          exc_type=exc_type, where=where)
+            finally:
+                self._drain_and_close()
 
     def _dispatch(self, route, body, request_id):
         """Run the injected dispatch; anything but a Response is a fixed 500.
@@ -295,11 +341,14 @@ class LocalServer(socketserver.ThreadingTCPServer):
     request_queue_size = 16
 
     def __init__(self, dispatch, token, *, port=0, logger=None,
-                 read_timeout=READ_TIMEOUT, max_connections=MAX_CONNECTIONS):
+                 read_timeout=READ_TIMEOUT, head_timeout=HEAD_TIMEOUT,
+                 send_timeout=READ_TIMEOUT, max_connections=MAX_CONNECTIONS):
         self.dispatch = dispatch
         self.token = token
         self.logger = logger or _NULL_LOGGER
         self.read_timeout = read_timeout
+        self.head_timeout = head_timeout
+        self.send_timeout = send_timeout
         self.slots = threading.BoundedSemaphore(guard.MAX_INFLIGHT)
         self._connections = threading.BoundedSemaphore(max_connections)
         super().__init__(("127.0.0.1", port), _Handler)
@@ -307,6 +356,13 @@ class LocalServer(socketserver.ThreadingTCPServer):
 
     def process_request(self, request, client_address):
         if not self._connections.acquire(blocking=False):
+            # Runs on the accept thread, so the answer must never block it.
+            try:
+                request.setblocking(False)
+                request.send(_raw_response(
+                    503, _json_error(_new_request_id(), "busy"), _error_headers("busy")))
+            except OSError:
+                pass
             self.shutdown_request(request)
             return
         try:
@@ -327,4 +383,10 @@ class LocalServer(socketserver.ThreadingTCPServer):
 
 
 def make_server(dispatch, token, *, port=0, logger=None, **kwargs):
+    """Build a LocalServer bound to 127.0.0.1.
+
+    ``dispatch`` must answer GET /v1/health and GET /v1/usage in-process and
+    never send them to a worker pool: they bypass the MAX_INFLIGHT slots, so
+    they stay answerable while every worker is busy.
+    """
     return LocalServer(dispatch, token, port=port, logger=logger, **kwargs)

@@ -8,6 +8,7 @@ malformed request.  The core is the deterministic stand-in from
 import json
 import logging
 import socket
+import struct
 import threading
 import time
 
@@ -73,10 +74,53 @@ def error_of(body):
     return json.loads(body)["error"]
 
 
+def connect(port, timeout=5):
+    return socket.create_connection(("127.0.0.1", port), timeout=timeout)
+
+
+def read_all(s):
+    chunks = []
+    try:
+        while True:
+            c = s.recv(65536)
+            if not c:
+                break
+            chunks.append(c)
+    except (socket.timeout, ConnectionResetError):
+        pass
+    return parse_response(b"".join(chunks))
+
+
+def reset(s):
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+    s.close()
+
+
+def post_head(port, length, *, auth=True):
+    lines = [f"POST /v1/check HTTP/1.1", f"Host: 127.0.0.1:{port}"]
+    if auth:
+        lines.append(f"Authorization: Bearer {TOKEN}")
+    lines += ["Content-Type: application/json", f"Content-Length: {length}"]
+    return ("\r\n".join(lines) + "\r\n\r\n").encode()
+
+
+def health_req(port):
+    return f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode()
+
+
+def fields_of(record):
+    """The record's fields with ``ms`` checked and removed; ``fields`` is required."""
+    f = dict(record.fields)
+    ms = f.pop("ms")
+    assert type(ms) is int and 0 <= ms < 60_000
+    return f
+
+
 class Harness:
     def __init__(self, dispatch=None, **kw):
         self.usage = protocol.UsageCounter()
         self.records = []
+        logger = kw.pop("logger", None)
 
         class _H(logging.Handler):
             def emit(_self, record):
@@ -91,11 +135,19 @@ class Harness:
             return protocol.handle(route, body, request_id=request_id, usage=self.usage)
 
         self.server = http.make_server(
-            dispatch or default, TOKEN, logger=self.logger, **kw)
+            dispatch or default, TOKEN, logger=logger or self.logger, **kw)
         self.port = self.server.port
         self.client = Client(self.port)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(
+            target=self.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
         self.thread.start()
+
+    def wait_records(self, n, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        while len(self.records) < n and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert len(self.records) >= n, self.records
+        return self.records
 
     def close(self):
         self.server.shutdown()
@@ -251,38 +303,74 @@ class TestHostOriginFetch:
 
 
 class TestRequestLine:
-    @pytest.mark.parametrize("line", [
-        "GET /v1/health",
-        "GET /v1/health HTTP/0.9",
-        "GET  /v1/health HTTP/1.1",
-        "GET /v1/health  HTTP/1.1",
-        "GET /v1/health HTTP/1.1 extra",
-        "GET //v1/health HTTP/1.1",
-        "GET http://127.0.0.1:{p}/v1/health HTTP/1.1",
-        "GET /v1/%68ealth HTTP/1.1",
-        "GET /v1/./health HTTP/1.1",
-        "GET /v1/health#x HTTP/1.1",
-        "GET \\v1\\health HTTP/1.1",
-        "get /v1/health HTTP/1.1",
-        "GET /v1/health http/1.1",
-        "GET /v1/health HTTP/1.1\x00",
-        "* * HTTP/1.1",
-        "GET * HTTP/1.1",
-        "CONNECT 127.0.0.1:{p} HTTP/1.1",
+    @pytest.mark.parametrize("line, status, code", [
+        ("GET /v1/health", 400, "bad_request"),
+        ("GET /v1/health HTTP/0.9", 505, "version_not_supported"),
+        ("GET  /v1/health HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/health  HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/health HTTP/1.1 extra", 400, "bad_request"),
+        ("GET //v1/health HTTP/1.1", 400, "bad_request"),
+        ("GET http://127.0.0.1:{p}/v1/health HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/%68ealth HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/./health HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/health#x HTTP/1.1", 400, "bad_request"),
+        ("GET \\v1\\health HTTP/1.1", 400, "bad_request"),
+        ("get /v1/health HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/health http/1.1", 400, "bad_request"),
+        ("GET /v1/health HTTP/1.1\x00", 400, "bad_request"),
+        ("GET /v1/health\x7f HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/health HTTP/1.1\t", 400, "bad_request"),
+        ("GET /v1/health HTTP/1.1\x7f", 400, "bad_request"),
+        (" /v1/health HTTP/1.1", 400, "bad_request"),
+        ("GET /v1/h\xe9alth HTTP/1.1", 400, "bad_request"),
+        ("G\xc9T /v1/health HTTP/1.1", 400, "bad_request"),
+        ("GETGETGETGETGETGE /v1/health HTTP/1.1", 400, "bad_request"),
+        ("* * HTTP/1.1", 400, "bad_request"),
+        ("GET * HTTP/1.1", 400, "bad_request"),
+        ("CONNECT 127.0.0.1:{p} HTTP/1.1", 405, "method_not_allowed"),
     ])
-    def test_malformed_or_ambiguous_lines_never_succeed(self, harness, line):
+    def test_malformed_or_ambiguous_lines_never_succeed(self, harness, line, status, code):
         line = line.format(p=harness.port)
         data = (line + f"\r\nHost: 127.0.0.1:{harness.port}\r\n\r\n").encode("latin-1")
         s, _, b = harness.client.send(data)
-        assert s in (400, 405, 414, 505), (line, s)
-        assert s is not None
+        assert (s, error_of(b)) == (status, code), line
+
+    def test_sixteen_letter_method_is_parsed_then_405(self, harness):
+        s, _, b = harness.client.send(
+            f"GETGETGETGETGETG /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}\r\n\r\n".encode())
+        assert (s, error_of(b)) == (405, "method_not_allowed")
 
     def test_http2_preface_and_unsupported_versions(self, harness):
-        s, _, _ = harness.client.send(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-        assert s in (400, 505)
-        s, _, _ = harness.client.send(
+        s, _, b = harness.client.send(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        assert (s, error_of(b)) == (505, "version_not_supported")
+        s, _, b = harness.client.send(
             f"GET /v1/health HTTP/2.0\r\nHost: 127.0.0.1:{harness.port}\r\n\r\n".encode())
-        assert s in (400, 505)
+        assert (s, error_of(b)) == (505, "version_not_supported")
+
+    def test_empty_request_line_is_400(self, harness):
+        s, _, b = harness.client.send(b"\r\n\r\n")
+        assert (s, error_of(b)) == (400, "bad_request")
+
+    def test_stream_without_any_newline_is_bounded_and_rejected(self, make):
+        h = make(head_timeout=0.3)
+        t0 = time.monotonic()
+        s, _, b = h.client.send(b"A" * 100_000)
+        assert (s, error_of(b)) == (414, "uri_too_long")
+        s, _, b = h.client.send(b"\x00" * 1000)
+        assert (s, error_of(b)) == (408, "request_timeout")
+        assert time.monotonic() - t0 < 2.5
+
+    def test_request_line_at_the_limit_is_parsed(self, harness):
+        # One byte under the line cap: parsed, then refused by the guard's target cap.
+        target = "/" + "a" * (guard.MAX_TARGET + 64 - 2 - len("GET  HTTP/1.1") - 1)
+        line = f"GET {target} HTTP/1.1"
+        assert len(line) + 2 == guard.MAX_TARGET + 64
+        s, _, b = harness.client.send(
+            (line + f"\r\nHost: 127.0.0.1:{harness.port}\r\n\r\n").encode())
+        assert (s, error_of(b)) == (400, "bad_request")
+        s, _, b = harness.client.send(
+            (line + f"a\r\nHost: 127.0.0.1:{harness.port}\r\n\r\n").encode())
+        assert (s, error_of(b)) == (414, "uri_too_long")
 
     def test_bare_lf_line_endings_are_rejected(self, harness):
         s, _, _ = harness.client.send(
@@ -290,8 +378,8 @@ class TestRequestLine:
         assert s == 400
 
     def test_overlong_request_line_is_rejected_and_server_survives(self, harness):
-        s, _, _ = harness.client.send(b"GET /" + b"a" * 100_000 + b" HTTP/1.1\r\n\r\n")
-        assert s in (400, 414)
+        s, _, b = harness.client.send(b"GET /" + b"a" * 100_000 + b" HTTP/1.1\r\n\r\n")
+        assert (s, error_of(b)) == (414, "uri_too_long")
         assert harness.client.req("GET", "/v1/health", auth=False)[0] == 200
 
     def test_error_bodies_never_echo_the_request(self, harness):
@@ -318,12 +406,43 @@ class TestHeaders:
         hdrs = "".join(f"X-{i}: v\r\n" for i in range(guard.MAX_HEADERS + 5))
         data = (f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}\r\n"
                 f"{hdrs}\r\n").encode()
-        assert harness.client.send(data)[0] in (400, 431)
+        s, _, b = harness.client.send(data)
+        assert (s, error_of(b)) == (431, "headers_too_large")
+
+    def test_exactly_max_headers_is_accepted(self, harness):
+        hdrs = "".join(f"X-{i}: v\r\n" for i in range(guard.MAX_HEADERS - 1))
+        data = (f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}\r\n"
+                f"{hdrs}\r\n").encode()
+        assert harness.client.send(data)[0] == 200
+
+    def test_header_bytes_over_the_total_cap_are_431(self, harness):
+        hdrs = "".join(f"X-{i}: {'v' * 8000}\r\n" for i in range(9))
+        data = (f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}\r\n"
+                f"{hdrs}\r\n").encode()
+        s, _, b = harness.client.send(data)
+        assert (s, error_of(b)) == (431, "headers_too_large")
+
+    def test_header_values_are_trimmed_of_space_and_tab_only(self, harness):
+        data = (f"GET /v1/health HTTP/1.1\r\nHost: \t 127.0.0.1:{harness.port} \t\r\n"
+                "\r\n").encode()
+        assert harness.client.send(data)[0] == 200
+
+    def test_eof_mid_headers_is_400(self, harness):
+        s, _, b = harness.client.send(
+            f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}".encode(),
+            shutdown_write=True)
+        assert (s, error_of(b)) == (400, "bad_request")
+
+    def test_tab_folded_header_is_rejected(self, harness):
+        data = (f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}\r\n"
+                "X-A: one\r\n\ttwo\r\n\r\n").encode()
+        assert harness.client.send(data)[0] == 400
 
     def test_very_long_header_line(self, harness):
         data = (f"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:{harness.port}\r\n"
                 "X-Big: " + "a" * 200_000 + "\r\n\r\n").encode()
-        assert harness.client.send(data)[0] in (400, 431)
+        s, _, b = harness.client.send(data)
+        assert (s, error_of(b)) == (431, "headers_too_large")
         assert harness.client.req("GET", "/v1/health", auth=False)[0] == 200
 
     def test_non_ascii_header_name_is_rejected(self, harness):
@@ -392,6 +511,15 @@ class TestBody:
         s, _, b = harness.client.send(data)
         assert s == 200 and harness.usage.requests_served == 1
 
+    def test_body_split_across_packets_is_read_to_the_last_byte(self, harness):
+        body = json.dumps({"text": "x"}).encode()
+        with connect(harness.port) as s:
+            s.sendall(post_head(harness.port, len(body)) + body[:-1])
+            time.sleep(0.1)
+            s.sendall(body[-1:])
+            st, _, b = read_all(s)
+        assert st == 200 and json.loads(b)["entity_counts"] == {}
+
     def test_bad_json_is_stable_400_without_echo(self, harness):
         s, _, b = harness.client.req("POST", "/v1/check", body=("{" + CANARY).encode())
         assert (s, error_of(b)) == (400, "invalid_json")
@@ -405,17 +533,17 @@ class TestBody:
 
 class TestTimeouts:
     def test_idle_connection_is_closed(self, make):
-        h = make(read_timeout=0.4)
+        h = make(head_timeout=0.4)
         t0 = time.monotonic()
-        with socket.create_connection(("127.0.0.1", h.port), timeout=5) as s:
+        with connect(h.port) as s:
             s.sendall(b"GET /v1/health HTTP/1.1\r\n")
-            raw = s.recv(1024)
-        assert raw.startswith(b"HTTP/1.0 408")
+            st, _, b = read_all(s)
+        assert (st, error_of(b)) == (408, "request_timeout")
         assert time.monotonic() - t0 < 3
         assert h.client.req("GET", "/v1/health", auth=False)[0] == 200
 
     def test_trickling_bytes_cannot_extend_the_deadline(self, make):
-        h = make(read_timeout=0.6)
+        h = make(head_timeout=0.6)
         t0 = time.monotonic()
         with socket.create_connection(("127.0.0.1", h.port), timeout=5) as s:
             try:
@@ -434,9 +562,34 @@ class TestTimeouts:
                 f"Authorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\n"
                 "Content-Length: 20\r\n\r\n").encode()
         t0 = time.monotonic()
-        s, _, _ = h.client.send(head + b'{"te')
-        assert s in (None, 400, 408)
+        s, _, b = h.client.send(head + b'{"te')
+        assert (s, error_of(b)) == (408, "request_timeout")
         assert time.monotonic() - t0 < 3
+
+    def test_body_gets_read_timeout_not_head_timeout(self, make):
+        h = make(head_timeout=0.3, read_timeout=3)
+        body = json.dumps({"text": "x"}).encode()
+        with connect(h.port) as s:
+            s.sendall(post_head(h.port, len(body)))
+            time.sleep(0.6)
+            s.sendall(body)
+            st, _, _ = read_all(s)
+        assert st == 200
+
+    def test_idle_sockets_cannot_lock_out_health_for_long(self, make):
+        h = make(max_connections=8)
+        socks = [connect(h.port) for _ in range(8)]
+        try:
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 6:
+                if h.client.req("GET", "/v1/health", auth=False)[0] == 200:
+                    break
+                time.sleep(0.05)
+            took = time.monotonic() - t0
+        finally:
+            for s in socks:
+                s.close()
+        assert took < 3.0
 
 
 class TestConcurrency:
@@ -471,21 +624,34 @@ class TestConcurrency:
         assert results == [200] * guard.MAX_INFLIGHT
         assert h.client.req("POST", "/v1/check", {"text": "x"})[0] == 200
 
-    def test_connection_cap_drops_extra_connections_and_recovers(self, make):
-        h = make(read_timeout=0.8, max_connections=8)
-        socks = [socket.create_connection(("127.0.0.1", h.port), timeout=5)
-                 for _ in range(8)]
+    def test_slow_uploaders_do_not_hold_inflight_slots(self, make):
+        h = make(read_timeout=3)
+        socks = []
+        try:
+            for _ in range(guard.MAX_INFLIGHT):
+                s = connect(h.port)
+                s.sendall(post_head(h.port, 20) + b'{"te')
+                socks.append(s)
+            time.sleep(0.2)
+            assert h.client.req("POST", "/v1/check", {"text": "x"})[0] == 200
+        finally:
+            for s in socks:
+                s.close()
+
+    def test_connection_cap_answers_busy_and_recovers(self, make):
+        h = make(head_timeout=3, max_connections=8)
+        socks = [connect(h.port) for _ in range(8)]
         try:
             time.sleep(0.2)
-            extra = socket.create_connection(("127.0.0.1", h.port), timeout=5)
-            try:
-                extra.sendall(b"GET /v1/health HTTP/1.1\r\n\r\n")
-                got = extra.recv(1024)
-            except (ConnectionResetError, socket.timeout):
-                got = b""
-            finally:
-                extra.close()
-            assert not got.startswith(b"HTTP/1.0 200")
+            with connect(h.port) as extra:
+                extra.sendall(health_req(h.port))
+                s, hdrs, b = read_all(extra)
+            assert (s, error_of(b)) == (503, "busy")
+            assert hdrs["retry-after"] == "1" and hdrs["connection"] == "close"
+            assert hdrs["content-type"] == "application/json"
+            assert hdrs["content-length"] == str(len(b))
+            assert json.loads(b)["request_id"].startswith("r_")
+            assert h.records == []
         finally:
             for s in socks:
                 s.close()
@@ -511,8 +677,13 @@ class TestFailureHandling:
         assert (s, error_of(b)) == (500, "internal_error")
         assert CANARY.encode() not in b
         assert len(calls) == 1
-        for r in h.records:
-            assert CANARY not in r.getMessage()
+        [r] = h.records
+        assert CANARY not in r.getMessage()
+        assert fields_of(r) == {
+            "request_id": json.loads(b)["request_id"], "route": "POST /v1/check",
+            "status": 500, "bytes_in": len(b'{"text": "x"}'),
+            "error": "internal_error", "exc_type": "RuntimeError"}
+        assert CANARY not in json.dumps(r.fields)
 
     @pytest.mark.parametrize("exc", [SystemExit, KeyboardInterrupt, GeneratorExit])
     def test_base_exception_is_a_fixed_500_and_server_keeps_serving(self, make, exc):
@@ -525,12 +696,64 @@ class TestFailureHandling:
         h = make(boom)
         s, _, b = h.client.req("POST", "/v1/check", {"text": "x"})
         assert (s, error_of(b)) == (500, "internal_error")
+        assert fields_of(h.records[0])["exc_type"] == exc.__name__
         assert h.client.req("GET", "/v1/health", auth=False)[0] == 200
 
-    def test_dispatch_returning_garbage_is_a_fixed_500(self, make):
-        h = make(lambda route, body, rid: "not a Response")
+    def test_unsafe_exception_class_name_is_not_logged(self, make):
+        bad = type("Bad-" + CANARY, (Exception,), {})
+
+        def boom(route, body, request_id):
+            raise bad()
+
+        h = make(boom)
+        assert h.client.req("POST", "/v1/check", {"text": "x"})[0] == 500
+        assert fields_of(h.records[0])["exc_type"] == "Exception"
+
+    @pytest.mark.parametrize("garbage", [
+        "not a Response",
+        type("Response", (protocol.Response,), {})(200, b"{}"),
+    ])
+    def test_dispatch_returning_garbage_is_a_fixed_500(self, make, garbage):
+        h = make(lambda route, body, rid: garbage)
         s, _, b = h.client.req("POST", "/v1/check", {"text": "x"})
         assert (s, error_of(b)) == (500, "internal_error")
+        [r] = h.records
+        assert fields_of(r)["exc_type"] == "TypeError"
+        assert fields_of(r)["error"] == "internal_error"
+
+    def test_get_dispatch_gets_no_body_and_post_gets_exact_bytes(self, make):
+        seen = []
+
+        def record(route, body, request_id):
+            seen.append((route, body, request_id))
+            return protocol.handle(route, body, request_id=request_id,
+                                   usage=protocol.UsageCounter())
+
+        h = make(record)
+        h.client.req("GET", "/v1/health", auth=False)
+        _, _, b = h.client.req("POST", "/v1/check", {"text": "x"})
+        assert [(r, body) for r, body, _ in seen] == [
+            ("GET /v1/health", None), ("POST /v1/check", b'{"text": "x"}')]
+        assert [i for _, _, i in seen] == [f["request_id"] for f in map(fields_of, h.records)]
+
+    def test_thread_start_failure_does_not_leak_a_slot_or_print(self, make, monkeypatch, capfd):
+        h = make(max_connections=1)
+        orig = threading.Thread.start
+        failed = []
+
+        def start(t):
+            if not failed and t._target == h.server.process_request_thread:
+                failed.append(1)
+                raise RuntimeError("can't start new thread " + CANARY)
+            return orig(t)
+
+        monkeypatch.setattr(threading.Thread, "start", start)
+        assert h.client.send(health_req(h.port))[0] is None
+        assert failed == [1]
+        assert h.client.send(health_req(h.port))[0] == 200
+        assert h.client.send(health_req(h.port))[0] == 200
+        out, err = capfd.readouterr()
+        assert (out, err) == ("", "")
 
     def test_garbage_bytes_do_not_kill_the_server(self, harness):
         import os
@@ -543,22 +766,143 @@ class TestLoggingAndBinding:
     def test_binds_loopback_only(self, harness):
         assert harness.server.server_address[0] == "127.0.0.1"
 
-    def test_log_has_only_allowed_fields_and_never_text_or_token(self, harness):
-        harness.client.req("POST", "/v1/redact", {"text": "mail a@b.c " + CANARY})
-        harness.client.req("GET", "/v1/usage", headers=[("X-Canary", CANARY)])
-        harness.client.req("POST", "/v1/check", auth=False, body=("{" + CANARY).encode())
-        harness.client.send(f"GET /{CANARY} HTTP/1.1\r\n\r\n".encode())
-        assert harness.records
-        allowed = {"request_id", "route", "status", "ms", "bytes_in",
-                   "entity_count", "error", "exc_type", "where"}
-        for r in harness.records:
-            text = r.getMessage() + " " + json.dumps(getattr(r, "fields", {}), default=str)
+    def test_log_fields_are_exact_and_never_carry_text_or_token(self, harness):
+        c = harness.client
+        redact = json.dumps({"text": "mail a@b.c " + CANARY}).encode()
+        _, _, b_redact = c.req("POST", "/v1/redact", body=redact)
+        c.req("GET", "/v1/usage", headers=[("X-Canary", CANARY)])
+        _, _, b_401 = c.req("POST", "/v1/check", auth=False, body=("{" + CANARY).encode())
+        bad_json = ("{" + CANARY).encode()
+        _, _, b_json = c.req("POST", "/v1/check", body=bad_json)
+        _, _, b_host = c.send(f"GET /{CANARY} HTTP/1.1\r\n\r\n".encode())
+        c.req("GET", "/v1/health", auth=False)
+        recs = harness.records
+        assert len(recs) == 6
+        got = [fields_of(r) for r in recs]
+        rid = [g.pop("request_id") for g in got]
+        assert all(i.startswith("r_") and len(i) == 18 for i in rid)
+        assert len(set(rid)) == 6
+        assert rid[2] == json.loads(b_401)["request_id"]
+        assert rid[3] == json.loads(b_json)["request_id"]
+        assert rid[4] == json.loads(b_host)["request_id"]
+        assert got == [
+            {"route": "POST /v1/redact", "status": 200, "bytes_in": len(redact),
+             "entity_count": 1},
+            {"route": "GET /v1/usage", "status": 200, "bytes_in": 0},
+            {"status": 401, "bytes_in": 0, "error": "invalid_api_key"},
+            {"route": "POST /v1/check", "status": 400, "bytes_in": len(bad_json),
+             "error": "invalid_json"},
+            {"status": 421, "bytes_in": 0, "error": "bad_host"},
+            {"route": "GET /v1/health", "status": 200, "bytes_in": 0},
+        ]
+        for r in recs:
+            text = r.getMessage() + " " + json.dumps(r.fields)
             assert CANARY not in text and CANARY.lower() not in text.lower()
             assert TOKEN not in text
-            assert r.exc_info is None
-            assert set(getattr(r, "fields", {})) <= allowed
-        ids = [r.fields["request_id"] for r in harness.records if hasattr(r, "fields")]
-        assert all(i.startswith("r_") for i in ids)
+            assert r.exc_info is None and r.levelno == logging.INFO
+        assert [r.getMessage() for r in recs][4:] == [
+            f"{rid[4]} - 421", f"{rid[5]} GET /v1/health 200"]
+
+    def test_where_from_diag_is_logged(self, make):
+        diag = protocol.Diag("internal_error", "ValueError", "core.py:f:1")
+        resp = protocol.Response(500, b"{}", protocol.HEADERS, diag)
+        h = make(lambda r, b, i: resp)
+        h.client.req("GET", "/v1/health", auth=False)
+        assert fields_of(h.records[0]) == {
+            "request_id": h.records[0].fields["request_id"], "route": "GET /v1/health",
+            "status": 500, "bytes_in": 0, "error": "internal_error",
+            "exc_type": "ValueError", "where": "core.py:f:1"}
+
+    def test_client_reset_mid_read_is_logged_as_400_not_500(self, make):
+        h = make()
+        s = connect(h.port)
+        s.sendall(b"GET /v1/health HTTP/1.1\r\n")
+        time.sleep(0.1)
+        reset(s)
+        [r] = h.wait_records(1)
+        # The 400 cannot reach a reset peer, so the send failure is what is logged.
+        assert fields_of(r) == {"request_id": r.fields["request_id"], "status": 400,
+                                "bytes_in": 0, "error": "send_failed"}
+
+    def test_client_reset_mid_response_is_logged_send_failed(self, make):
+        big = protocol.Response(200, b"x" * (32 << 20), protocol.HEADERS)
+        h = make(lambda r, b, i: big)
+        s = connect(h.port)
+        s.sendall(health_req(h.port))
+        s.recv(1024)
+        reset(s)
+        [r] = h.wait_records(1)
+        assert fields_of(r) == {"request_id": r.fields["request_id"],
+                                "route": "GET /v1/health", "status": 200,
+                                "bytes_in": 0, "error": "send_failed"}
+
+    def test_unread_response_is_cut_off_at_send_timeout(self, make):
+        big = protocol.Response(200, b"x" * (32 << 20), protocol.HEADERS)
+        h = make(lambda r, b, i: big, send_timeout=0.3)
+        t0 = time.monotonic()
+        with connect(h.port) as s:
+            s.sendall(health_req(h.port))
+            [r] = h.wait_records(1, timeout=4)
+        assert time.monotonic() - t0 < 2
+        assert fields_of(r)["error"] == "send_failed"
+        assert fields_of(r)["status"] == 200
+
+
+
+class TestDrain:
+    def _upload(self, port, length, *, auth=False):
+        # Like http.client: write the whole body (paced past the old 0.5 s
+        # drain window), only then read the answer.
+        with connect(port) as s:
+            s.sendall(post_head(port, length, auth=auth))
+            for off in range(0, length, 65536):
+                s.sendall(b"a" * min(65536, length - off))
+                time.sleep(0.08)
+            return read_all(s)
+
+    @pytest.mark.parametrize("length", [300_000, guard.BODY_CAP])
+    def test_whole_body_uploader_reads_its_401(self, harness, length):
+        s, _, b = self._upload(harness.port, length)
+        assert (s, error_of(b)) == (401, "invalid_api_key")
+
+    def test_stalled_uploader_releases_its_connection(self, make):
+        h = make(max_connections=1, read_timeout=5)
+        with connect(h.port) as s:
+            s.sendall(post_head(h.port, 400_000, auth=False) + b"a" * 1000)
+            assert s.recv(65536).startswith(b"HTTP/1.0 401")
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 6:
+                if h.client.send(health_req(h.port))[0] == 200:
+                    break
+                time.sleep(0.05)
+            took = time.monotonic() - t0
+        assert took < 1.5
+
+    def test_drain_without_length_is_short_and_bounded(self, make):
+        h = make(max_connections=1)
+        with connect(h.port) as s:
+            s.sendall(b"GET /nope HTTP/1.1\r\n\r\n")
+            assert s.recv(65536).startswith(b"HTTP/1.0 421")
+            t0 = time.monotonic()
+            try:
+                while time.monotonic() - t0 < 3:
+                    s.sendall(b"x" * 4096)
+                    time.sleep(0.01)
+            except OSError:
+                pass
+            took = time.monotonic() - t0
+        assert took < 1.5
+
+    def test_logger_failure_still_drains_and_prints_nothing(self, make, capfd):
+        class Boom:
+            def info(self, *a, **k):
+                raise RuntimeError("log " + CANARY)
+
+        h = make(logger=Boom())
+        s, _, b = self._upload(h.port, 300_000)
+        assert (s, error_of(b)) == (401, "invalid_api_key")
+        assert h.client.req("GET", "/v1/health", auth=False)[0] == 200
+        assert capfd.readouterr() == ("", "")
 
     def test_request_id_is_fresh_per_request_and_in_error_bodies(self, harness):
         _, _, b1 = harness.client.req("GET", "/v1/nope")
