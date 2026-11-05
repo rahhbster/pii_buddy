@@ -7,6 +7,7 @@ Runs locally with no external dependencies.
 
 import logging
 import re
+from bisect import bisect_right
 
 from .redactor import TAG_RE, _TAG_SHAPED_RE, _make_initials
 from .validation import LOWER_CLASS, UPPER_CLASS, _get_blocklist
@@ -62,6 +63,38 @@ _BESIDE_TAG_RES = (
 _HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "professor", "rev",
                "judge", "hon", "sir", "dame", "lord", "lady"}
 
+# Capitalized only because they open a sentence or a greeting; as a lone
+# neighbour of a tag they are not the other half of a name, and the substring
+# sweep would otherwise spread them ("whenever", "ours").
+_COMMON_WORDS = _HONORIFICS | {
+    # greetings and sign-offs
+    "hi", "hello", "hey", "dear", "thanks", "thank", "regards", "cheers",
+    "welcome", "congrats", "congratulations", "best", "sincerely", "attn",
+    # weekdays and months
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct",
+    "nov", "dec",
+    # function words
+    "the", "and", "but", "nor", "for", "yet", "our", "ours", "your", "yours",
+    "his", "her", "hers", "its", "their", "theirs", "she", "they", "them",
+    "you", "who", "whom", "whose", "what", "when", "where", "while", "why",
+    "how", "which", "that", "this", "these", "those", "then", "than", "there",
+    "here", "with", "without", "from", "into", "onto", "over", "under", "about",
+    "after", "before", "since", "until", "during", "per", "via", "also", "both",
+    "each", "every", "all", "any", "some", "many", "most", "much", "only",
+    "even", "just", "later", "again", "once", "today", "tomorrow", "yesterday",
+    "tonight", "please", "contact", "meet", "met", "call", "called", "email",
+    "ask", "see", "cc", "fwd",
+    # seniority and job level
+    "senior", "junior", "lead", "principal", "staff", "chief", "head",
+    "associate", "assistant", "intern", "manager", "director", "president",
+    "engineer", "analyst", "developer", "consultant", "officer", "executive",
+    "team", "new", "former", "acting", "interim",
+}
+
 # Existing tag patterns (to skip already-tagged text)
 _NAME_TAG_RE = re.compile(r"<NAME\s+[A-Z]+\d*>")
 _TYPED_TAG_RE = re.compile(r"<<[A-Z]+_\d+>>")
@@ -86,7 +119,28 @@ def _collect_known_names(mapping: dict) -> set[str]:
     return names
 
 
-def _tag_spans(text: str, tags=None) -> list[tuple[int, int]]:
+class _Spans:
+    """Disjoint, sorted tag spans; membership by bisect, not a scan."""
+
+    def __init__(self, spans):
+        merged = []
+        for s, e in sorted(spans):
+            if merged and s <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        self.pairs = [tuple(p) for p in merged]
+        self._starts = [p[0] for p in merged]
+
+    def __iter__(self):
+        return iter(self.pairs)
+
+    def inside(self, pos: int) -> bool:
+        i = bisect_right(self._starts, pos) - 1
+        return i >= 0 and pos < self.pairs[i][1]
+
+
+def _tag_spans(text: str, tags=None) -> _Spans:
     """Spans restore would swap back: TAG_RE matches that are mapping keys.
 
     With no mapping, every tag-shaped span counts (unit-level callers).
@@ -96,14 +150,16 @@ def _tag_spans(text: str, tags=None) -> list[tuple[int, int]]:
     if tags is None:
         for pattern in (_NAME_TAG_RE, _TYPED_TAG_RE):
             spans += [(m.start(), m.end()) for m in pattern.finditer(text)]
-    return spans
+    return _Spans(spans)
 
 
 def _is_already_tagged(text: str, start: int, end: int, spans=None) -> bool:
     """Check if position falls inside an existing tag."""
     if spans is None:
         spans = _tag_spans(text)
-    return any(s <= start < e or s < end <= e for s, e in spans)
+    elif not isinstance(spans, _Spans):
+        spans = _Spans(spans)
+    return spans.inside(start) or (end > start and spans.inside(end - 1))
 
 
 def _check_orphaned_conjunctions(text: str, spans=None) -> list[str]:
@@ -195,7 +251,8 @@ def _check_possessive_references(text: str, known_names: set[str], spans=None) -
 def _check_glued_fragments(text: str, spans=None) -> list[str]:
     """Find a capitalized word fragment that runs straight into a NAME tag."""
     return [m.group(1) for m in _GLUED_RE.finditer(text)
-            if not _is_already_tagged(text, m.start(1), m.end(1), spans)]
+            if m.group(1).lower() not in _COMMON_WORDS
+            and not _is_already_tagged(text, m.start(1), m.end(1), spans)]
 
 
 def _check_beside_tags(text: str, blocklist: set[str], spans=None) -> list[str]:
@@ -204,7 +261,7 @@ def _check_beside_tags(text: str, blocklist: set[str], spans=None) -> list[str]:
     for pattern in _BESIDE_TAG_RES:
         for m in pattern.finditer(text):
             word = m.group(1)
-            if (_letters(word) >= 3 and word.lower() not in _HONORIFICS
+            if (_letters(word) >= 3 and word.lower() not in _COMMON_WORDS
                     and word.lower() not in blocklist
                     and not _is_already_tagged(text, m.start(1), m.end(1), spans)):
                 findings.append(word)
@@ -218,9 +275,13 @@ def _covered_runs(text: str, findings: list[str], spans) -> list[tuple[int, int]
     inside a tag another one inserted.
     """
     covered = bytearray(len(text))
-    for pii_text in findings:
-        # Lookahead: overlapping occurrences ("Ann Lee Ann" in "Ann Lee Ann Lee Ann").
-        for m in re.finditer(f"(?=({re.escape(pii_text)}))", text, re.IGNORECASE):
+    if findings:
+        # One pass for all findings, longest first so each position covers the
+        # longest one that starts there; the lookahead finds overlapping
+        # occurrences ("Ann Lee Ann" in "Ann Lee Ann Lee Ann").
+        alternatives = "|".join(
+            re.escape(f) for f in sorted(set(findings), key=len, reverse=True))
+        for m in re.finditer(f"(?=({alternatives}))", text, re.IGNORECASE):
             covered[m.start(1):m.end(1)] = b"\x01" * (m.end(1) - m.start(1))
     for s, e in spans:
         covered[s:e] = b"\x00" * (e - s)
@@ -283,6 +344,7 @@ def _audit_once(redacted_text: str, mapping: dict) -> tuple[str, dict]:
     unique_findings = [f for f in unique_findings if "<NAME " not in f and "<<" not in f]
 
     runs = _covered_runs(redacted_text, unique_findings, spans)
+    finding_set = set(unique_findings)
     if not runs:
         return redacted_text, mapping
 
@@ -313,7 +375,10 @@ def _audit_once(redacted_text: str, mapping: dict) -> tuple[str, dict]:
             tags[tag] = pii_text
             by_value[pii_text] = tag
             added.add(tag)
-        persons.setdefault(pii_text, tag)
+        # Only whole findings: a fragment such as "li" (from "reliable")
+        # would let watcher._redact_filename rewrite unrelated filenames.
+        if pii_text in finding_set:
+            persons.setdefault(pii_text, tag)
         pieces.append(redacted_text[pos:start])
         pieces.append(tag)
         pos = end

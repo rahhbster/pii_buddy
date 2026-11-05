@@ -305,3 +305,70 @@ def test_corpus_recall_floor():
             hidden += _name_hidden(name, redacted)
     recall = hidden / total
     assert recall >= _RECALL_FLOOR, f"recall {hidden}/{total} = {recall:.3f}"
+
+
+# -----------------------------------------------------------------------
+# Red-team round 1: common words, persons fragments, scaling
+# -----------------------------------------------------------------------
+
+@pytest.mark.parametrize("text, names, common", [
+    ("When Sarah Collins joined the team, she shipped whenever possible.",
+     ["Sarah", "Collins"], ["When", "whenever"]),
+    ("Thanks Priya Sharma for the update, many thanks. Our Daniel Foster "
+     "review is ours.", ["Priya", "Sharma", "Daniel", "Foster"],
+     ["Thanks", "thanks", "Our", "ours"]),
+    ("Senior Maya Patel led it; seniority matters.", ["Maya", "Patel"],
+     ["Senior", "seniority"]),
+    ("On Monday Liam Brooks called, as on most Mondays.", ["Liam", "Brooks"],
+     ["Monday", "Mondays"]),
+    # Not "Dear Ines Okafor": main's three-word phrase rule tags "Dear" too,
+    # and coverage must not shrink below main.
+    ("Hello Tomas Lindgren. See you in March, Ines Okafor.",
+     ["Ines", "Okafor", "Tomas", "Lindgren"], ["March", "Hello"]),
+])
+def test_common_word_beside_a_name_stays_visible(text, names, common):
+    result = _redact_round_trip(text)
+    for word in names:
+        assert not _word_present(word, result.redacted_text)
+    for word in common:
+        assert _word_present(word, result.redacted_text)
+
+
+def test_beside_tag_still_catches_a_real_first_name():
+    mapping = {"tags": {"<NAME KS>": "Kira Smith"}, "persons": {}}
+    patched, _ = audit_redacted("Senior <NAME KS> left; Uma <NAME KS> stayed.", mapping)
+    assert "Uma" not in patched
+    assert _word_present("Senior", patched)
+
+
+def test_substring_fragments_do_not_enter_persons():
+    # watcher._redact_filename rewrites filenames from "persons"; a fragment
+    # such as "li" from "reliable" would rewrite unrelated filenames.
+    mapping = {"tags": {}, "persons": {}}
+    _, updated = audit_redacted("Thanks to Ms. Li for the reliable client work.", mapping)
+    assert "Li" in updated["persons"]
+    assert "li" not in updated["persons"]
+
+
+def _audit_doc(n):
+    tags, parts = {}, []
+    for i in range(n):
+        tag = f"<NAME A{i}>"
+        tags[tag] = f"Person Number{i}"
+        parts.append(f"{tag} met Mr. Ng and Bob Lee{i % 7} at noon.")
+    return "\n".join(parts), {"tags": tags, "persons": {}}
+
+
+def test_audit_scales_linearly_in_tags():
+    from tests._scaling import BACKSTOP_S, assert_ratio_linear, best_of, cpu_time
+
+    def run(args):
+        return audit_redacted(*args)
+
+    small = 1000
+    t_small = best_of(run, _audit_doc(small))
+    t_large = best_of(run, _audit_doc(small * 2))
+    assert_ratio_linear(t_small, t_large, "audit_redacted", small, small * 2)
+    elapsed, (patched, _) = cpu_time(run, _audit_doc(small * 4))
+    assert elapsed < BACKSTOP_S
+    assert "Mr. Ng" not in patched
