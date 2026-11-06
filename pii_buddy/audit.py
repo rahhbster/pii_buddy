@@ -67,13 +67,13 @@ _HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "professor", "rev", "sir
 # sweep would otherwise spread them ("whenever", "ours"). Fail closed: a word
 # that is also a given name or surname in any common naming tradition stays
 # OUT (May, June, January, Tuesday, Hon, Her, Thu, Than, You, She, How, Call,
-# Dear, Most, Per, Even, Senior, Head, ...).
+# Dear, Most, Then, Wednesday, Per, Even, Senior, Head, ...).
 _COMMON_WORDS = _HONORIFICS | {
     # greetings and sign-offs
     "hello", "thanks", "thank", "regards", "cheers", "welcome", "congrats",
     "congratulations", "sincerely", "attn",
     # weekdays and months that are not names
-    "monday", "wednesday", "thursday", "saturday",
+    "monday", "thursday", "saturday",
     "tue", "tues", "wed", "thur", "thurs", "fri",
     "february", "september", "october", "november", "december",
     "feb", "sept", "oct", "nov",
@@ -81,7 +81,7 @@ _COMMON_WORDS = _HONORIFICS | {
     "the", "and", "but", "nor", "for", "yet", "our", "ours", "your", "yours",
     "his", "hers", "its", "their", "theirs", "they", "them",
     "who", "whom", "whose", "what", "when", "where", "while", "why",
-    "which", "that", "this", "these", "those", "then", "there",
+    "which", "that", "this", "these", "those", "there",
     "here", "with", "without", "from", "into", "onto", "over", "under", "about",
     "after", "before", "since", "until", "during", "via", "also", "both",
     "each", "every", "all", "any", "some", "many", "much", "only",

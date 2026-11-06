@@ -381,7 +381,9 @@ _NAME_LIKE = ["April", "May", "June", "August", "Will", "Mark", "Grace", "Rose",
               # round 3: Hmong, Vietnamese, Burmese, Cantonese, Chinese names
               "Her", "Thu", "Mon", "Than", "Hon", "Most", "Dear", "Hey", "Dame",
               "Tuesday", "Friday", "Sunday", "January", "You", "How", "She",
-              "Call"]
+              "Call",
+              # round 4: Hakka surname, rare given name
+              "Then", "Wednesday"]
 
 
 @pytest.mark.parametrize("word", _NAME_LIKE)
@@ -412,8 +414,12 @@ def test_hmong_surname_after_a_name_tag_is_redacted(text, surname):
     assert not _word_present(surname, patched)
 
 
-@pytest.mark.parametrize("text", ["Lisa Chang Her signed.",
-                                  "Our analyst Mai Lee Her joined."])
-def test_hmong_full_name_is_redacted(text):
+@pytest.mark.parametrize("text, word", [
+    ("Lisa Chang Her signed.", "Her"),
+    ("Our analyst Mai Lee Her joined.", "Her"),
+    ("Lucy Ann Then signed.", "Then"),
+    ("Lucy Ann Wednesday signed.", "Wednesday"),
+])
+def test_name_like_surname_in_full_name_is_redacted(text, word):
     result = _redact_round_trip(text)
-    assert not _word_present("Her", result.redacted_text)
+    assert not _word_present(word, result.redacted_text)
