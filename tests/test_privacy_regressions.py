@@ -377,7 +377,11 @@ def test_audit_scales_linearly_in_tags():
 # Red-team round 2: a stoplist word that is also a name must stay redacted.
 _NAME_LIKE = ["April", "May", "June", "August", "Will", "Mark", "Grace", "Rose",
               "Frank", "Hope", "March", "Jan", "Jun", "Senior", "Junior", "Per",
-              "Even", "Ask", "Sun", "Sat", "Best", "Chief", "Head", "Judge", "Lady"]
+              "Even", "Ask", "Sun", "Sat", "Best", "Chief", "Head", "Judge", "Lady",
+              # round 3: Hmong, Vietnamese, Burmese, Cantonese, Chinese names
+              "Her", "Thu", "Mon", "Than", "Hon", "Most", "Dear", "Hey", "Dame",
+              "Tuesday", "Friday", "Sunday", "January", "You", "How", "She",
+              "Call"]
 
 
 @pytest.mark.parametrize("word", _NAME_LIKE)
@@ -391,8 +395,25 @@ def test_name_like_word_beside_a_tag_is_redacted(word, shape):
     assert core.restore_text(patched, updated["tags"]) == core.restore_text(text, mapping["tags"])
 
 
-@pytest.mark.parametrize("word", ["When", "Thanks", "Our", "Monday", "Hello", "Dear"])
+@pytest.mark.parametrize("word", ["When", "Thanks", "Our", "Monday", "Hello"])
 def test_non_name_word_beside_a_tag_stays_visible(word):
     mapping = {"tags": {"<NAME KS>": "Kira Smith"}, "persons": {}}
     patched, _ = audit_redacted(f"Notes, {word} <NAME KS> joined.", mapping)
     assert _word_present(word, patched)
+
+
+@pytest.mark.parametrize("text, surname", [
+    ("Lisa <NAME LC> Her signed.", "Her"),
+    ("Our analyst Mai <NAME ML> Her joined.", "Her"),
+])
+def test_hmong_surname_after_a_name_tag_is_redacted(text, surname):
+    mapping = {"tags": {"<NAME LC>": "Chang", "<NAME ML>": "Lee"}, "persons": {}}
+    patched, _ = audit_redacted(text, mapping)
+    assert not _word_present(surname, patched)
+
+
+@pytest.mark.parametrize("text", ["Lisa Chang Her signed.",
+                                  "Our analyst Mai Lee Her joined."])
+def test_hmong_full_name_is_redacted(text):
+    result = _redact_round_trip(text)
+    assert not _word_present("Her", result.redacted_text)

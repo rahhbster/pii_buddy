@@ -60,33 +60,33 @@ _BESIDE_TAG_RES = (
     re.compile(rf"(?<![\w'’-])({_NAME_WORD})[^\S\n]+(?=<NAME )"),
     re.compile(rf"<NAME [^<>\r\n]+>[^\S\n]+({_NAME_WORD}){_WORD_END}"),
 )
-_HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "professor", "rev",
-               "hon", "sir", "dame"}
+_HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "professor", "rev", "sir"}
 
 # Capitalized only because they open a sentence or a greeting; as a lone
 # neighbour of a tag they are not the other half of a name, and the substring
-# sweep would otherwise spread them ("whenever", "ours"). Fail closed: any word
-# that is also a plausible given name or surname (April, May, June, Jan, March,
-# Per, Even, Ask, Sun, Best, Senior, Head, Judge, ...) stays OUT of this list.
+# sweep would otherwise spread them ("whenever", "ours"). Fail closed: a word
+# that is also a given name or surname in any common naming tradition stays
+# OUT (May, June, January, Tuesday, Hon, Her, Thu, Than, You, She, How, Call,
+# Dear, Most, Per, Even, Senior, Head, ...).
 _COMMON_WORDS = _HONORIFICS | {
     # greetings and sign-offs
-    "hi", "hello", "hey", "dear", "thanks", "thank", "regards", "cheers",
-    "welcome", "congrats", "congratulations", "sincerely", "attn",
-    # weekdays and the months that are not names
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri",
-    "january", "february", "september", "october", "november", "december",
+    "hello", "thanks", "thank", "regards", "cheers", "welcome", "congrats",
+    "congratulations", "sincerely", "attn",
+    # weekdays and months that are not names
+    "monday", "wednesday", "thursday", "saturday",
+    "tue", "tues", "wed", "thur", "thurs", "fri",
+    "february", "september", "october", "november", "december",
     "feb", "sept", "oct", "nov",
     # function words
     "the", "and", "but", "nor", "for", "yet", "our", "ours", "your", "yours",
-    "his", "her", "hers", "its", "their", "theirs", "she", "they", "them",
-    "you", "who", "whom", "whose", "what", "when", "where", "while", "why",
-    "how", "which", "that", "this", "these", "those", "then", "than", "there",
+    "his", "hers", "its", "their", "theirs", "they", "them",
+    "who", "whom", "whose", "what", "when", "where", "while", "why",
+    "which", "that", "this", "these", "those", "then", "there",
     "here", "with", "without", "from", "into", "onto", "over", "under", "about",
     "after", "before", "since", "until", "during", "via", "also", "both",
-    "each", "every", "all", "any", "some", "many", "most", "much", "only",
+    "each", "every", "all", "any", "some", "many", "much", "only",
     "just", "later", "again", "once", "today", "tomorrow", "yesterday",
-    "tonight", "please", "contact", "meet", "met", "call", "called", "email",
+    "tonight", "please", "contact", "meet", "met", "called", "email",
     "see", "fwd",
     # job titles (no seniority words: Senior, Junior, Chief, Head are surnames)
     "associate", "assistant", "intern", "manager", "director", "president",
