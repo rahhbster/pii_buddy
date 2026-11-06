@@ -84,9 +84,11 @@ def spawns(monkeypatch):
             n = state["n"]
             state["n"] += 1
             state["at"] = state.get("at", []) + [time.monotonic()]
+            state["who"] = state.get("who", []) + [threading.current_thread()]
         if state["fail"](n):
             raise OSError(errno.EMFILE, "Too many open files")
         w = real(*a, **kw)
+        w.slot = threading.current_thread()
         made.append(w)
         state["after"](n, w)
         return w
@@ -163,11 +165,36 @@ class TestTimeoutReallyStopsTheWork:
         assert (out["s"].status, out["s"].body) == (200, b"ok")
 
     def test_requests_during_respawn_are_busy_not_hung(self, pool):
-        p = pool(timeout=0.5, spawn_delay=1.0)
+        p = pool(timeout=0.5, spawn_delay=1.5)
         assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
+        t0 = time.monotonic()
         r = p.call(ROUTE, b"ok", RID)
         assert (r.status, r.diag.code) == (503, "busy")
+        time.sleep(0.9)
+        assert p.call(ROUTE, b"ok", RID).diag.code == "busy"
         assert ready(p)
+        assert time.monotonic() - t0 > 1.4
+        assert p.call(ROUTE, b"ok", RID).status == 200
+
+    def test_a_dead_idle_worker_is_skipped_not_answered_with_500(self, pool):
+        p = pool(2)
+        dead = p._idle.queue[0].proc.pid
+        os.kill(dead, signal.SIGKILL)
+        time.sleep(0.3)
+        r = p.call(ROUTE, b"ok", RID)
+        assert (r.status, r.body) == (200, b"ok")
+        assert ready(p, seconds=5)
+        assert dead not in p.pids()
+
+    def test_when_every_idle_worker_is_dead_the_answer_is_busy(self, pool):
+        p = pool(2)
+        pids = p.pids()
+        for pid in pids:
+            os.kill(pid, signal.SIGKILL)
+        time.sleep(0.3)
+        assert p.call(ROUTE, b"ok", RID).diag.code == "busy"
+        assert ready(p, seconds=5)
+        assert not set(pids) & set(p.pids())
         assert p.call(ROUTE, b"ok", RID).status == 200
 
     def test_repeated_kills_do_not_leak_workers_or_shrink_the_pool(self, pool):
@@ -474,6 +501,27 @@ class TestSpawnFailures:
             p.close()
         assert not p.healthy()
 
+    def test_a_working_slot_does_not_reset_a_failing_slots_backoff(self, monkeypatch,
+                                                                    spawns):
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.05)
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF_MAX", 0.4)
+        p = worker.WorkerPool(2, timeout=0.1, handler=tasks.behave, init=None)
+        p.start()
+        try:
+            failing = p._idle.queue[0].slot
+            spawns["fail"] = lambda n: threading.current_thread() is failing
+            assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
+            end = time.monotonic() + 1.6
+            while time.monotonic() < end:
+                assert wait_until(lambda: p.idle() == 1, 5)
+                assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
+            assert not p.healthy() and p.respawn_failures >= 4
+            at = [t for t, who in zip(spawns["at"], spawns["who"]) if who is failing][1:]
+            gaps = [b - a for a, b in zip(at, at[1:])]
+            assert len(gaps) >= 3 and gaps[2] > 0.18, gaps
+        finally:
+            p.close()
+
     def test_backoff_survives_a_long_outage(self, monkeypatch):
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 1.0)
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF_MAX", 60.0)
@@ -630,6 +678,7 @@ class TestChildHardening:
         monkeypatch.setattr(worker, "_LINUX", True)
         monkeypatch.setattr(worker.ctypes, "CDLL", lambda *a, **kw: Libc())
         monkeypatch.setattr(os, "getppid", lambda: seen.append(("ppid",)) or 4242)
+        monkeypatch.setattr(os, "_exit", lambda code: pytest.fail("exited"))
         worker._die_with_parent(4242)
         assert seen == [("prctl", 1, signal.SIGKILL, 0, 0, 0), ("ppid",)]
 

@@ -182,7 +182,7 @@ class WorkerPool:
         self.size = size
         self.timeout = timeout
         self.usage = protocol.UsageCounter()
-        self.respawn_failures = 0
+        self._failures = {}  # slot thread -> its consecutive failed respawns
         self._handler = handler
         self._init = init
         self._ready_timeout = ready_timeout
@@ -209,8 +209,14 @@ class WorkerPool:
     def idle(self):
         return self._idle.qsize()
 
+    @property
+    def respawn_failures(self):
+        """Consecutive failed respawns, summed over the slots now failing."""
+        with self._lock:
+            return sum(self._failures.values())
+
     def healthy(self):
-        """False while respawns are failing, or once closed."""
+        """False while any slot's respawns are failing, or once closed."""
         return not self._stop.is_set() and self.respawn_failures == 0
 
     def pids(self):
@@ -218,9 +224,8 @@ class WorkerPool:
             return [w.proc.pid for w in self._workers]
 
     def call(self, route, body, request_id):
-        try:
-            w = self._idle.get_nowait()
-        except queue.Empty:
+        w = self._take()
+        if w is None:
             return self._busy(route, request_id)
         bad = None
         try:
@@ -249,6 +254,17 @@ class WorkerPool:
         if counted:
             self.usage.increment()
         return response
+
+    def _take(self):
+        for _ in range(self.size):
+            try:
+                w = self._idle.get_nowait()
+            except queue.Empty:
+                return None
+            if w.proc.is_alive():
+                return w
+            self._replace(w)  # died idle: the OOM killer picks workers first
+        return None
 
     def _ask(self, w, msg):
         """The deadline covers the whole reply: a child that stalls after its
@@ -304,14 +320,15 @@ class WorkerPool:
             w.gone.wait()
             if self._stop.wait(self._spawn_delay):
                 return
+            failures = 0
             while True:
                 w = self._spawn()
                 if w is not None or self._stop.is_set():
                     break
+                failures += 1
                 with self._lock:
-                    self.respawn_failures += 1
-                    n = self.respawn_failures
-                if self._stop.wait(_backoff(n)):
+                    self._failures[threading.current_thread()] = failures
+                if self._stop.wait(_backoff(failures)):
                     return
 
     def _spawn(self):
@@ -327,7 +344,7 @@ class WorkerPool:
             if live and w.wait_ready(self._ready_timeout):
                 with self._lock:
                     if not self._stop.is_set():
-                        self.respawn_failures = 0
+                        self._failures.pop(threading.current_thread(), None)
                         self._idle.put(w)
                         return w
         except Exception:
