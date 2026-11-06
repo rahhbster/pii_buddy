@@ -1841,3 +1841,10 @@ class TestFailure:
 
     def test_a_known_code_keeps_its_status(self):
         assert protocol.failure(ROUTE, RID, "busy").status == 503
+
+    def test_a_timeout_is_504_on_rest_and_500_on_mcp(self):
+        r = protocol.failure(ROUTE, RID, "timeout")
+        assert (r.status, json.loads(r.body)["error"]) == (504, "timeout")
+        m = protocol.failure("POST /mcp", RID, "timeout")
+        assert (m.status, json.loads(m.body)["error"]["code"]) == (500, -32603)
+        assert "timeout" not in protocol._CORE_CODES

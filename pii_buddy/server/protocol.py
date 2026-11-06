@@ -67,7 +67,7 @@ _STATUS = {
     "internal_error": 500,
     "model_unavailable": 503,
     "busy": 503,
-    "timeout": 503,
+    "timeout": 504,
 }
 _MESSAGES = {
     "invalid_request": "request is not valid",

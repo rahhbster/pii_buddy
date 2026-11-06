@@ -142,7 +142,7 @@ class TestTimeoutReallyStopsTheWork:
         t0 = time.monotonic()
         r = p.call(ROUTE, what, RID)
         took = time.monotonic() - t0
-        assert (r.status, r.diag.code) == (503, "timeout")
+        assert (r.status, r.diag.code) == (504, "timeout")
         assert json.loads(r.body)["error"] == "timeout"
         assert 0.9 < took < 2.5
         assert wait_until(lambda: not alive(pid), 5)
@@ -247,6 +247,12 @@ class TestCapacity:
         t.join(5)
         assert p.call(ROUTE, b"ok", RID).status == 200
 
+    def test_a_rest_timeout_is_504_without_retry_after(self, pool):
+        r = pool(timeout=0.5).call(ROUTE, b"spin", RID)
+        assert (r.status, r.diag.code) == (504, "timeout")
+        assert json.loads(r.body)["error"] == "timeout"
+        assert not any(k.lower() == "retry-after" for k, _ in r.headers)
+
     def test_mcp_failures_are_json_rpc_shaped(self, pool):
         p = pool(timeout=0.5)
         r = p.call("POST /mcp", b"spin", RID)
@@ -315,7 +321,7 @@ class TestRealCore:
             body = json.dumps({"text": "!" * 50_000}).encode()
             t0 = time.monotonic()
             r = p.call(ROUTE, body, RID)
-            assert (r.status, r.diag.code) == (503, "timeout")
+            assert (r.status, r.diag.code) == (504, "timeout")
             assert time.monotonic() - t0 < 5
             assert wait_until(lambda: p.idle() == 1, 90)
             ok = p.call(ROUTE, json.dumps({"text": "mail a@example.com"}).encode(), RID)
