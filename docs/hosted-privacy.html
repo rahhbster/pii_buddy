@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32.png">
   <link rel="stylesheet" href="style.css">
   <style>
-    .policy { max-width: 760px; margin: 0 auto; padding: 96px 16px 64px; line-height: 1.65; }
+    .policy { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; line-height: 1.65; }
     .policy h1 { font-size: 2rem; margin-bottom: 8px; }
     .policy h2 { font-size: 1.2rem; margin: 32px 0 8px; }
     .policy p, .policy li { color: var(--text-secondary); }
@@ -30,30 +30,38 @@
 
   <main class="policy">
     <h1>Hosted beta: privacy</h1>
-    <p>Effective 2026-11-04. Operator: HZHLLC. Contact: <a href="mailto:privacy@piibuddy.com">privacy@piibuddy.com</a>.</p>
+    <p>Effective 2026-11-06. Operator: HZHLLC. Contact: <a href="mailto:privacy@piibuddy.com">privacy@piibuddy.com</a>.</p>
 
     <p class="note">This page covers only the invited-tester hosted API at
     <code>mcp.piibuddy.com</code>. The PII Buddy desktop app and command line
     run on your own computer and do not send your documents anywhere unless you
-    turn on optional cloud verification.</p>
+    turn on optional cloud verification or run an explicit update command.</p>
+
+    <p class="note">Despite its name, this beta has no MCP endpoint. It is a plain
+    HTTPS API offering <code>/v1/check</code> and <code>/v1/redact</code> only.</p>
 
     <h2>Send synthetic data only</h2>
     <p>The beta is for testing. Use made-up names, emails, numbers and
     addresses. Do not send real personal information, client data or anything
     confidential. Detection is not complete: some names, addresses, phone
     formats and IDs are known to be missed, so output can still contain
-    personal information.</p>
+    personal information. The beta is for invited adult testers only.</p>
 
     <h2>What happens to your text</h2>
     <ul>
-      <li>Your request travels over HTTPS. Encryption ends at our server, so the
+      <li>Always use <code>https://</code>. A request sent to <code>http://</code> is
+        redirected, but its contents have already crossed the network unencrypted.
+        Encryption ends at our server, so the
         server sees your text in plain form while it processes it. This is not
         end-to-end encryption.</li>
       <li>The text is processed in memory and the answer is sent back. We do not
         write request bodies, your text or the returned mapping to disk or to our
         application logs, and we do not keep a copy after the response.</li>
       <li>The mapping that links placeholders such as <code>&lt;&lt;EMAIL_1&gt;&gt;</code>
-        to the original values is returned to you and not stored by us.</li>
+        to the original values is returned to you and not stored by us. It contains
+        your original values in plain form, so treat the response as being as
+        sensitive as what you sent. Send <code>"return_mapping": false</code> to
+        leave it out.</li>
       <li>We do not use your text to train models, and we do not sell or share it.
         No third-party AI service sees it in this beta.</li>
     </ul>
@@ -62,21 +70,29 @@
     <ul>
       <li>Application logs record, per request: a random request ID, the route, the
         status, the time taken, your tester ID, the request size in bytes, the
-        number of items found, and an error code. Never the text.</li>
+        number of items found and, on failure, an error code and the name of the
+        error type. Never the text.</li>
       <li>The web proxy and hosting platform in front of the service may record
-        your IP address, the time and the URL path. Logs are rotated and capped in
-        size.</li>
+        your IP address, the time, the URL path, the status and your browser or
+        client name. Application logs are capped at 30 MB and the oldest lines are
+        deleted first. Only the operator can read them. Server backups may contain
+        copies of these logs.</li>
       <li>Rate-limit counters are kept in memory and reset when the service
         restarts.</li>
     </ul>
 
+    <h2>Limits</h2>
+    <p>Each key is limited to 10,000 characters per request, one request at a
+    time, 6 per minute and 100 per day. Per-IP limits also apply at the proxy.</p>
+
     <h2>Where it runs</h2>
-    <p>On a virtual server rented from Hostinger that also runs other services. It is not certified for HIPAA, GDPR or any other
-    compliance scheme; do not use it where such certification is required.</p>
+    <p>On a virtual server rented from Hostinger that also runs other services. It has no compliance certification or audit, and no data
+    processing agreement is offered. Do not use it for regulated data.</p>
 
     <h2>Your choices</h2>
     <p>Stop using your tester key at any time, or ask us to revoke it. Questions or
-    requests: <a href="mailto:privacy@piibuddy.com">privacy@piibuddy.com</a>.</p>
+    requests: <a href="mailto:privacy@piibuddy.com">privacy@piibuddy.com</a>.
+    We cannot remove individual log lines; they are deleted as the logs rotate.</p>
 
     <h2>Changes</h2>
     <p>If this page changes, the effective date above changes with it.</p>
