@@ -1818,3 +1818,33 @@ class TestWideButShallowDocument:
             size, n = out[name]
             assert size > 500 * 1024 and n > 50_000, (name, out[name])
             assert out[name + ":mcp"] == 400  # valid JSON, but not a JSON-RPC message
+
+
+class TestFailure:
+    """``failure`` builds responses from what a worker sent back, so its inputs
+    are sanitized like any other diag."""
+
+    @pytest.mark.parametrize("exc_type", [3, b"X", "has space", "x" * 65, f"{CANARY}!"])
+    def test_an_unsafe_exc_type_is_dropped(self, exc_type):
+        r = protocol.failure(ROUTE, RID, "internal_error", exc_type=exc_type)
+        assert (r.status, r.diag) == (500, protocol.Diag("internal_error"))
+
+    def test_a_safe_exc_type_is_kept(self):
+        r = protocol.failure(ROUTE, RID, "internal_error", exc_type="WorkerDied")
+        assert r.diag.exc_type == "WorkerDied"
+
+    @pytest.mark.parametrize("code", ["nope", None, 404, ["busy"]])
+    def test_an_unknown_code_is_internal_error(self, code):
+        r = protocol.failure(ROUTE, RID, code)
+        assert (r.status, r.diag.code) == (500, "internal_error")
+        assert json.loads(r.body)["error"] == "internal_error"
+
+    def test_a_known_code_keeps_its_status(self):
+        assert protocol.failure(ROUTE, RID, "busy").status == 503
+
+    def test_a_timeout_is_504_on_rest_and_500_on_mcp(self):
+        r = protocol.failure(ROUTE, RID, "timeout")
+        assert (r.status, json.loads(r.body)["error"]) == (504, "timeout")
+        m = protocol.failure("POST /mcp", RID, "timeout")
+        assert (m.status, json.loads(m.body)["error"]["code"]) == (500, -32603)
+        assert "timeout" not in protocol._CORE_CODES

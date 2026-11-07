@@ -66,6 +66,8 @@ _STATUS = {
     "payload_too_large": 413,
     "internal_error": 500,
     "model_unavailable": 503,
+    "busy": 503,
+    "timeout": 504,
 }
 _MESSAGES = {
     "invalid_request": "request is not valid",
@@ -78,9 +80,11 @@ _MESSAGES = {
     "payload_too_large": "payload is too large",
     "internal_error": "internal error",
     "model_unavailable": "detection model is not available",
+    "busy": "server is busy",
+    "timeout": "request took too long",
 }
 # Codes a CoreError may carry through to the client; anything else is internal.
-_CORE_CODES = frozenset(_STATUS) - {"not_found", "verify_not_supported"}
+_CORE_CODES = frozenset(_STATUS) - {"not_found", "verify_not_supported", "busy", "timeout"}
 
 _RPC_MESSAGES = {
     -32700: "Parse error",
@@ -702,6 +706,14 @@ def _failure(route, rid, diag):
         return Response(
             500, _dumps(_rpc_error(500, -32603, None).obj), HEADERS, diag)
     return _error_response(rid, diag)
+
+
+def failure(route, request_id, code, *, exc_type=None):
+    """Fixed response for a failure outside ``handle``, such as a killed worker.
+    ``exc_type`` may have come back from a worker, so it is sanitized too."""
+    if not (type(code) is str and code in _STATUS):
+        code = "internal_error"
+    return _failure(route, _clean_rid(request_id), Diag(code, _safe_name(exc_type)))
 
 
 def _encode(out):
