@@ -14,6 +14,31 @@ BLOCKLISTS_DIR = Path(__file__).parent / "data" / "blocklists"
 
 MIN_PERSON_CONFIDENCE = 0.6
 
+
+def _cased_class(pred) -> str:
+    # Planes 0-1 hold every cased letter (planes 2+ are uncased ideographs,
+    # tags and private use); scanning only them keeps import fast.
+    ranges, start, prev = [], None, None
+    for i in range(0x20000):
+        if pred(chr(i)):
+            if start is None:
+                start = i
+            prev = i
+        elif start is not None:
+            ranges.append((start, prev))
+            start = None
+    if start is not None:
+        ranges.append((start, prev))
+    return "[" + "".join(
+        re.escape(chr(a)) if a == b else f"{re.escape(chr(a))}-{re.escape(chr(b))}"
+        for a, b in ranges
+    ) + "]"
+
+
+# Python's re has no \p{Lu} / \p{Ll}; names are not ASCII.
+UPPER_CLASS = _cased_class(str.isupper)
+LOWER_CLASS = _cased_class(str.islower)
+
 # --- Patterns that indicate a false positive ---
 
 JOB_TITLE_PATTERNS = [

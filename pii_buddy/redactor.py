@@ -49,6 +49,10 @@ def _group_names(person_entities: list) -> dict[str, str]:
     return canonical
 
 
+# Bounded and '<'-free inside NAME tags so scanning stays linear and a tag
+# can never swallow a following one.
+TAG_RE = re.compile(r"<<[A-Za-z0-9_]{1,100}_\d{1,9}>>|<NAME [^<>\r\n]{1,100}>")
+
 _TAG_SHAPED_RE = re.compile(r"(?=(<<[A-Za-z0-9_]+_\d+>>|<NAME [^>]+>))")
 
 
