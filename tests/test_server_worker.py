@@ -3,8 +3,10 @@ processes, because the behaviours under test (kill, crash, sibling survival)
 do not exist in-process.  Handlers live in ``tests._worker_tasks``."""
 
 import errno
+import itertools
 import json
 import multiprocessing
+import multiprocessing.connection
 import os
 import resource
 import signal
@@ -29,8 +31,32 @@ def alive(pid):
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    # A killed child stays a zombie until reaped; reaped means really gone.
-    return True
+    # A zombie has stopped running.  In a container without --init nothing
+    # may reap an orphan, so kill(0) would call it alive forever.  macOS has
+    # no /proc; there launchd reaps orphans and the pool reaps its own.
+    if not sys.platform.startswith("linux"):
+        return True
+    return _proc_state(pid) not in ("Z", None)
+
+
+def _proc_state(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rpartition(")")[2].split()[0]
+    except (OSError, IndexError):
+        return None  # reaped since kill(0)
+
+
+def kill_if_alive(pid):
+    if alive(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # reaped since alive() looked
+
+
+def idle_worker(p):
+    return p._idle[0]
 
 
 def wait_until(check, seconds=30):
@@ -178,7 +204,7 @@ class TestTimeoutReallyStopsTheWork:
 
     def test_a_dead_idle_worker_is_skipped_not_answered_with_500(self, pool):
         p = pool(2)
-        dead = p._idle.queue[0].proc.pid
+        dead = idle_worker(p).proc.pid
         os.kill(dead, signal.SIGKILL)
         time.sleep(0.3)
         r = p.call(ROUTE, b"ok", RID)
@@ -186,16 +212,70 @@ class TestTimeoutReallyStopsTheWork:
         assert ready(p, seconds=5)
         assert dead not in p.pids()
 
-    def test_when_every_idle_worker_is_dead_the_answer_is_busy(self, pool):
+    def test_dead_idle_workers_are_replaced_before_any_request(self, pool):
         p = pool(2)
         pids = p.pids()
         for pid in pids:
             os.kill(pid, signal.SIGKILL)
-        time.sleep(0.3)
-        assert p.call(ROUTE, b"ok", RID).diag.code == "busy"
-        assert ready(p, seconds=5)
-        assert not set(pids) & set(p.pids())
+
+        def replaced():
+            now = p.pids()
+            return (p.idle() == 2 and len(now) == 2 and not set(pids) & set(now)
+                    and all(alive(pid) for pid in now))
+
+        assert wait_until(replaced, 10)
+        assert p.healthy() and p.respawn_failures == 0
+        assert [p.call(ROUTE, b"ok", RID).status for _ in range(4)] == [200] * 4
+
+    def test_a_worker_that_dies_after_its_reply_is_replaced(self, pool):
+        """Dies while a caller still holds it: the slot thread wakes first and
+        must not lose the worker when the caller hands it back."""
+        p = pool()
+        w = idle_worker(p)
+        pid, real = w.proc.pid, w.conn.recv
+
+        def recv_then_die():
+            out = real()
+            os.kill(pid, signal.SIGKILL)
+            multiprocessing.connection.wait([w.proc.sentinel], 5)
+            time.sleep(0.3)
+            return out
+
+        w.conn.recv = recv_then_die
         assert p.call(ROUTE, b"ok", RID).status == 200
+        assert wait_until(lambda: p.idle() == 1 and pid not in p.pids(), 10)
+        assert p.call(ROUTE, b"ok", RID).status == 200
+
+    def test_idle_deaths_under_load_never_share_a_worker(self, pool, thread_errors):
+        """Two callers on one pipe would read each other's replies: a 500."""
+        p = pool(3, timeout=5.0)
+        stop, seen, n = threading.Event(), [], itertools.count()
+
+        def hammer():
+            while not stop.is_set():
+                mine = b"m%d" % next(n)
+                r = p.call(ROUTE, mine, RID)
+                seen.append((r.status, r.status != 200 or r.body == mine))
+
+        ts = [threading.Thread(target=hammer, daemon=True) for _ in range(4)]
+        for t in ts:
+            t.start()
+        for _ in range(15):
+            for pid in p.pids():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            time.sleep(0.2)
+        stop.set()
+        for t in ts:
+            t.join(10)
+        assert seen and all(own for _, own in seen)
+        assert {code for code, _ in seen} <= {200, 500, 503}
+        assert ready(p, seconds=15)
+        assert len(p.pids()) == 3 and p.healthy()
+        assert not thread_errors
+        assert [p.call(ROUTE, b"ok", RID).status for _ in range(6)] == [200] * 6
 
     def test_repeated_kills_do_not_leak_workers_or_shrink_the_pool(self, pool):
         p = pool(2, timeout=0.4)
@@ -334,7 +414,7 @@ class TestRealCore:
 class TestCloseRaces:
     def test_concurrent_kills_close_the_pipe_once(self, pool):
         p = pool()
-        w = p._idle.queue[0]
+        w = idle_worker(p)
         real, calls = w.conn._close, []
 
         def slow_close(*a):
@@ -365,7 +445,7 @@ class TestCloseRaces:
 
     def test_an_in_flight_call_never_requeues_after_close(self, pool):
         p = pool()
-        w = p._idle.queue[0]
+        w = idle_worker(p)
         real = w.conn.recv
 
         def recv_then_close():
@@ -424,7 +504,7 @@ class TestCloseRaces:
 
     def test_a_worker_killed_after_its_reply_is_not_requeued(self, pool):
         p = pool()
-        w = p._idle.queue[0]
+        w = idle_worker(p)
         pid, real = w.proc.pid, w.conn.recv
 
         def recv_then_kill():
@@ -514,7 +594,7 @@ class TestSpawnFailures:
         p = worker.WorkerPool(2, timeout=0.1, handler=tasks.behave, init=None)
         p.start()
         try:
-            failing = p._idle.queue[0].slot
+            failing = idle_worker(p).slot
             spawns["fail"] = lambda n: threading.current_thread() is failing
             assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
             end = time.monotonic() + 1.6
@@ -586,7 +666,7 @@ class TestDeadline:
         """poll() saying "readable" while the child is still computing is what
         a child stalled after its first byte looks like to recv()."""
         p = pool(timeout=1.0)
-        w = p._idle.queue[0]
+        w = idle_worker(p)
         pid = w.proc.pid
         w.conn.poll = lambda t: time.sleep(0.5) or True
         out = {}
@@ -602,8 +682,16 @@ class TestDeadline:
             assert 0.9 < took < 1.4
             assert ready(p, seconds=5)
         finally:
-            if alive(pid):
-                os.kill(pid, signal.SIGKILL)
+            kill_if_alive(pid)
+
+    def test_a_slow_send_counts_against_the_deadline(self, pool):
+        p = pool(timeout=1.0)
+        w = idle_worker(p)
+        real = w.conn.send
+        w.conn.send = lambda msg: time.sleep(0.6) or real(msg)
+        t0 = time.monotonic()
+        assert p.call(ROUTE, b"sleep", RID).diag.code == "timeout"
+        assert time.monotonic() - t0 < 1.4
 
     def test_a_big_reply_inside_the_deadline_is_delivered(self, pool):
         p = pool(timeout=5.0)
@@ -631,6 +719,37 @@ class TestChildHardening:
         """, timeout=20)
         assert out.returncode == 0, out.stderr[-500:]
         assert wait_until(lambda: not alive(int(out.stdout)), 5)
+
+    def test_interpreter_exit_closes_the_pool_before_its_workers_die(self):
+        """multiprocessing's exit hook terminates daemon workers; a pool still
+        open would see each death and respawn into a dying interpreter."""
+        script = textwrap.dedent("""
+            import atexit, os, time
+            spawned = []
+            # Registered before multiprocessing is imported, so it runs last.
+            atexit.register(lambda: time.sleep(0.5) or os.write(
+                1, str(len(spawned)).encode()))
+            from pii_buddy.server import worker
+            from tests import _worker_tasks as tasks
+            if __name__ == "__main__":
+                real = worker._Worker
+                worker._Worker = lambda *a, **kw: spawned.append(1) or real(*a, **kw)
+                worker.WorkerPool(2, timeout=5, handler=tasks.behave, init=None).start()
+        """)
+        out = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                             text=True, timeout=30)
+        assert out.returncode == 0, out.stderr[-500:]
+        assert (out.stdout, out.stderr) == ("2", "")
+
+    def test_close_unregisters_its_exit_hook(self, monkeypatch):
+        hooks = []
+        monkeypatch.setattr(worker.atexit, "register", hooks.append)
+        monkeypatch.setattr(worker.atexit, "unregister", hooks.remove)
+        p = worker.WorkerPool(1, timeout=2.0, handler=tasks.behave, init=None)
+        p.start()
+        assert hooks == [p.close]
+        p.close()
+        assert hooks == []
 
     def test_a_worker_that_ignores_sigterm_is_still_killed(self, pool):
         p = pool(timeout=0.5)
@@ -662,16 +781,83 @@ class TestChildHardening:
     def test_no_core_dumps(self, pool):
         assert pool().call(ROUTE, b"rlimit", RID).body == b"(0, 0)"
 
-    def test_omp_is_one_from_child_startup_and_the_parent_is_untouched(self, pool,
-                                                                       monkeypatch):
-        monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
+    def test_linux_workers_are_not_dumpable(self, pool):
+        """A piped core_pattern (apport, systemd-coredump) ignores RLIMIT_CORE."""
+        assert pool().call(ROUTE, b"dumpable", RID).body == b"0"
+
+    def test_dumpable_is_cleared_on_linux_and_failure_is_fatal(self, monkeypatch):
+        seen, rc = [], {"v": 0}
+
+        class Libc:
+            def prctl(self, *a):
+                seen.append(tuple(getattr(x, "value", x) for x in a))
+                return rc["v"]
+
+        limits = []
+        monkeypatch.setattr(resource, "setrlimit", lambda *a: limits.append(a))
+        monkeypatch.setattr(worker.ctypes, "CDLL", lambda *a, **kw: Libc())
+        monkeypatch.setattr(worker, "_LINUX", True)
+        worker._no_core_dumps()
+        assert limits == [(resource.RLIMIT_CORE, (0, 0))]
+        assert seen == [(4, 0, 0, 0, 0)]
+        rc["v"] = -1
+        with pytest.raises(OSError):
+            worker._no_core_dumps()
+        monkeypatch.setattr(worker, "_LINUX", False)
+        monkeypatch.setattr(worker.ctypes, "CDLL", lambda *a, **kw: pytest.fail("prctl"))
+        worker._no_core_dumps()
+        assert len(limits) == 3
+
+    def test_a_child_that_cannot_clear_dumpable_fails_before_any_request(self,
+                                                                         monkeypatch):
+        """oom_score_adj comes first: a non-dumpable process's /proc/self files
+        belong to root, so an unprivileged one could no longer write it."""
+        order, sent = [], []
+
+        class Conn:
+            def send(self, x):
+                sent.append(x)
+
+            def recv(self):
+                pytest.fail("read a request")
+
+        def step(name, fail=False):
+            def run(*a):
+                order.append(name)
+                if fail:
+                    raise OSError("prctl")
+            return run
+
+        monkeypatch.setattr(worker, "_die_with_parent", step("die"))
+        monkeypatch.setattr(worker, "_quiet_child", step("quiet"))
+        monkeypatch.setattr(worker, "_limit_child", step("limit"))
+        monkeypatch.setattr(worker, "_no_core_dumps", step("nodump", fail=True))
+        worker._child(Conn(), tasks.behave, step("init"), os.getppid(), None)
+        assert order == ["die", "quiet", "limit", "nodump"]
+        assert sent == [worker._FAILED]
+
+    def test_omp_is_one_from_child_startup(self, pool, monkeypatch):
+        monkeypatch.setenv("OMP_NUM_THREADS", "7")
         p = pool()
         assert p.call(ROUTE, b"env", RID).body == b"1"
-        assert "OMP_NUM_THREADS" not in os.environ
-        monkeypatch.setenv("OMP_NUM_THREADS", "7")
         assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
         assert ready(p, seconds=5)
-        assert os.environ["OMP_NUM_THREADS"] == "7"
+        assert p.call(ROUTE, b"env", RID).body == b"1"
+
+    def test_the_environment_is_set_once_before_any_slot_thread(self, pool, monkeypatch):
+        """Writing os.environ while other threads run can race their getenv."""
+        writes = []
+        for name in ("putenv", "unsetenv"):
+            real = getattr(os, name)
+            monkeypatch.setattr(os, name, lambda *a, _r=real, _n=name: (
+                writes.append((_n, a[0], threading.active_count())), _r(*a))[1])
+        before = threading.active_count()
+        p = pool(2)
+        assert writes == [("putenv", b"OMP_NUM_THREADS", before)]
+        assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
+        assert ready(p, seconds=5)
+        assert len(writes) == 1
 
     def test_prctl_comes_before_the_ppid_check(self, monkeypatch):
         seen = []
@@ -764,5 +950,47 @@ class TestChildHardening:
         try:
             assert wait_until(lambda: not alive(pid), 2)
         finally:
-            if alive(pid):
-                os.kill(pid, signal.SIGKILL)
+            kill_if_alive(pid)
+
+
+class TestHarness:
+    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
+    def test_a_zombie_is_not_alive(self):
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        try:
+            assert wait_until(lambda: _proc_state(proc.pid) == "Z", 10)
+            assert not alive(proc.pid)
+        finally:
+            proc.wait()
+
+    def test_os_exit_that_is_swallowed_or_threaded_still_fails_the_test(self, tmp_path):
+        (tmp_path / "conftest.py").write_text(
+            "from tests.conftest import hermetic  # noqa: F401\n")
+        (tmp_path / "test_exits.py").write_text(textwrap.dedent("""
+            import os, threading
+
+            def test_swallowed():
+                try:
+                    os._exit(0)
+                except BaseException:
+                    pass
+
+            def test_in_a_thread():
+                t = threading.Thread(target=os._exit, args=(0,))
+                t.start()
+                t.join()
+
+            def test_clean():
+                pass
+        """))
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env = dict(os.environ, PYTHONPATH=root)
+        out = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+             "--rootdir", str(tmp_path), str(tmp_path)],
+            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+        assert out.returncode == 1, out.stdout[-2000:]
+        errors = {line.split()[1] for line in out.stdout.splitlines()
+                  if line.startswith("ERROR ")}
+        assert errors == {"test_exits.py::test_swallowed",
+                          "test_exits.py::test_in_a_thread"}, out.stdout[-2000:]

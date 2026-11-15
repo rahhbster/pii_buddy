@@ -11,19 +11,26 @@ permissions:
 
 jobs:
   test:
-    name: py${{ matrix.python }} / ${{ matrix.model }}
-    runs-on: macos-latest
+    name: ${{ matrix.os }} / py${{ matrix.python }} / ${{ matrix.model }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
           # md only: what production prefers (SPACY_MODEL)
-          - python: "3.12"
+          - os: macos-latest
+            python: "3.12"
             model: en_core_web_md
           # Floor: the current spaCy needs thinc>=8.3.12, which requires
           # Python 3.10, so 3.9 cannot install it on current PyPI.
-          - python: "3.10"
+          - os: macos-latest
+            python: "3.10"
+            model: en_core_web_md
+          # The API server's production box is Linux: the prctl paths
+          # (PDEATHSIG, DUMPABLE) and oom_score_adj only run here.
+          - os: ubuntu-latest
+            python: "3.12"
             model: en_core_web_md
     steps:
       - uses: actions/checkout@v4
@@ -72,5 +79,7 @@ jobs:
           assert loaded == "${{ matrix.model }}", loaded
           PY
 
+      # Not under /tmp: on Linux pytest's default basetemp is there, and the
+      # login-item code rightly drops log paths under world-readable roots.
       - name: Run tests
-        run: pytest -q
+        run: pytest -q --basetemp="$RUNNER_TEMP/pytest"

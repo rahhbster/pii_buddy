@@ -10,13 +10,18 @@ touched, and the caller gets a fixed response with no partial output.
 There is no queue.  If no worker is idle the answer is 503 at once.
 
 A worker's pipe is closed only by the thread that holds the worker (the
-caller during a request, the slot thread while it starts, ``close`` while it
-is idle); any thread may kill the process, which turns a blocked read into EOF.
+caller during a request, the slot thread while it starts or once it died idle,
+``close`` while it is idle); any thread may kill the process, which turns a
+blocked read into EOF.  Who holds an idle worker is decided under the pool
+lock: it leaves ``_idle`` exactly once.
 Closing a descriptor under another thread's read can hand it a reused one.
 """
 
+import atexit
+import collections
 import ctypes
 import multiprocessing
+import multiprocessing.connection
 import os
 import queue
 import resource
@@ -40,8 +45,8 @@ _TIMED_OUT = object()
 
 _LINUX = sys.platform.startswith("linux")
 _PR_SET_PDEATHSIG = 1
+_PR_SET_DUMPABLE = 4
 _OOM_SCORE_ADJ = "/proc/self/oom_score_adj"
-_ENV_LOCK = threading.Lock()
 
 
 class WorkerStartError(RuntimeError):
@@ -77,7 +82,6 @@ def _die_with_parent(parent_pid):
 def _quiet_child():
     """Nothing a dependency prints or a traceback holds may reach a log."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     sink = os.open(os.devnull, os.O_WRONLY)
     os.dup2(sink, 1)
     os.dup2(sink, 2)
@@ -98,11 +102,25 @@ def _limit_child(mem_limit_bytes):
         resource.setrlimit(resource.RLIMIT_AS, (mem_limit_bytes, mem_limit_bytes))
 
 
+def _no_core_dumps():
+    """A core holds request text.  A piped core_pattern (apport,
+    systemd-coredump) ignores RLIMIT_CORE, so on Linux the process is also
+    made non-dumpable, which also bars same-uid ptrace and /proc/<pid>/mem.
+    Failing to do that fails the worker: it has not read a request yet."""
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    if _LINUX:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(_PR_SET_DUMPABLE, ctypes.c_ulong(0), ctypes.c_ulong(0),
+                      ctypes.c_ulong(0), ctypes.c_ulong(0)) != 0:
+            raise OSError(ctypes.get_errno(), "PR_SET_DUMPABLE")
+
+
 def _child(conn, handler, init, parent_pid, mem_limit_bytes):
     _die_with_parent(parent_pid)
     _quiet_child()
     try:
-        _limit_child(mem_limit_bytes)
+        _limit_child(mem_limit_bytes)  # first: a non-dumpable /proc/self is root's
+        _no_core_dumps()
         if init is not None:
             init()
     except Exception:
@@ -121,24 +139,10 @@ def _child(conn, handler, init, parent_pid, mem_limit_bytes):
         conn.send(out)
 
 
-def _start_single_threaded(proc):
-    # OpenMP and BLAS read this when they load, which in a spawned child can
-    # be while unpickling, before _child runs.
-    with _ENV_LOCK:
-        saved = os.environ.get("OMP_NUM_THREADS")
-        os.environ["OMP_NUM_THREADS"] = "1"
-        try:
-            proc.start()
-        finally:
-            if saved is None:
-                del os.environ["OMP_NUM_THREADS"]
-            else:
-                os.environ["OMP_NUM_THREADS"] = saved
-
-
 class _Worker:
     def __init__(self, ctx, handler, init, mem_limit_bytes=None):
         self.dead = False
+        self.orphaned = False  # died while held: the holder must not requeue it
         self.gone = threading.Event()
         self._lock = threading.Lock()
         self.conn, child = ctx.Pipe()
@@ -146,7 +150,7 @@ class _Worker:
             self.proc = ctx.Process(
                 target=_child, args=(child, handler, init, os.getpid(), mem_limit_bytes),
                 daemon=True)
-            _start_single_threaded(self.proc)
+            self.proc.start()
         except BaseException:
             self.conn.close()
             raise
@@ -189,12 +193,20 @@ class WorkerPool:
         self._spawn_delay = spawn_delay
         self._mem_limit_bytes = mem_limit_bytes
         self._ctx = multiprocessing.get_context("spawn")
-        self._idle = queue.Queue()
+        self._idle = collections.deque()  # under _lock
         self._lock = threading.Lock()
         self._workers = set()
         self._stop = threading.Event()
 
     def start(self):
+        # OpenMP and BLAS read this when they load, which in a spawned child
+        # can be while unpickling, before _child runs.  Spawn has no per-child
+        # env, so it is set once here, before any slot thread exists:
+        # rewriting os.environ around each spawn raced every other thread.
+        os.environ["OMP_NUM_THREADS"] = "1"
+        # Before multiprocessing's own exit hook (atexit is LIFO) terminates
+        # the daemon workers, which the slot threads would see and respawn.
+        atexit.register(self.close)
         started = queue.Queue()
         try:
             for _ in range(self.size):
@@ -207,7 +219,8 @@ class WorkerPool:
             raise
 
     def idle(self):
-        return self._idle.qsize()
+        with self._lock:
+            return len(self._idle)
 
     @property
     def respawn_failures(self):
@@ -257,13 +270,13 @@ class WorkerPool:
 
     def _take(self):
         for _ in range(self.size):
-            try:
-                w = self._idle.get_nowait()
-            except queue.Empty:
-                return None
-            if w.proc.is_alive():
+            with self._lock:
+                if not self._idle:
+                    return None
+                w = self._idle.popleft()
+            if not _exited(w):
                 return w
-            self._replace(w)  # died idle: the OOM killer picks workers first
+            self._replace(w)  # died before its slot thread noticed
         return None
 
     def _ask(self, w, msg):
@@ -271,7 +284,7 @@ class WorkerPool:
         first byte would otherwise hold recv() forever."""
         deadline = time.monotonic() + self.timeout
         w.conn.send(msg)
-        if not w.conn.poll(self.timeout):
+        if not w.conn.poll(max(0.0, deadline - time.monotonic())):
             return _TIMED_OUT
         late = threading.Event()
 
@@ -300,8 +313,8 @@ class WorkerPool:
 
     def _release(self, w):
         with self._lock:
-            if not (self._stop.is_set() or w.dead):
-                self._idle.put(w)
+            if not (self._stop.is_set() or w.dead or w.orphaned):
+                self._idle.append(w)
                 return
         self._replace(w)
 
@@ -317,7 +330,7 @@ class WorkerPool:
         w = self._spawn()
         started.put(w is not None)
         while w is not None:
-            w.gone.wait()
+            self._await_death(w)
             if self._stop.wait(self._spawn_delay):
                 return
             failures = 0
@@ -330,6 +343,25 @@ class WorkerPool:
                     self._failures[threading.current_thread()] = failures
                 if self._stop.wait(_backoff(failures)):
                     return
+
+    def _await_death(self, w):
+        """Returns once w is discarded or the pool is closing.  The sentinel fires whether the child
+        was killed by its holder or died on its own while idle (the OOM
+        killer's first pick), so an idle death is replaced at once instead of
+        surfacing as a 503 on the next request."""
+        multiprocessing.connection.wait([w.proc.sentinel])
+        with self._lock:
+            if self._stop.is_set():
+                return  # close() owns every worker now
+            mine = w in self._idle
+            if mine:
+                self._idle.remove(w)
+            else:
+                w.orphaned = True
+        if mine:
+            self._replace(w)
+        else:
+            w.gone.wait()  # its holder sees EOF or orphaned, then discards it
 
     def _spawn(self):
         """-> a ready worker, already idle, or None.  Never raises: a spawn
@@ -345,7 +377,7 @@ class WorkerPool:
                 with self._lock:
                     if not self._stop.is_set():
                         self._failures.pop(threading.current_thread(), None)
-                        self._idle.put(w)
+                        self._idle.append(w)
                         return w
         except Exception:
             pass
@@ -354,14 +386,18 @@ class WorkerPool:
         return None
 
     def close(self):
+        atexit.unregister(self.close)
         with self._lock:
             self._stop.set()
             workers, self._workers = self._workers, set()
+            idle, self._idle = list(self._idle), collections.deque()
         for w in workers:
             w.kill()
-        while True:
-            try:
-                w = self._idle.get_nowait()
-            except queue.Empty:
-                break
+        for w in idle:
             w.discard()
+
+
+def _exited(w):
+    """The sentinel, not is_alive(): is_alive() reaps with waitpid, which
+    another thread's kill() may be doing at the same moment."""
+    return bool(multiprocessing.connection.wait([w.proc.sentinel], 0))

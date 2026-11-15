@@ -1,5 +1,6 @@
 """Module-level handlers for the worker-pool tests; spawn must import them."""
 
+import ctypes
 import os
 import resource
 import signal
@@ -11,6 +12,7 @@ from pii_buddy.server import protocol
 # Read at import, which in a spawned child is before the worker code runs.
 OMP_AT_IMPORT = os.environ.get("OMP_NUM_THREADS")
 INIT_SLEEP = "PII_BUDDY_TEST_INIT_SLEEP"
+PR_GET_DUMPABLE = 3
 
 
 class Abort(BaseException):
@@ -86,6 +88,9 @@ def behave(route, body, request_id):
         return _ok(repr(resource.getrlimit(resource.RLIMIT_CORE)).encode()), False
     if body == b"aslimit":
         return _ok(repr(resource.getrlimit(resource.RLIMIT_AS)).encode()), False
+    if body == b"dumpable":
+        libc = ctypes.CDLL(None, use_errno=True)
+        return _ok(str(libc.prctl(PR_GET_DUMPABLE, 0, 0, 0, 0)).encode()), False
     if body == b"oom":
         with open("/proc/self/oom_score_adj") as f:
             return _ok(f.read().strip().encode()), False

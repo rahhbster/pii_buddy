@@ -9,6 +9,14 @@ list) is `docs/design/local-api-mcp-build-spec.md` there (private PR #5, MERGED 
 
 ## Next
 
+**First: public PR #31 (`feat/killable-worker`, `pii_buddy/server/worker.py`) is open,
+held by the owner until red-team defects 1 and 4 were fixed.** All seven items (1-7) are
+now fixed on the branch with red-then-green tests; the new CI job `ubuntu-latest /
+py3.12` runs the Linux-only paths. Next step: check `gh pr checks 31` (all three jobs
+green), then the owner re-reviews and merges; do not merge it yourself. Then continue
+with PR 3 below, using `WorkerPool` from #31 as the worker PROCESS (it replaces the
+`ProcessPoolExecutor` named in the MUST list: that cannot kill a timed-out job).
+
 **Build PR 3 of 5 of the local API/MCP server: the HTTP layer.**
 
 State: public `main` = 9e50c12 before #27 (this file) merges (CI green on that commit);
@@ -274,6 +282,16 @@ any `deny` lines) before moving on to certs/provisioning below.
 ## Ruled out
 
 Never retry these blind.
+
+- **Worker pool: slot thread waiting only on `w.gone`.** A worker that dies while idle
+  never sets it, so the death surfaced as a 503 on the next request. The slot thread now
+  waits on the process sentinel and claims the idle worker under the pool lock.
+- **Worker pool: saving/restoring `OMP_NUM_THREADS` around each spawn.** Raced every
+  other thread's getenv and clobbered concurrent writers. Spawn has no per-child env;
+  it is set once in `WorkerPool.start` before any slot thread exists.
+- **Worker pool: no `atexit` close.** multiprocessing's exit hook terminates daemon
+  workers; once slot threads watch the sentinel they respawn into the dying interpreter,
+  which then hung about 1 run in 5 in the resource tracker.
 
 - **Calibrated tokenizer-cost proxy + 16,000-token cap in `core`.** Rejected on three
   independent reviews: a mid-chunk dot run slipped through (6-8 s), `://` chains were
