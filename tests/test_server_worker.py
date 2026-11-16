@@ -632,6 +632,28 @@ class TestQuickDeaths:
         assert ready(p, seconds=5) and p.healthy()
         assert p.call(ROUTE, b"ok", RID).status == 200
 
+    def test_a_worker_that_served_then_died_idle_still_backs_off(self, monkeypatch,
+                                                                  spawns):
+        """Steady traffic must not hide the OOM churn: the worker serves a
+        request, goes idle, and is killed before min_uptime."""
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.5")
+        p = worker.WorkerPool(1, timeout=1.0, handler=tasks.behave,
+                              init=tasks.die_soon_init)
+        p.start()
+        try:
+            health, peak = [], 0
+            end = time.monotonic() + 6.0
+            while time.monotonic() < end:
+                p.call(ROUTE, b"ok", RID)
+                health.append(p.healthy())
+                peak = max(peak, p.respawn_failures)
+                time.sleep(0.2)
+            assert spawns["n"] <= 5, spawns["n"]  # prompt respawn made ~10
+            assert health.count(False) > len(health) // 2, health
+            assert peak >= 2  # the slot's own count keeps growing
+        finally:
+            p.close()
+
     def test_a_served_worker_clears_an_earlier_quick_death(self, monkeypatch, spawns):
         """Timeouts or crashing requests inside the window must not pin
         healthy() false after one earlier idle death."""
@@ -670,6 +692,34 @@ class TestQuickDeaths:
             assert at[n + 1] - at[n] < 1.5, at[n:]  # one base delay, not 3.2 s
         finally:
             p.close()
+
+
+class TestWorkerDeaths:
+    """For operator alerting only: never part of healthy()."""
+
+    def test_counts_self_deaths_not_pool_kills_or_close(self, pool):
+        p = pool(timeout=0.5)
+        assert p.worker_deaths == 0
+        os.kill(p.pids()[0], signal.SIGKILL)
+        assert wait_until(lambda: p.worker_deaths == 1, 5)
+        assert ready(p, seconds=10)
+        assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
+        assert ready(p, seconds=10)
+        assert p.call(ROUTE, b"exit", RID).status == 500
+        assert wait_until(lambda: p.worker_deaths == 2, 5)
+        assert ready(p, seconds=10)
+        time.sleep(0.3)
+        assert p.worker_deaths == 2
+        p.close()
+        time.sleep(0.3)
+        assert p.worker_deaths == 2
+
+    def test_it_never_touches_health(self, pool):
+        p = pool(min_uptime=0.2)
+        time.sleep(0.4)
+        os.kill(p.pids()[0], signal.SIGKILL)
+        assert wait_until(lambda: p.worker_deaths == 1 and p.idle() == 1, 10)
+        assert p.healthy() and p.respawn_failures == 0
 
 
 class TestSpawnFailures:

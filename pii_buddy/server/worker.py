@@ -149,6 +149,8 @@ class _Worker:
     def __init__(self, ctx, handler, init, mem_limit_bytes=None):
         self.dead = False
         self.taken = False  # handed to a caller at least once
+        self.died_idle = False
+        self.killed = False  # by the pool, as opposed to dying on its own
         self.orphaned = False  # died while held: the holder must not requeue it
         self.gone = threading.Event()
         self._lock = threading.Lock()
@@ -175,6 +177,7 @@ class _Worker:
             if self.dead:
                 return
             self.dead = True
+            self.killed = not _exited(self)
             self.proc.kill()
             self.proc.join()
 
@@ -194,6 +197,7 @@ class WorkerPool:
         self.timeout = timeout
         self.usage = protocol.UsageCounter()
         self._failures = {}  # slot thread -> its consecutive failed respawns
+        self._deaths = 0
         self._handler = handler
         self._init = init
         self._ready_timeout = ready_timeout
@@ -236,6 +240,14 @@ class WorkerPool:
         """Consecutive failed respawns, summed over the slots now failing."""
         with self._lock:
             return sum(self._failures.values())
+
+    @property
+    def worker_deaths(self):
+        """Workers that died on their own (crash, OOM, a request that killed
+        its worker), ever; not the pool's kills or close().  For alerting:
+        healthy() never reads it."""
+        with self._lock:
+            return self._deaths
 
     def healthy(self):
         """False while any slot's respawns are failing, or once closed."""
@@ -288,6 +300,7 @@ class WorkerPool:
                     w.taken = True
                     self._failures.pop(w.slot, None)
                 return w
+            w.died_idle = True
             self._replace(w)  # died before its slot thread noticed
         return None
 
@@ -367,12 +380,15 @@ class WorkerPool:
 
     def _await_death(self, w):
         """Returns once w is discarded or the pool is closing: True if it died
-        within min_uptime of ready without ever being handed to a caller,
-        which is a failed spawn.  A worker that served (or was killed over) a
-        request proves the slot can start one; how it then died is the
+        within min_uptime of ready while idle (or before ever being handed
+        out), which is a failed spawn.  A death while a caller held it is the
         client's doing (exit, segfault, OOM on a big document), so counting
-        it would let one client force backoff on everyone.  Being handed out
-        or outliving the window clears the slot's failures.  The sentinel
+        it would let one client force backoff on everyone.  Having served a
+        request does not excuse an idle death: under steady traffic the OOM
+        killer reaps a fresh worker between requests.  Being handed out
+        clears healthy() (the dict) but not the slot's own count, so a run
+        of such deaths still backs off further; outliving the window clears
+        both.  The sentinel
         fires whether the child was killed by its holder or died on its own
         while idle (the OOM killer's first pick), so an idle death is
         replaced at once instead of surfacing as a 503 on the next request."""
@@ -386,6 +402,7 @@ class WorkerPool:
             if self._stop.is_set():
                 return False  # close() owns every worker now
             mine = w in self._idle
+            w.died_idle = w.died_idle or mine
             if mine:
                 self._idle.remove(w)
             else:
@@ -395,7 +412,9 @@ class WorkerPool:
         else:
             w.gone.wait()  # its holder sees EOF or orphaned, then discards it
         with self._lock:
-            return not (stable or w.taken)
+            if not w.killed:
+                self._deaths += 1
+            return not stable and (w.died_idle or not w.taken)
 
     def _spawn(self):
         """-> a ready worker, already idle, or None.  Never raises: a spawn
