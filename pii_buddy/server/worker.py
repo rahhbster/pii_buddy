@@ -48,6 +48,8 @@ _RETRY_AFTER = ("Retry-After", "1")
 _READY = "ready"
 _FAILED = "failed"
 _TIMED_OUT = object()
+_QUICK = "quick"
+_STABLE = "stable"
 
 _LINUX = sys.platform.startswith("linux")
 _PR_SET_PDEATHSIG = 1
@@ -300,7 +302,8 @@ class WorkerPool:
                     w.taken = True
                     self._failures.pop(w.slot, None)
                 return w
-            w.died_idle = True
+            with self._lock:
+                w.died_idle = True
             self._replace(w)  # died before its slot thread noticed
         return None
 
@@ -356,12 +359,14 @@ class WorkerPool:
         started.put(w is not None)
         failures = 0
         while w is not None:
-            if self._await_death(w):
+            outcome = self._await_death(w)
+            if outcome is _QUICK:
                 failures = self._failed(failures)
                 delay = _backoff(failures)
             else:
-                failures = 0
-                delay = self._spawn_delay
+                if outcome is _STABLE:
+                    failures = 0
+                delay = self._spawn_delay  # a death while held changes nothing
             if self._stop.wait(delay):
                 return
             while True:
@@ -379,9 +384,11 @@ class WorkerPool:
         return failures
 
     def _await_death(self, w):
-        """Returns once w is discarded or the pool is closing: True if it died
-        within min_uptime of ready while idle (or before ever being handed
-        out), which is a failed spawn.  A death while a caller held it is the
+        """Returns once w is discarded or the pool is closing: _QUICK if it
+        died within min_uptime of ready while idle (or before ever being
+        handed out), which is a failed spawn; _STABLE if it outlived the
+        window; None if it died while a caller held it, or on close, which
+        leaves the slot's count as it was.  A death while a caller held it is the
         client's doing (exit, segfault, OOM on a big document), so counting
         it would let one client force backoff on everyone.  Having served a
         request does not excuse an idle death: under steady traffic the OOM
@@ -400,10 +407,10 @@ class WorkerPool:
             multiprocessing.connection.wait(sentinel)
         with self._lock:
             if self._stop.is_set():
-                return False  # close() owns every worker now
+                return None  # close() owns every worker now
             mine = w in self._idle
-            w.died_idle = w.died_idle or mine
             if mine:
+                w.died_idle = True
                 self._idle.remove(w)
             else:
                 w.orphaned = True
@@ -414,7 +421,9 @@ class WorkerPool:
         with self._lock:
             if not w.killed:
                 self._deaths += 1
-            return not stable and (w.died_idle or not w.taken)
+            if stable:
+                return _STABLE
+            return _QUICK if w.died_idle or not w.taken else None
 
     def _spawn(self):
         """-> a ready worker, already idle, or None.  Never raises: a spawn

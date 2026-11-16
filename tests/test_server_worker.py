@@ -564,10 +564,12 @@ class TestQuickDeaths:
         p.start()
         try:
             t0 = time.monotonic()
-            assert wait_until(lambda: not p.healthy(), 3)
-            assert wait_until(lambda: p.respawn_failures >= 2, 3)
+            assert wait_until(lambda: not p.healthy(), 6)
+            assert wait_until(lambda: p.respawn_failures >= 2, 6)  # both slots
             time.sleep(max(0.0, 5.0 - (time.monotonic() - t0)))
-            assert spawns["n"] <= 10, spawns["n"]  # prompt respawn made ~70
+            # Prompt respawn made ~70 in 5 s; backoff allows 4 per slot even
+            # if a loaded runner stretched the waits above to 10 s.
+            assert spawns["n"] <= 10, spawns["n"]
             assert not p.healthy()
         finally:
             p.close()
@@ -615,44 +617,89 @@ class TestQuickDeaths:
         finally:
             p.close()
 
-    def test_a_request_that_kills_its_worker_is_not_a_failed_spawn(self, pool, spawns):
+    def test_a_request_that_kills_its_worker_is_not_a_failed_spawn(self, pool, spawns,
+                                                                   monkeypatch):
         """Exit, segfault or OOM on a big document: the client caused it.
         Counting it would let one client force backoff on everyone."""
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 5.0)
         p = pool(min_uptime=10.0)
-        health, codes = [], []
-        end = time.monotonic() + 4.0
-        while time.monotonic() < end:
+        health, codes, took = [], [], []
+        for _ in range(10):
             health.append(p.healthy())
             codes.append(p.call(ROUTE, b"exit", RID).diag.code)
             health.append(p.healthy())
-            time.sleep(0.2)
-        assert all(health), health.count(False)
-        assert codes.count("busy") <= 3, codes
-        assert spawns["n"] >= len(codes) - 3
-        assert ready(p, seconds=5) and p.healthy()
+            t0 = time.monotonic()
+            assert ready(p, seconds=10)
+            took.append(time.monotonic() - t0)
+        assert all(health), health
+        assert codes == ["internal_error"] * 10, codes  # WorkerDied, never busy
+        assert spawns["n"] == 11
+        assert max(took) < 4.0, took  # no 5 s backoff on any of them
         assert p.call(ROUTE, b"ok", RID).status == 200
 
     def test_a_worker_that_served_then_died_idle_still_backs_off(self, monkeypatch,
                                                                   spawns):
         """Steady traffic must not hide the OOM churn: the worker serves a
         request, goes idle, and is killed before min_uptime."""
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.2)
+        asked, real = [], worker._backoff
+        monkeypatch.setattr(worker, "_backoff", lambda n: asked.append(real(n)) or asked[-1])
         monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.5")
         p = worker.WorkerPool(1, timeout=1.0, handler=tasks.behave,
                               init=tasks.die_soon_init)
         p.start()
         try:
-            health, peak = [], 0
-            end = time.monotonic() + 6.0
-            while time.monotonic() < end:
-                p.call(ROUTE, b"ok", RID)
+            health, served = [], 0
+            end = time.monotonic() + 30.0
+            while len(asked) < 3 and time.monotonic() < end:
+                served += p.call(ROUTE, b"ok", RID).status == 200
                 health.append(p.healthy())
-                peak = max(peak, p.respawn_failures)
-                time.sleep(0.2)
-            assert spawns["n"] <= 5, spawns["n"]  # prompt respawn made ~10
-            assert health.count(False) > len(health) // 2, health
-            assert peak >= 2  # the slot's own count keeps growing
+                time.sleep(0.1)
+            # Every death came after a hand-out, yet each one backed off, and
+            # the hand-out did not reset the slot's count: the delays double.
+            assert asked[:3] == [0.2, 0.4, 0.8], asked
+            assert served >= 3
+            assert False in health, health
         finally:
             p.close()
+
+    def test_a_death_while_held_leaves_the_backoff_count_alone(self, monkeypatch,
+                                                                spawns):
+        """Quick idle deaths build the count; a client crash in between must
+        neither add to it nor reset it."""
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.1)
+        asked, real = [], worker._backoff
+        monkeypatch.setattr(worker, "_backoff", lambda n: asked.append(real(n)) or asked[-1])
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "1.0")
+        p = worker.WorkerPool(1, timeout=5.0, handler=tasks.behave,
+                              init=tasks.die_soon_init, min_uptime=30.0)
+        p.start()
+        try:
+            assert wait_until(lambda: len(asked) == 2, 15)  # two idle deaths
+            assert ready(p, seconds=15)
+            assert p.call(ROUTE, b"exit", RID).diag.code == "internal_error"
+            assert wait_until(lambda: len(asked) == 3, 15)  # next idle death
+            assert asked == [0.1, 0.2, 0.4], asked
+        finally:
+            p.close()
+
+    def test_an_idle_death_found_by_take_still_counts(self, monkeypatch, pool):
+        """The worker served once, then died idle; _take, not the slow slot
+        thread, is first to see it.  That is still a quick idle death."""
+        hold = threading.Event()
+        real = worker.WorkerPool._await_death
+        monkeypatch.setattr(worker.WorkerPool, "_await_death",
+                            lambda self, w: (hold.wait(10), real(self, w))[1])
+        p = pool(min_uptime=30.0)
+        assert p.call(ROUTE, b"ok", RID).status == 200
+        w = idle_worker(p)
+        os.kill(w.proc.pid, signal.SIGKILL)
+        assert multiprocessing.connection.wait([w.proc.sentinel], 5)
+        assert p.call(ROUTE, b"ok", RID).diag.code == "busy"
+        assert w.died_idle and w.taken
+        hold.set()
+        assert wait_until(lambda: not p.healthy(), 5)
+        assert p.respawn_failures == 1
 
     def test_a_served_worker_clears_an_earlier_quick_death(self, monkeypatch, spawns):
         """Timeouts or crashing requests inside the window must not pin
@@ -762,18 +809,23 @@ class TestSpawnFailures:
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.05)
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF_MAX", 0.4)
         spawns["fail"] = lambda n: n >= 1
+        asked, real = [], worker._backoff
+        monkeypatch.setattr(worker, "_backoff", lambda n: asked.append(real(n)) or asked[-1])
         p = worker.WorkerPool(1, timeout=0.3, handler=tasks.behave, init=None,
                               min_uptime=0.2)
         p.start()
         try:
             assert p.healthy()
             assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
-            assert wait_until(lambda: spawns["n"] >= 7, 5)
+            assert wait_until(lambda: spawns["n"] >= 7, 10)
             assert not p.healthy() and p.respawn_failures >= 6
+            # The sequence itself is exact; the clock only has to agree that
+            # each wait really happened.  A shared CI runner wakes late.
+            assert asked[:6] == [0.05, 0.1, 0.2, 0.4, 0.4, 0.4], asked
             at = spawns["at"][1:7]
             gaps = [b - a for a, b in zip(at, at[1:])]
-            for want, got in zip([0.05, 0.1, 0.2, 0.4, 0.4], gaps):
-                assert want * 0.9 < got < want + 0.15, gaps
+            for want, got in zip(asked, gaps):
+                assert want * 0.9 < got < want + 1.0, gaps
             spawns["fail"] = lambda n: False
             assert ready(p, seconds=5)
             assert not p.healthy()  # healthy only once the worker stays up
