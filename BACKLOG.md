@@ -9,69 +9,28 @@ list) is `docs/design/local-api-mcp-build-spec.md` there (private PR #5, MERGED 
 
 ## Next
 
-**Build PR 3 of 5 of the local API/MCP server: the HTTP layer.**
+**Launch path: the invited-tester hosted beta.** Owner decision: it goes live before
+PRs 3b-5. Do these in order, one at a time:
 
-State: public `main` = 9e50c12 before #27 (this file) merges (CI green on that commit);
-after the merge its tip is #27's merge commit, so branch from `origin/main`. #23, #26
-and private #5 are all merged. Merged for the build: #18 `core.py`,
-#20 + #22 `server/guard.py`, #21 validation perf, #24 core follow-ups, #25
-`server/protocol.py`. No other public PRs are open.
-The review wave #1-#17 is long done.
+1. Public PR #31 (`feat/killable-worker`, `pii_buddy/server/worker.py`): wait for CI to
+   go green on all three jobs (`gh pr checks 31`; macOS py3.12, macOS py3.10 and
+   ubuntu py3.12), then the owner re-reviews and merges. Do not merge it yourself.
+2. Private PR #8 (`hosted/`, red-team approved at cb0f050): set `PII_BUDDY_REF` to the
+   FULL SHA of public `main` after #31 merges (`git ls-remote origin main`), then the
+   owner merges.
+3. Deploy from the "Hostinger VPS (on box)" session; the owner types yes there. The
+   pieces: the `pb-edge` network, a Coolify compose app, a deploy key, and env
+   `PII_BUDDY_REF` + `PII_BUDDY_KEY_HASHES`.
+4. Run the smoke tests from outside the box.
+5. On deploy day, merge the privacy-page PR #30.
+6. Issue the tester keys.
 
-Do exactly this, in order:
+Owner action, blocks step 5: create the `privacy@piibuddy.com` alias.
 
-```bash
-cd ~/code/pii_buddy && git checkout main && git pull --ff-only origin main
-gh pr list                                   # expect none (#27 merged)
-git checkout -b feat/local-api-http origin/main
-# read first: pii_buddy_private/docs/design/local-api-mcp-build-spec.md
-#   ("As built" section + the PR 3 MUST list), then
-#   pii_buddy/server/guard.py, pii_buddy/server/protocol.py,
-#   tests/test_server_guard_protocol_integration.py
-# FIRST file to write (tests first): tests/test_server_http_integration.py
-#   real 127.0.0.1 socket on port 0, raw-socket cases below, behavioral red first
-# then: pii_buddy/server/http.py, pii_buddy/server/runtime.py
-export PII_BUDDY_DIR=$(mktemp -d)/PII_Buddy   # ALWAYS before any pytest run
-.venv/bin/python -m pytest -q
-```
-
-Why PR 3 next: guard (admission) and protocol (dispatch) are merged and inert; nothing
-listens yet. The sockets are where the guard can be bypassed because Python's
-`http.server` normalises requests BEFORE the guard sees them: `Origin : x` header
-lines are silently dropped, `//v1/health` is rewritten to `/v1/health`, HTTP/0.9 is
-accepted, and errors are HTML that echoes the request line. So PR 3's first
-deliverable is an integration test over a real loopback socket (a pure-function split
-once shipped a guard/protocol route-string mismatch that 386 tests missed).
-
-PR 3 must: `protocol_version = "HTTP/1.0"`; pass `list(self.headers.items())` to the
-guard; reject `request_version` not in (HTTP/1.0, HTTP/1.1); re-parse
-`self.requestline` (exactly 3 tokens) and reject if the raw target differs from
-`self.path`; override `send_error`/`error_message_format` to a fixed JSON body;
-define `do_*` for every method; read exactly the validated Content-Length with a 10 s
-socket timeout; run `core` in a worker PROCESS (spawn, `ProcessPoolExecutor`,
-`future.result(timeout >= 30 s)`, concurrency cap 4); log only `Response.diag` and
-`entity_count`, NEVER `__cause__` (it is a stdlib `_RemoteTraceback` holding worker
-traceback text); decide deliberately what a BaseException from a worker does (it
-propagates through `handle()`); bind 127.0.0.1 only, random port in a 0600
-`server.json` `{port,pid}`; token file 0600 in a 0700 dir via `O_CREAT|O_EXCL|
-O_NOFOLLOW` + `lstat` checks; `flock` single instance, never unlink lock files;
-refuse when `PII_BUDDY_MAS_BUILD` is set; model preflight at startup, never download
-mid-request.
-
-Small test-only PR any time (own red team): `fix/timing-test-gaps` (branch does not
-exist yet), the six #23 gaps listed in the follow-ups below.
-
-After PR 3: PR 4 MCP stdio (`sys.stdout = sys.stderr`, keep the real stdout fd for
-JSON-RPC, notifications write nothing), PR 5 `main.py --serve` / `--mcp-stdio` +
-`docs/local_api.md`, then menubar toggle. The WATCHDOG (worker process, timeout >=
-30 s) must be in place BEFORE `--serve` ships.
-
-Rules (owner, 2026-10-17): independent red team of the EXACT head commit before EVERY
-merge; ask the owner before each merge with SHA + CI state + verdict; pin with
-`gh pr merge N --merge --match-head-commit <full sha>`; compare the changed-file set
-by exact equality; explicit-path `git add`, never `git commit -a` in a shared
-checkout; every PR that joins two merged modules starts with an integration test;
-do not delete any remote branch without asking.
+**Off the launch path: PR #28 (local HTTP).** It fails on Linux CI:
+`TestDrain::test_whole_body_uploader_reads_its_401[524288]` raises BrokenPipeError,
+likely an RST on close with unread request data. Fix the root cause in `http.py`
+(graceful `shutdown(SHUT_WR)` plus a bounded drain before close), then re-review.
 
 ### Half-applied / live state (read before touching anything)
 
@@ -274,6 +233,16 @@ any `deny` lines) before moving on to certs/provisioning below.
 ## Ruled out
 
 Never retry these blind.
+
+- **Worker pool: slot thread waiting only on `w.gone`.** A worker that dies while idle
+  never sets it, so the death surfaced as a 503 on the next request. The slot thread now
+  waits on the process sentinel and claims the idle worker under the pool lock.
+- **Worker pool: saving/restoring `OMP_NUM_THREADS` around each spawn.** Raced every
+  other thread's getenv and clobbered concurrent writers. Spawn has no per-child env;
+  it is set once in `WorkerPool.start` before any slot thread exists.
+- **Worker pool: no `atexit` close.** multiprocessing's exit hook terminates daemon
+  workers; once slot threads watch the sentinel they respawn into the dying interpreter,
+  which then hung about 1 run in 5 in the resource tracker.
 
 - **Calibrated tokenizer-cost proxy + 16,000-token cap in `core`.** Rejected on three
   independent reviews: a mid-chunk dot run slipped through (6-8 s), `://` chains were

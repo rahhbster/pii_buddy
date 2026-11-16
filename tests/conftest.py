@@ -211,8 +211,34 @@ def install_guards(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", GuardedPopen)
 
 
+_PYTEST_PID = os.getpid()
+_real_exit = os._exit
+_exit_calls = []
+
+
+def _guarded_exit(code):
+    # os._exit in the pytest process ends the run with that code (often 0,
+    # so CI goes green mid-run).  Forked children still exit for real.  The
+    # record catches calls whose exception a thread or an except swallowed.
+    if os.getpid() == _PYTEST_PID:
+        _exit_calls.append(code)
+        raise pytest.fail.Exception(f"os._exit({code!r}) called in the pytest process")
+    _real_exit(code)
+
+
 @pytest.fixture(autouse=True)
 def hermetic(tmp_path_factory, monkeypatch):
+    if _exit_calls:
+        calls, _exit_calls[:] = list(_exit_calls), []
+        pytest.fail(f"os._exit called in the pytest process, recorded before this "
+                    f"test (after the previous one tore down): {calls!r}")
+    monkeypatch.setattr(os, "_exit", _guarded_exit)
+    # WorkerPool.start sets it for the whole process; undo that per test.
+    # setenv first: delenv of an absent name records nothing to undo.
+    omp = os.environ.get("OMP_NUM_THREADS")
+    monkeypatch.setenv("OMP_NUM_THREADS", omp or "")
+    if omp is None:
+        monkeypatch.delenv("OMP_NUM_THREADS")
     # Outside tmp_path: tests that list their own tmp_path must not see it.
     home = tmp_path_factory.mktemp("home")
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -222,6 +248,8 @@ def hermetic(tmp_path_factory, monkeypatch):
     )
     install_guards(monkeypatch)
     yield home
+    calls, _exit_calls[:] = list(_exit_calls), []
+    assert not calls, f"os._exit called in the pytest process: {calls!r}"
 
 
 # ---------------------------------------------------------------------------
