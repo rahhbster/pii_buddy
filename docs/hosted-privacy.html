@@ -38,7 +38,9 @@
     turn on optional cloud verification or run an explicit update command.</p>
 
     <p class="note">Despite its name, this beta has no MCP endpoint. It is a plain
-    HTTPS API offering <code>/v1/check</code> and <code>/v1/redact</code> only.</p>
+    HTTPS API that accepts text only at <code>/v1/check</code> and
+    <code>/v1/redact</code>, plus a <code>/v1/health</code> status check that takes
+    no input.</p>
 
     <h2>Send synthetic data only</h2>
     <p>The beta is for testing. Use made-up names, emails, numbers and
@@ -50,7 +52,8 @@
     <h2>What happens to your text</h2>
     <ul>
       <li>Always use <code>https://</code>. A request sent to <code>http://</code> is
-        redirected, but its contents have already crossed the network unencrypted.
+        redirected, but its contents and your tester key have already crossed the
+        network unencrypted; if that happens, ask us to replace your key.
         Encryption ends at our server, so the
         server sees your text in plain form while it processes it. This is not
         end-to-end encryption.</li>
@@ -71,12 +74,14 @@
       <li>Application logs record, per request: a random request ID, the route, the
         status, the time taken, your tester ID, the request size in bytes, the
         number of items found and, on failure, an error code and the name of the
-        error type. Never the text.</li>
+        error type. Never the text. Application logs are capped at 30 MB and the
+        oldest lines are deleted first.</li>
       <li>The web proxy and hosting platform in front of the service may record
         your IP address, the time, the URL path, the status and your browser or
-        client name. Application logs are capped at 30 MB and the oldest lines are
-        deleted first. Only the operator can read them. Server backups may contain
-        copies of these logs.</li>
+        client name; how long those records are kept is set by the platform, not
+        by this service. Only the operator has access to these logs, apart from
+        the hosting provider's own access to the server. Server backups may
+        contain copies of them.</li>
       <li>Rate-limit counters are kept in memory and reset when the service
         restarts.</li>
     </ul>
