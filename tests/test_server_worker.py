@@ -589,7 +589,6 @@ class TestQuickDeaths:
     def test_a_worker_that_outlived_the_window_respawns_at_once(self, monkeypatch, pool):
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 5.0)
         p = pool(min_uptime=0.3)
-        assert p.call(ROUTE, b"ok", RID).status == 200
         time.sleep(0.5)
         pid, health = p.pids()[0], []
         os.kill(pid, signal.SIGKILL)
@@ -603,9 +602,74 @@ class TestQuickDeaths:
         assert time.monotonic() - t0 < 4.0
         assert all(health)
 
-    def test_the_default_window_outlasts_a_model_load(self):
-        assert worker.MIN_UPTIME == 10.0
-        assert worker.WorkerPool(1)._min_uptime == worker.MIN_UPTIME
+    def test_the_default_window_counts_a_death_seconds_after_ready(self, monkeypatch):
+        """An OOM kill can land a few seconds after the model load on a slow,
+        loaded box; the default window must still call that a failed spawn."""
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "2.0")
+        p = worker.WorkerPool(1, handler=tasks.behave, init=tasks.die_soon_init)
+        assert p._min_uptime == worker.MIN_UPTIME
+        p.start()
+        try:
+            assert wait_until(lambda: not p.healthy(), 6)
+            assert p.respawn_failures == 1
+        finally:
+            p.close()
+
+    def test_a_request_that_kills_its_worker_is_not_a_failed_spawn(self, pool, spawns):
+        """Exit, segfault or OOM on a big document: the client caused it.
+        Counting it would let one client force backoff on everyone."""
+        p = pool(min_uptime=10.0)
+        health, codes = [], []
+        end = time.monotonic() + 4.0
+        while time.monotonic() < end:
+            health.append(p.healthy())
+            codes.append(p.call(ROUTE, b"exit", RID).diag.code)
+            health.append(p.healthy())
+            time.sleep(0.2)
+        assert all(health), health.count(False)
+        assert codes.count("busy") <= 3, codes
+        assert spawns["n"] >= len(codes) - 3
+        assert ready(p, seconds=5) and p.healthy()
+        assert p.call(ROUTE, b"ok", RID).status == 200
+
+    def test_a_served_worker_clears_an_earlier_quick_death(self, monkeypatch, spawns):
+        """Timeouts or crashing requests inside the window must not pin
+        healthy() false after one earlier idle death."""
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.1)
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.05")
+        p = worker.WorkerPool(1, timeout=0.3, handler=tasks.behave,
+                              init=tasks.die_soon_init, min_uptime=30.0)
+        p.start()
+        try:
+            assert wait_until(lambda: not p.healthy(), 3)
+            monkeypatch.delenv(tasks.DIE_AFTER_READY)
+            for what in (b"spin", b"exit", b"spin"):
+                assert ready(p, seconds=5)
+                assert p.call(ROUTE, what, RID).status != 200
+                assert p.healthy()
+        finally:
+            p.close()
+
+    def test_a_stable_worker_resets_the_backoff(self, monkeypatch, spawns):
+        """After a worker has stayed up, the next quick death waits the base
+        delay again, not the doubled delay of an old run."""
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.1)
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.05")
+        p = worker.WorkerPool(1, timeout=1.0, handler=tasks.behave,
+                              init=tasks.die_soon_init, min_uptime=0.5)
+        p.start()
+        try:
+            assert wait_until(lambda: p.respawn_failures >= 5, 15)  # next wait 3.2 s
+            monkeypatch.delenv(tasks.DIE_AFTER_READY)
+            assert wait_until(lambda: p.healthy() and p.idle() == 1, 10)
+            monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.05")
+            n = spawns["n"]
+            os.kill(p.pids()[0], signal.SIGKILL)  # stable: respawned at once
+            assert wait_until(lambda: spawns["n"] >= n + 2, 5)
+            at = spawns["at"]
+            assert at[n + 1] - at[n] < 1.5, at[n:]  # one base delay, not 3.2 s
+        finally:
+            p.close()
 
 
 class TestSpawnFailures:

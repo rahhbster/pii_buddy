@@ -37,8 +37,8 @@ DEFAULT_TIMEOUT = 30.0
 READY_TIMEOUT = 120.0
 RESPAWN_BACKOFF = 1.0
 RESPAWN_BACKOFF_MAX = 60.0
-# A worker that dies on its own sooner than this after ready counts as a
-# failed spawn.  The OOM killer reaps a fresh worker as its model finishes
+# A worker that dies idle, never handed to a caller, sooner than this after
+# ready counts as a failed spawn.  The OOM killer reaps a fresh worker as its model finishes
 # loading, so such deaths come within a second or two of ready; ten seconds
 # catches them on a slow box, yet is nothing next to a normal worker's life,
 # so a worker lost after real work still respawns at once.
@@ -48,8 +48,6 @@ _RETRY_AFTER = ("Retry-After", "1")
 _READY = "ready"
 _FAILED = "failed"
 _TIMED_OUT = object()
-_QUICK = "quick"
-_STABLE = "stable"
 
 _LINUX = sys.platform.startswith("linux")
 _PR_SET_PDEATHSIG = 1
@@ -150,7 +148,7 @@ def _child(conn, handler, init, parent_pid, mem_limit_bytes):
 class _Worker:
     def __init__(self, ctx, handler, init, mem_limit_bytes=None):
         self.dead = False
-        self.killed = False  # by the pool, as opposed to dying on its own
+        self.taken = False  # handed to a caller at least once
         self.orphaned = False  # died while held: the holder must not requeue it
         self.gone = threading.Event()
         self._lock = threading.Lock()
@@ -177,7 +175,6 @@ class _Worker:
             if self.dead:
                 return
             self.dead = True
-            self.killed = not _exited(self)
             self.proc.kill()
             self.proc.join()
 
@@ -287,6 +284,9 @@ class WorkerPool:
                     return None
                 w = self._idle.popleft()
             if not _exited(w):
+                with self._lock:
+                    w.taken = True
+                    self._failures.pop(w.slot, None)
                 return w
             self._replace(w)  # died before its slot thread noticed
         return None
@@ -343,13 +343,11 @@ class WorkerPool:
         started.put(w is not None)
         failures = 0
         while w is not None:
-            outcome = self._await_death(w)
-            if outcome is _QUICK:
+            if self._await_death(w):
                 failures = self._failed(failures)
                 delay = _backoff(failures)
             else:
-                if outcome is _STABLE:
-                    failures = 0
+                failures = 0
                 delay = self._spawn_delay
             if self._stop.wait(delay):
                 return
@@ -368,14 +366,16 @@ class WorkerPool:
         return failures
 
     def _await_death(self, w):
-        """Returns once w is discarded or the pool is closing: _QUICK if it
-        died on its own within min_uptime of ready, which is a failed spawn;
-        _STABLE if it outlived that; else None (the pool killed it early, say
-        on a timeout, which proves nothing either way).  The
-        sentinel fires whether the child was killed by its holder or died on
-        its own while idle (the OOM killer's first pick), so an idle death is
-        replaced at once instead of surfacing as a 503 on the next request.
-        The slot's failures stand until a worker outlives the window."""
+        """Returns once w is discarded or the pool is closing: True if it died
+        within min_uptime of ready without ever being handed to a caller,
+        which is a failed spawn.  A worker that served (or was killed over) a
+        request proves the slot can start one; how it then died is the
+        client's doing (exit, segfault, OOM on a big document), so counting
+        it would let one client force backoff on everyone.  Being handed out
+        or outliving the window clears the slot's failures.  The sentinel
+        fires whether the child was killed by its holder or died on its own
+        while idle (the OOM killer's first pick), so an idle death is
+        replaced at once instead of surfacing as a 503 on the next request."""
         sentinel = [w.proc.sentinel]
         stable = not multiprocessing.connection.wait(sentinel, self._min_uptime)
         if stable:
@@ -384,7 +384,7 @@ class WorkerPool:
             multiprocessing.connection.wait(sentinel)
         with self._lock:
             if self._stop.is_set():
-                return None  # close() owns every worker now
+                return False  # close() owns every worker now
             mine = w in self._idle
             if mine:
                 self._idle.remove(w)
@@ -394,9 +394,8 @@ class WorkerPool:
             self._replace(w)
         else:
             w.gone.wait()  # its holder sees EOF or orphaned, then discards it
-        if stable:
-            return _STABLE
-        return None if w.killed else _QUICK
+        with self._lock:
+            return not (stable or w.taken)
 
     def _spawn(self):
         """-> a ready worker, already idle, or None.  Never raises: a spawn
@@ -404,6 +403,7 @@ class WorkerPool:
         w = None
         try:
             w = _Worker(self._ctx, self._handler, self._init, self._mem_limit_bytes)
+            w.slot = threading.current_thread()
             with self._lock:
                 live = not self._stop.is_set()
                 if live:
