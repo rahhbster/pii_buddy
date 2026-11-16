@@ -5,6 +5,7 @@ import os
 import resource
 import signal
 import sys
+import threading
 import time
 
 from pii_buddy.server import protocol
@@ -12,6 +13,7 @@ from pii_buddy.server import protocol
 # Read at import, which in a spawned child is before the worker code runs.
 OMP_AT_IMPORT = os.environ.get("OMP_NUM_THREADS")
 INIT_SLEEP = "PII_BUDDY_TEST_INIT_SLEEP"
+DIE_AFTER_READY = "PII_BUDDY_TEST_DIE_AFTER_READY"
 PR_GET_DUMPABLE = 3
 
 
@@ -100,6 +102,14 @@ def behave(route, body, request_id):
 def sleepy_init():
     """Slow only when the test asks, so a respawn can be caught mid-start."""
     time.sleep(float(os.environ.get(INIT_SLEEP, "0")))
+
+
+def die_soon_init():
+    """Dies just after ready while the test asks: an OOM kill right after the
+    model load looks like this."""
+    delay = os.environ.get(DIE_AFTER_READY)
+    if delay is not None:
+        threading.Timer(float(delay), os._exit, (0,)).start()
 
 
 def failing_init():

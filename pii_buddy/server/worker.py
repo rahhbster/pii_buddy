@@ -37,11 +37,19 @@ DEFAULT_TIMEOUT = 30.0
 READY_TIMEOUT = 120.0
 RESPAWN_BACKOFF = 1.0
 RESPAWN_BACKOFF_MAX = 60.0
+# A worker that dies on its own sooner than this after ready counts as a
+# failed spawn.  The OOM killer reaps a fresh worker as its model finishes
+# loading, so such deaths come within a second or two of ready; ten seconds
+# catches them on a slow box, yet is nothing next to a normal worker's life,
+# so a worker lost after real work still respawns at once.
+MIN_UPTIME = 10.0
 
 _RETRY_AFTER = ("Retry-After", "1")
 _READY = "ready"
 _FAILED = "failed"
 _TIMED_OUT = object()
+_QUICK = "quick"
+_STABLE = "stable"
 
 _LINUX = sys.platform.startswith("linux")
 _PR_SET_PDEATHSIG = 1
@@ -142,6 +150,7 @@ def _child(conn, handler, init, parent_pid, mem_limit_bytes):
 class _Worker:
     def __init__(self, ctx, handler, init, mem_limit_bytes=None):
         self.dead = False
+        self.killed = False  # by the pool, as opposed to dying on its own
         self.orphaned = False  # died while held: the holder must not requeue it
         self.gone = threading.Event()
         self._lock = threading.Lock()
@@ -168,6 +177,7 @@ class _Worker:
             if self.dead:
                 return
             self.dead = True
+            self.killed = not _exited(self)
             self.proc.kill()
             self.proc.join()
 
@@ -182,7 +192,7 @@ class _Worker:
 class WorkerPool:
     def __init__(self, size, *, timeout=DEFAULT_TIMEOUT, handler=_handle,
                  init=detector.preflight, ready_timeout=READY_TIMEOUT,
-                 spawn_delay=0.0, mem_limit_bytes=None):
+                 spawn_delay=0.0, mem_limit_bytes=None, min_uptime=MIN_UPTIME):
         self.size = size
         self.timeout = timeout
         self.usage = protocol.UsageCounter()
@@ -192,6 +202,7 @@ class WorkerPool:
         self._ready_timeout = ready_timeout
         self._spawn_delay = spawn_delay
         self._mem_limit_bytes = mem_limit_bytes
+        self._min_uptime = min_uptime
         self._ctx = multiprocessing.get_context("spawn")
         self._idle = collections.deque()  # under _lock
         self._lock = threading.Lock()
@@ -203,7 +214,8 @@ class WorkerPool:
         # can be while unpickling, before _child runs.  Spawn has no per-child
         # env, so it is set once here, before any slot thread exists:
         # rewriting os.environ around each spawn raced every other thread.
-        os.environ["OMP_NUM_THREADS"] = "1"
+        # An operator's own value wins.
+        os.environ.setdefault("OMP_NUM_THREADS", "1")
         # Before multiprocessing's own exit hook (atexit is LIFO) terminates
         # the daemon workers, which the slot threads would see and respawn.
         atexit.register(self.close)
@@ -329,30 +341,50 @@ class WorkerPool:
         not the process."""
         w = self._spawn()
         started.put(w is not None)
+        failures = 0
         while w is not None:
-            self._await_death(w)
-            if self._stop.wait(self._spawn_delay):
+            outcome = self._await_death(w)
+            if outcome is _QUICK:
+                failures = self._failed(failures)
+                delay = _backoff(failures)
+            else:
+                if outcome is _STABLE:
+                    failures = 0
+                delay = self._spawn_delay
+            if self._stop.wait(delay):
                 return
-            failures = 0
             while True:
                 w = self._spawn()
                 if w is not None or self._stop.is_set():
                     break
-                failures += 1
-                with self._lock:
-                    self._failures[threading.current_thread()] = failures
+                failures = self._failed(failures)
                 if self._stop.wait(_backoff(failures)):
                     return
 
+    def _failed(self, failures):
+        failures += 1
+        with self._lock:
+            self._failures[threading.current_thread()] = failures
+        return failures
+
     def _await_death(self, w):
-        """Returns once w is discarded or the pool is closing.  The sentinel fires whether the child
-        was killed by its holder or died on its own while idle (the OOM
-        killer's first pick), so an idle death is replaced at once instead of
-        surfacing as a 503 on the next request."""
-        multiprocessing.connection.wait([w.proc.sentinel])
+        """Returns once w is discarded or the pool is closing: _QUICK if it
+        died on its own within min_uptime of ready, which is a failed spawn;
+        _STABLE if it outlived that; else None (the pool killed it early, say
+        on a timeout, which proves nothing either way).  The
+        sentinel fires whether the child was killed by its holder or died on
+        its own while idle (the OOM killer's first pick), so an idle death is
+        replaced at once instead of surfacing as a 503 on the next request.
+        The slot's failures stand until a worker outlives the window."""
+        sentinel = [w.proc.sentinel]
+        stable = not multiprocessing.connection.wait(sentinel, self._min_uptime)
+        if stable:
+            with self._lock:
+                self._failures.pop(threading.current_thread(), None)
+            multiprocessing.connection.wait(sentinel)
         with self._lock:
             if self._stop.is_set():
-                return  # close() owns every worker now
+                return None  # close() owns every worker now
             mine = w in self._idle
             if mine:
                 self._idle.remove(w)
@@ -362,6 +394,9 @@ class WorkerPool:
             self._replace(w)
         else:
             w.gone.wait()  # its holder sees EOF or orphaned, then discards it
+        if stable:
+            return _STABLE
+        return None if w.killed else _QUICK
 
     def _spawn(self):
         """-> a ready worker, already idle, or None.  Never raises: a spawn
@@ -376,7 +411,6 @@ class WorkerPool:
             if live and w.wait_ready(self._ready_timeout):
                 with self._lock:
                     if not self._stop.is_set():
-                        self._failures.pop(threading.current_thread(), None)
                         self._idle.append(w)
                         return w
         except Exception:

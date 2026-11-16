@@ -228,7 +228,10 @@ def _guarded_exit(code):
 
 @pytest.fixture(autouse=True)
 def hermetic(tmp_path_factory, monkeypatch):
-    _exit_calls.clear()
+    if _exit_calls:
+        calls, _exit_calls[:] = list(_exit_calls), []
+        pytest.fail(f"os._exit called in the pytest process, recorded before this "
+                    f"test (after the previous one tore down): {calls!r}")
     monkeypatch.setattr(os, "_exit", _guarded_exit)
     # WorkerPool.start sets it for the whole process; undo that per test.
     # setenv first: delenv of an absent name records nothing to undo.

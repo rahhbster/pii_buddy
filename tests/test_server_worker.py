@@ -73,6 +73,7 @@ def pool():
     made = []
 
     def _make(size=1, *, timeout=2.0, handler=tasks.behave, **kw):
+        kw.setdefault("min_uptime", 0.2)
         p = worker.WorkerPool(size, timeout=timeout, handler=handler, init=None, **kw)
         p.start()
         made.append(p)
@@ -223,9 +224,26 @@ class TestTimeoutReallyStopsTheWork:
             return (p.idle() == 2 and len(now) == 2 and not set(pids) & set(now)
                     and all(alive(pid) for pid in now))
 
-        assert wait_until(replaced, 10)
-        assert p.healthy() and p.respawn_failures == 0
+        assert wait_until(lambda: replaced() and p.healthy(), 10)
+        assert p.respawn_failures == 0
         assert [p.call(ROUTE, b"ok", RID).status for _ in range(4)] == [200] * 4
+
+    def test_a_dead_worker_is_never_handed_out(self, pool, monkeypatch):
+        """The slot thread is slow to notice here, so only _take stands
+        between the dead worker and a caller."""
+        hold = threading.Event()
+        real = worker.WorkerPool._await_death
+        monkeypatch.setattr(worker.WorkerPool, "_await_death",
+                            lambda self, w: (hold.wait(10), real(self, w))[1])
+        p = pool()
+        w = idle_worker(p)
+        os.kill(w.proc.pid, signal.SIGKILL)
+        assert multiprocessing.connection.wait([w.proc.sentinel], 5)
+        r = p.call(ROUTE, b"ok", RID)
+        assert (r.status, r.diag.code) == (503, "busy")
+        assert w.gone.is_set()
+        hold.set()
+        assert ready(p, seconds=10)
 
     def test_a_worker_that_dies_after_its_reply_is_replaced(self, pool):
         """Dies while a caller still holds it: the slot thread wakes first and
@@ -246,8 +264,10 @@ class TestTimeoutReallyStopsTheWork:
         assert wait_until(lambda: p.idle() == 1 and pid not in p.pids(), 10)
         assert p.call(ROUTE, b"ok", RID).status == 200
 
-    def test_idle_deaths_under_load_never_share_a_worker(self, pool, thread_errors):
+    def test_idle_deaths_under_load_never_share_a_worker(self, pool, thread_errors,
+                                                         monkeypatch):
         """Two callers on one pipe would read each other's replies: a 500."""
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.05)
         p = pool(3, timeout=5.0)
         stop, seen, n = threading.Event(), [], itertools.count()
 
@@ -273,15 +293,17 @@ class TestTimeoutReallyStopsTheWork:
         assert seen and all(own for _, own in seen)
         assert {code for code, _ in seen} <= {200, 500, 503}
         assert ready(p, seconds=15)
-        assert len(p.pids()) == 3 and p.healthy()
+        assert len(p.pids()) == 3
+        assert wait_until(p.healthy, 2)  # once the new workers outlive min_uptime
         assert not thread_errors
         assert [p.call(ROUTE, b"ok", RID).status for _ in range(6)] == [200] * 6
 
     def test_repeated_kills_do_not_leak_workers_or_shrink_the_pool(self, pool):
-        p = pool(2, timeout=0.4)
+        p = pool(2, timeout=0.4, min_uptime=30.0)
         for _ in range(5):
             assert wait_until(lambda: p.idle() > 0, 10)
             assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
+            assert p.healthy()  # a kill the pool chose is not a failed spawn
         assert ready(p)
         assert len(p.pids()) == 2
         assert p.call(ROUTE, b"ok", RID).status == 200
@@ -530,18 +552,75 @@ class TestCloseRaces:
         assert not t.is_alive()
 
 
+class TestQuickDeaths:
+    """A worker that reaches ready and then dies on its own (the OOM killer
+    after the model load) is a failed spawn, not a prompt respawn."""
+
+    def test_a_run_of_quick_deaths_backs_off_and_is_unhealthy(self, monkeypatch,
+                                                              spawns):
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.05")
+        p = worker.WorkerPool(2, timeout=1.0, handler=tasks.behave,
+                              init=tasks.die_soon_init)
+        p.start()
+        try:
+            t0 = time.monotonic()
+            assert wait_until(lambda: not p.healthy(), 3)
+            assert wait_until(lambda: p.respawn_failures >= 2, 3)
+            time.sleep(max(0.0, 5.0 - (time.monotonic() - t0)))
+            assert spawns["n"] <= 10, spawns["n"]  # prompt respawn made ~70
+            assert not p.healthy()
+        finally:
+            p.close()
+
+    def test_failures_clear_once_a_worker_stays_up(self, monkeypatch, spawns):
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.2)
+        monkeypatch.setenv(tasks.DIE_AFTER_READY, "0.05")
+        p = worker.WorkerPool(1, timeout=1.0, handler=tasks.behave,
+                              init=tasks.die_soon_init, min_uptime=0.5)
+        p.start()
+        try:
+            assert wait_until(lambda: not p.healthy(), 3)
+            monkeypatch.delenv(tasks.DIE_AFTER_READY)
+            assert wait_until(lambda: p.healthy() and p.respawn_failures == 0, 10)
+            assert p.call(ROUTE, b"ok", RID).status == 200
+        finally:
+            p.close()
+
+    def test_a_worker_that_outlived_the_window_respawns_at_once(self, monkeypatch, pool):
+        monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 5.0)
+        p = pool(min_uptime=0.3)
+        assert p.call(ROUTE, b"ok", RID).status == 200
+        time.sleep(0.5)
+        pid, health = p.pids()[0], []
+        os.kill(pid, signal.SIGKILL)
+
+        def replaced():
+            health.append(p.healthy())
+            return p.idle() == 1 and pid not in p.pids()
+
+        t0 = time.monotonic()
+        assert wait_until(replaced, 10)
+        assert time.monotonic() - t0 < 4.0
+        assert all(health)
+
+    def test_the_default_window_outlasts_a_model_load(self):
+        assert worker.MIN_UPTIME == 10.0
+        assert worker.WorkerPool(1)._min_uptime == worker.MIN_UPTIME
+
+
 class TestSpawnFailures:
     def test_a_failed_respawn_backs_off_and_recovers(self, monkeypatch, spawns,
                                                     thread_errors, capfd):
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.05)
         spawns["fail"] = lambda n: n in (1, 2)
-        p = worker.WorkerPool(1, timeout=0.3, handler=tasks.behave, init=None)
+        p = worker.WorkerPool(1, timeout=0.3, handler=tasks.behave, init=None,
+                              min_uptime=0.2)
         p.start()
         try:
             assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
             assert ready(p, seconds=5)
             assert p.call(ROUTE, b"ok", RID).status == 200
-            assert p.respawn_failures == 0 and p.healthy()
+            assert wait_until(lambda: p.respawn_failures == 0 and p.healthy(), 2)
         finally:
             p.close()
         assert thread_errors == []
@@ -569,7 +648,8 @@ class TestSpawnFailures:
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF", 0.05)
         monkeypatch.setattr(worker, "RESPAWN_BACKOFF_MAX", 0.4)
         spawns["fail"] = lambda n: n >= 1
-        p = worker.WorkerPool(1, timeout=0.3, handler=tasks.behave, init=None)
+        p = worker.WorkerPool(1, timeout=0.3, handler=tasks.behave, init=None,
+                              min_uptime=0.2)
         p.start()
         try:
             assert p.healthy()
@@ -582,7 +662,8 @@ class TestSpawnFailures:
                 assert want * 0.9 < got < want + 0.15, gaps
             spawns["fail"] = lambda n: False
             assert ready(p, seconds=5)
-            assert p.respawn_failures == 0 and p.healthy()
+            assert not p.healthy()  # healthy only once the worker stays up
+            assert wait_until(lambda: p.respawn_failures == 0 and p.healthy(), 2)
         finally:
             p.close()
         assert not p.healthy()
@@ -838,12 +919,18 @@ class TestChildHardening:
         assert sent == [worker._FAILED]
 
     def test_omp_is_one_from_child_startup(self, pool, monkeypatch):
-        monkeypatch.setenv("OMP_NUM_THREADS", "7")
+        monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
         p = pool()
         assert p.call(ROUTE, b"env", RID).body == b"1"
         assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
         assert ready(p, seconds=5)
         assert p.call(ROUTE, b"env", RID).body == b"1"
+
+    def test_an_operator_set_omp_is_kept(self, pool, monkeypatch):
+        monkeypatch.setenv("OMP_NUM_THREADS", "3")
+        p = pool()
+        assert os.environ["OMP_NUM_THREADS"] == "3"
+        assert p.call(ROUTE, b"env", RID).body == b"3"
 
     def test_the_environment_is_set_once_before_any_slot_thread(self, pool, monkeypatch):
         """Writing os.environ while other threads run can race their getenv."""
@@ -852,12 +939,17 @@ class TestChildHardening:
             real = getattr(os, name)
             monkeypatch.setattr(os, name, lambda *a, _r=real, _n=name: (
                 writes.append((_n, a[0], threading.active_count())), _r(*a))[1])
+        monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
         before = threading.active_count()
         p = pool(2)
         assert writes == [("putenv", b"OMP_NUM_THREADS", before)]
         assert p.call(ROUTE, b"spin", RID).diag.code == "timeout"
         assert ready(p, seconds=5)
         assert len(writes) == 1
+        monkeypatch.setenv("OMP_NUM_THREADS", "3")
+        del writes[:]
+        pool(1)
+        assert writes == []
 
     def test_prctl_comes_before_the_ppid_check(self, monkeypatch):
         seen = []
@@ -962,6 +1054,35 @@ class TestHarness:
             assert not alive(proc.pid)
         finally:
             proc.wait()
+
+    def test_os_exit_recorded_between_tests_fails_the_next_one(self, tmp_path):
+        (tmp_path / "conftest.py").write_text(
+            "from tests.conftest import hermetic  # noqa: F401\n")
+        (tmp_path / "test_a.py").write_text(textwrap.dedent("""
+            import pytest
+            from tests.conftest import _guarded_exit
+
+            @pytest.fixture(scope="module")
+            def late():
+                yield
+                try:
+                    _guarded_exit(0)  # after every test here has torn down
+                except BaseException:
+                    pass
+
+            def test_first(late):
+                pass
+        """))
+        (tmp_path / "test_b.py").write_text("def test_next():\n    pass\n")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+             "--rootdir", str(tmp_path), str(tmp_path)],
+            cwd=tmp_path, env=dict(os.environ, PYTHONPATH=root),
+            capture_output=True, text=True, timeout=120)
+        assert out.returncode == 1, out.stdout[-2000:]
+        assert "ERROR test_b.py::test_next" in out.stdout, out.stdout[-2000:]
+        assert "recorded before this test" in out.stdout, out.stdout[-2000:]
 
     def test_os_exit_that_is_swallowed_or_threaded_still_fails_the_test(self, tmp_path):
         (tmp_path / "conftest.py").write_text(
